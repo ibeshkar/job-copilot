@@ -140,6 +140,11 @@ def invoke_structured(llm: BaseChatModel | None, schema: type[T], messages: list
             ) from exc
         except _TRANSIENT_ERRORS as exc:
             raise LLMServiceError(str(exc)) from exc
+        except openai.LengthFinishReasonError as exc:
+            # The answer hit max_tokens and was cut off. Asking again gives the same result,
+            # so fail with a clear message instead of a stack trace.
+            logger.warning("Structured output for %s hit the token limit", schema.__name__)
+            raise StructuredOutputError(f"{schema.__name__} answer was cut off") from exc
 
         if result.get("parsing_error") is None and result.get("parsed") is not None:
             return result["parsed"]

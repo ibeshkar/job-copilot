@@ -1,5 +1,6 @@
 # What: the human-in-the-loop step `fit_review` (pause and wait for the user's decision on the
-#       fit card) and `save_to_tracker` (copy the results onto the job's board card).
+#       fit card) and `save_to_tracker` (copy the results onto the job's board card and save
+#       the accepted drafts).
 # Why: the user, not the agent, decides whether a job is worth applying to. `interrupt()` stops
 #      the graph, the checkpointer saves its state, and `Command(resume=...)` continues it later,
 #      even after the browser is closed or the app restarts.
@@ -50,7 +51,15 @@ def fit_review(state: ApplicationState) -> dict:
 
 
 def save_to_tracker(state: ApplicationState, deps: GraphDeps) -> dict:
-    """Write the posting and fit score to the job's row, so the board card shows them."""
-    if state.get("job_id") is not None and state.get("job") is not None:
-        deps.save_job(state["job_id"], state["job"], state.get("fit"))
+    """Write the posting and fit score to the job's row, so the board card shows them.
+
+    If the user accepted drafts they had edited, the edited version is saved as a new draft
+    version too (the AI's version was already saved by the output guard).
+    """
+    job_id = state.get("job_id")
+    if job_id is not None and state.get("job") is not None:
+        deps.save_job(job_id, state["job"], state.get("fit"))
+    edits = state.get("user_edits")
+    if job_id is not None and edits is not None and edits != state.get("drafts"):
+        deps.save_draft(job_id, edits, True)
     return {}

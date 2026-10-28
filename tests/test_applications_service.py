@@ -129,3 +129,84 @@ def test_sample_jobs() -> None:
 
     assert len(samples) == 3
     assert next(iter(samples)).startswith("Good fit: Junior AI Engineer")
+
+
+# ---------------------------------------------------------------- Phase 5: claims and drafts
+
+KEEP_TWO = [
+    {"id": "C1", "action": "approve"},
+    {"id": "C2", "action": "approve"},
+    {"id": "C3", "action": "remove"},
+]
+
+
+def _to_draft_review() -> int:
+    job_id = applications.add_job(POSTING).job_id
+    assert applications.submit_fit_review(job_id, "continue").ok
+    assert applications.submit_claim_review(job_id, KEEP_TWO).ok
+    return job_id
+
+
+def test_full_flow_from_claim_check_to_saved_versions(fake_app) -> None:
+    job_id = applications.add_job(POSTING).job_id
+    progress: list[str] = []
+
+    applications.submit_fit_review(job_id, "continue", on_progress=progress.append)
+    view = applications.get_workflow_view(job_id)
+    assert view.stage == "claim_check"
+    assert "Planned 3 claims about you (2 backed by your documents)" in progress
+    assert [c.supported for c in view.claims] == [True, True, False]
+
+    applications.submit_claim_review(job_id, KEEP_TWO, on_progress=progress.append)
+    view = applications.get_workflow_view(job_id)
+    assert view.stage == "draft_review"
+    assert any(p.startswith("Fact check passed") for p in progress)
+    assert [v.version for v in applications.list_draft_versions(job_id)] == [1]
+
+    edited = view.drafts.model_copy(update={"cv_bullets": ["My own bullet."]})
+    assert applications.submit_draft_review(job_id, "accept", edited=edited).ok
+
+    assert applications.get_workflow_view(job_id).stage == "finished"
+    versions = applications.list_draft_versions(job_id)
+    assert [(v.version, v.is_user_edited) for v in versions] == [(2, True), (1, False)]
+    assert applications.latest_drafts(job_id).cv_bullets == ["My own bullet."]
+
+
+def test_removing_every_claim_is_refused(fake_app) -> None:
+    job_id = applications.add_job(POSTING).job_id
+    applications.submit_fit_review(job_id, "continue")
+
+    result = applications.submit_claim_review(job_id, [{"id": "C1", "action": "remove"}])
+
+    assert not result.ok and "at least one claim" in result.message
+    assert applications.get_workflow_view(job_id).stage == "claim_check"
+
+
+def test_regenerate_section_returns_to_draft_review(fake_app) -> None:
+    job_id = _to_draft_review()
+
+    result = applications.submit_draft_review(
+        job_id, "regenerate", section="cover_letter", instruction="shorter"
+    )
+
+    assert result.ok
+    assert applications.get_workflow_view(job_id).stage == "draft_review"
+    assert len(applications.list_draft_versions(job_id)) == 2
+
+
+def test_edits_after_acceptance_rating_and_export(fake_app) -> None:
+    job_id = _to_draft_review()
+    applications.submit_draft_review(job_id, "accept")
+    drafts = applications.latest_drafts(job_id)
+
+    assert not applications.save_edited_drafts(job_id, drafts)  # nothing changed
+    changed = drafts.model_copy(update={"cover_letter": "A new letter."})
+    assert applications.save_edited_drafts(job_id, changed)
+    assert applications.latest_drafts(job_id).cover_letter == "A new letter."
+
+    applications.rate_drafts(job_id, "letter", -1, "too long")
+    with repo.session_scope() as session:
+        assert [(f.target, f.rating) for f in repo.list_feedback(session)] == [("letter", -1)]
+
+    file = applications.export_drafts(job_id, changed)
+    assert file.file_name == "application-lumen-health-junior-ai-engineer.docx"

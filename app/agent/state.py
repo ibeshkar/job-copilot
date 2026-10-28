@@ -100,21 +100,34 @@ class FitReport(BaseModel):
 
 
 class Claim(BaseModel):
-    """A statement about the candidate that a draft may use (Phase 5)."""
+    """A statement about the candidate that a draft may use, e.g. "Built a RAG chatbot".
+
+    `supported` is set in Python: True only if the claim cites evidence we really have. The
+    user then approves, edits or removes it at the claim check; drafts use approved ones only.
+    """
 
     id: str
     text: str
     evidence_chunk_ids: list[str]
     supported: bool
     user_decision: Literal["pending", "approved", "edited", "removed"] = "pending"
+    # The cited evidence itself, so the claim check can show it next to the claim.
+    evidence: list[Evidence] = Field(default_factory=list)
+
+    @property
+    def kept(self) -> bool:
+        """True if the user approved or edited it (drafts may use it)."""
+        return self.user_decision in ("approved", "edited")
 
 
 class Drafts(BaseModel):
-    """Generated CV bullets and cover letter (Phase 5)."""
+    """CV bullets and cover letter. Also the structured output of the drafting prompt."""
 
-    cv_bullets: list[str]
-    cover_letter: str
-    used_claim_ids: list[str]
+    cv_bullets: list[str] = Field(description="3-6 CV bullet points, each starting with a verb")
+    cover_letter: str = Field(
+        description="The full cover letter, paragraphs separated by a blank line"
+    )
+    used_claim_ids: list[str] = Field(description="Ids of the approved claims the drafts use")
 
 
 class StyleRule(BaseModel):
@@ -173,6 +186,28 @@ class MatchClassification(BaseModel):
     )
 
 
+class PlannedClaim(BaseModel):
+    text: str = Field(description="One specific statement about the candidate, max 25 words")
+    evidence_ids: list[str] = Field(
+        description="Ids of the evidence items that prove it. Empty if none does."
+    )
+
+
+class ClaimPlan(BaseModel):
+    claims: list[PlannedClaim]
+
+
+class UnsupportedStatement(BaseModel):
+    quote: str = Field(description="The exact sentence or phrase from the draft")
+    reason: str = Field(description="Why it is not covered by the approved claims")
+
+
+class GuardReport(BaseModel):
+    unsupported: list[UnsupportedStatement] = Field(
+        description="Statements about the candidate not backed by approved claims. Empty if none."
+    )
+
+
 class FitAssessment(BaseModel):
     matches: list[MatchClassification]
     strengths_summary: str = Field(description="2-3 sentences, grounded in the evidence")
@@ -190,6 +225,29 @@ class FitReviewDecision(BaseModel):
 
     action: Literal["continue", "stop", "add_context"]
     text: str | None = None  # the extra context, for "add_context"
+
+
+class ClaimDecision(BaseModel):
+    """The user's decision on one claim."""
+
+    id: str
+    action: Literal["approve", "edit", "remove"]
+    text: str | None = None  # the new wording, for "edit"
+
+
+class ClaimReviewDecision(BaseModel):
+    """The resume value for the claim check. Claims missing from the list count as removed."""
+
+    decisions: list[ClaimDecision]
+
+
+class DraftReviewDecision(BaseModel):
+    """The resume value for the draft review: accept (maybe with edits) or regenerate a section."""
+
+    action: Literal["accept", "regenerate"]
+    section: Literal["cover_letter", "cv_bullets"] | None = None  # for "regenerate"
+    instruction: str | None = None  # e.g. "shorter, mention the remote setup"
+    edited: Drafts | None = None  # the drafts as the user edited them in the UI
 
 
 # ---------------------------------------------------------------- graph state
@@ -210,8 +268,12 @@ class ApplicationState(TypedDict, total=False):
     evidence: dict[str, list[Evidence]]  # requirement id → relevant chunks (graded)
     fit: FitReport | None
     claims: list[Claim]
-    drafts: Drafts | None
-    user_edits: Drafts | None
+    drafts: Drafts | None  # the latest AI-written drafts
+    user_edits: Drafts | None  # the drafts as the user accepted them (with their edits)
+    new_facts: list[str]  # claims the user vouched for, saved to memory at this claim check
+    guard_issues: list[UnsupportedStatement]  # statements the output guard couldn't back up
+    draft_attempts: int  # drafts written since the last claim check or regenerate request
+    regenerate: dict | None  # {"section": ..., "instruction": ...} while regenerating
     extra_context: str | None  # notes the user added at fit review ("I also used Airflow")
     rag_iterations: int  # how many times queries were rewritten (max 2)
     review_action: str | None  # the user's choice at fit review
@@ -233,4 +295,5 @@ CHECKPOINT_TYPES: list[type] = [
     FitReport,
     Claim,
     Drafts,
+    UnsupportedStatement,
 ]

@@ -45,3 +45,38 @@ def test_gives_up_after_one_retry() -> None:
     with pytest.raises(StructuredOutputError):
         invoke_structured(llm, RequirementList, [HumanMessage("hi")])
     assert len(llm.calls) == 2
+
+
+def test_answer_cut_off_by_token_limit_fails_cleanly() -> None:
+    import openai
+    from openai.types.chat import ChatCompletion
+    from openai.types.completion_usage import CompletionUsage
+
+    cut_off = openai.LengthFinishReasonError(
+        completion=ChatCompletion(
+            id="x",
+            choices=[],
+            created=0,
+            model="m",
+            object="chat.completion",
+            usage=CompletionUsage(completion_tokens=1500, prompt_tokens=1, total_tokens=1501),
+        )
+    )
+
+    class CutOffLLM:
+        calls = 0
+
+        def with_structured_output(self, schema, include_raw=False):
+            llm = self
+
+            class _Runnable:
+                def invoke(self, messages):
+                    llm.calls += 1
+                    raise cut_off
+
+            return _Runnable()
+
+    llm = CutOffLLM()
+    with pytest.raises(StructuredOutputError):
+        invoke_structured(llm, RequirementList, [HumanMessage("hi")])
+    assert llm.calls == 1  # asking again would be cut off the same way

@@ -1,10 +1,13 @@
-# What: wires the application workflow graph (PROJECT_PLAN.md §6.1), analysis half:
+# What: wires the application workflow graph (PROJECT_PLAN.md §6.1):
 #       input_guard → ingest_job → extract_requirements → retrieve_evidence ⇄ rewrite_queries
-#       → assess_fit → fit_review (pause for the user) → save_to_tracker / END.
+#       → assess_fit → fit_review (pause) → plan_claims → claim_check (pause)
+#       → remember_confirmed_facts → draft_materials ⇄ output_guard → draft_review (pause)
+#       → save_to_tracker → END.
 # Why: applying is high-stakes, so the steps run in a fixed, auditable order (a workflow, not a
 #      free agent). The SQLite checkpointer saves the state after every step, which is what lets
 #      the graph pause for the user and resume later.
-# Used by: scripts/analyse_sample_jobs.py, tests/test_application_graph.py; Phase 4 UI.
+# Used by: app/services/applications.py, scripts/analyse_sample_jobs.py,
+#          tests/test_application_graph.py.
 
 import sqlite3
 from functools import lru_cache, partial
@@ -17,6 +20,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agent.deps import GraphDeps, default_deps
+from app.agent.nodes.claims import claim_check, plan_claims, remember_confirmed_facts
+from app.agent.nodes.drafting import draft_materials, draft_review, needs_redraft, output_guard
 from app.agent.nodes.evidence import needs_rewrite, retrieve_evidence, rewrite_queries
 from app.agent.nodes.fit import assess_fit
 from app.agent.nodes.ingest import ingest_job, input_guard
@@ -46,9 +51,16 @@ def _after_fit_review(state: ApplicationState) -> str:
         return "retrieve_evidence"
     if action == "stop":
         return "save_to_tracker"
-    # "continue": Phase 5 will route this to plan_claims. For now the analysis is saved and
-    # the run ends.
-    return "save_to_tracker"
+    return "plan_claims"
+
+
+def _after_guard(state: ApplicationState) -> str:
+    # One rewrite if the guard found unsupported statements; then the user sees the draft.
+    return "draft_materials" if needs_redraft(state) else "draft_review"
+
+
+def _after_draft_review(state: ApplicationState) -> str:
+    return "draft_materials" if state.get("regenerate") else "save_to_tracker"
 
 
 def build_application_graph(
@@ -74,6 +86,12 @@ def build_application_graph(
     graph.add_node("rewrite_queries", partial(rewrite_queries, deps=deps))
     graph.add_node("assess_fit", partial(assess_fit, deps=deps))
     graph.add_node("fit_review", fit_review)
+    graph.add_node("plan_claims", partial(plan_claims, deps=deps))
+    graph.add_node("claim_check", claim_check)
+    graph.add_node("remember_confirmed_facts", partial(remember_confirmed_facts, deps=deps))
+    graph.add_node("draft_materials", partial(draft_materials, deps=deps))
+    graph.add_node("output_guard", partial(output_guard, deps=deps))
+    graph.add_node("draft_review", draft_review)
     graph.add_node("save_to_tracker", partial(save_to_tracker, deps=deps))
 
     graph.add_edge(START, "input_guard")
@@ -90,7 +108,15 @@ def build_application_graph(
     graph.add_edge("rewrite_queries", "retrieve_evidence")
     graph.add_edge("assess_fit", "fit_review")
     graph.add_conditional_edges(
-        "fit_review", _after_fit_review, ["retrieve_evidence", "save_to_tracker"]
+        "fit_review", _after_fit_review, ["retrieve_evidence", "plan_claims", "save_to_tracker"]
+    )
+    graph.add_edge("plan_claims", "claim_check")
+    graph.add_edge("claim_check", "remember_confirmed_facts")
+    graph.add_edge("remember_confirmed_facts", "draft_materials")
+    graph.add_edge("draft_materials", "output_guard")
+    graph.add_conditional_edges("output_guard", _after_guard, ["draft_materials", "draft_review"])
+    graph.add_conditional_edges(
+        "draft_review", _after_draft_review, ["draft_materials", "save_to_tracker"]
     )
     graph.add_edge("save_to_tracker", END)
 

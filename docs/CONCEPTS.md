@@ -302,8 +302,9 @@ book to someone else; the bookmark (the checkpoint) shows exactly where to conti
 1. Each job has a fixed `thread_id = "job-<id>"`, stored in the `Job` row.
 2. Start: `graph.stream({"raw_input": …}, config, stream_mode="updates")` runs until the
    `interrupt()` in `fit_review`.
-3. Every rerun: `graph.get_state(config)`. If a pending interrupt has `type == "fit_review"`,
-   draw the fit card and the buttons.
+3. Every rerun: `graph.get_state(config)`. The pending interrupt's `type` says which review to
+   draw: `fit_review` (Fit tab), `claim_check` (Claim check tab) or `draft_review` (Documents
+   tab). The workspace opens that tab by itself.
 4. Click: `graph.stream(Command(resume={"action": "stop"}), config)`.
 5. The open job is in the URL (`?job=3`), so a browser refresh lands on the same job.
 
@@ -317,10 +318,86 @@ if not values:
     stage = "not_started"
 elif values.get("errors"):
     stage = "failed"
-elif any(isinstance(p, dict) and p.get("type") == "fit_review" for p in pending):
-    stage = "fit_review"
+elif review := next((p["type"] for p in pending if p.get("type") in REVIEW_STAGES), None):
+    stage = review             # "fit_review", "claim_check" or "draft_review"
 elif state.next:
     stage = "interrupted"      # stopped mid-way, e.g. the AI service was down
 else:
     stage = "finished"
 ```
+
+---
+
+## Stopping invented experience: claim check and output guard
+
+**One sentence:** before anything is written, the user approves each statement the application
+will make about them, and after writing, a second AI call checks that the draft says nothing
+else.
+
+**Analogy:** a newspaper. The reporter (the writer prompt) may only use quotes the source has
+signed off (approved claims), and a fact-checker (the output guard) reads the article before
+it's printed. If the fact-checker still has doubts after one rewrite, the editor (you) decides.
+
+**The layers, in order:**
+| Layer | What it does | Where |
+|---|---|---|
+| Grounded claims | Each claim must cite evidence ids; Python marks it `supported` only if the ids exist | `nodes/claims.py` → `plan_claims` |
+| Claim check (HITL) | You approve, edit or remove; unsupported claims start unticked | `claim_check` + Claim check tab |
+| Only approved claims in the prompt | The writer never sees removed claims, so it can't use them | `nodes/drafting.py` → `claims_block()` |
+| Strict writing rules | "Only state facts in `<approved_claims>`. If unsure, omit." | `prompts.py` → `DRAFT_WRITER_SYSTEM` |
+| Output guard (LLM as a judge) | Lists statements no approved claim backs → one rewrite → else highlight | `output_guard`, `needs_redraft()` |
+| Python safety net | A removed claim's exact wording in the draft is always flagged | `find_rejected_claims()` |
+
+**Where it is in our code:** `app/agent/nodes/drafting.py`.
+
+```python
+def claims_block(claims: list[Claim]) -> str:
+    """The approved claims as "C1: text" lines. Removed claims are never included."""
+    return "\n".join(f"{c.id}: {c.text}" for c in claims if c.kept)
+
+
+def needs_redraft(state: ApplicationState) -> bool:
+    """Edge rule after the guard: rewrite once if it found problems, then show the user."""
+    return bool(state.get("guard_issues")) and state.get("draft_attempts", 0) < MAX_DRAFT_ATTEMPTS
+```
+
+**What it can't do:** the guard is an LLM too, so it can miss a paraphrase or flag a harmless
+sentence. That's why its findings are shown to the user rather than silently "fixed", and why
+the user reads and accepts the final text.
+
+**Tests:** `tests/test_drafting_graph.py` →
+`test_drafting_prompt_receives_only_approved_claims`,
+`test_output_guard_flags_injected_fake_claim_and_draft_is_rewritten`,
+`test_persistent_fake_claim_is_highlighted_after_one_rewrite`; and the live
+`tests/test_live_drafting.py`, where the real guard catches *"I led a team of 50 engineers at
+Google"*.
+
+---
+
+## Three pauses in one workflow
+
+**One sentence:** the same `interrupt()` / `Command(resume=...)` mechanism is used three times,
+and the payload's `type` tells the UI which review to show.
+
+**Analogy:** a building with three security doors on one corridor. The same badge reader at each
+door, but each door asks a different question.
+
+```mermaid
+flowchart LR
+    F[assess_fit] --> P1{{fit_review}}
+    P1 -->|continue| C[plan_claims] --> P2{{claim_check}}
+    P2 --> M[remember_confirmed_facts] --> D[draft_materials] --> G[output_guard]
+    G -->|issues, 1st try| D
+    G --> P3{{draft_review}}
+    P3 -->|regenerate| D
+    P3 -->|accept| S[save_to_tracker]
+```
+
+| Pause | Resume value (validated by) | UI |
+|---|---|---|
+| `fit_review` | `{"action": "continue" / "stop" / "add_context", "text"}` (`FitReviewDecision`) | Fit tab |
+| `claim_check` | `{"decisions": [{"id": "C1", "action": "approve" / "edit" / "remove", "text"}]}` (`ClaimReviewDecision`) | Claim check tab |
+| `draft_review` | `{"action": "accept" / "regenerate", "section", "instruction", "edited"}` (`DraftReviewDecision`) | Documents tab |
+
+**Where it is in our code:** `app/agent/application_graph.py` (wiring),
+`app/services/applications.py` → `_resume()` (one function resumes all three).

@@ -45,7 +45,23 @@ the agent honestly reports them missing.
 Three layers. (1) The grader filters out chunks that don't really show the skill. (2) The
 assessor must cite evidence ids, and the prompt says "if unsure, choose the lower status".
 (3) Python downgrades any "met" or "partial" whose cited ids weren't actually given to it
-(`assess_fit`). Phase 5 adds the claim check and output guard for the letter.
+(`assess_fit`). The claim check and output guard (next question) protect the letter.
+
+**How do you stop the agent inventing experience in the letter?**
+Five layers. (1) `plan_claims` proposes claims with evidence ids, and Python marks a claim
+supported only if the ids exist. (2) At the claim check the user approves, edits or removes each
+claim; unsupported ones start unticked. (3) The writer prompt only receives approved claims
+(`claims_block()`), so a removed claim can't leak in. (4) The output guard, a second LLM call,
+lists statements no approved claim backs; the draft is rewritten once, then any leftovers are
+highlighted. (5) A Python check flags a removed claim's exact wording. See CONCEPTS.md,
+"Stopping invented experience".
+
+**What is the output guard, and why not just trust the prompt?**
+Prompts are instructions, not guarantees. A model can still add "led a team" or "5 years". The
+guard is an "LLM as a judge": a separate call with only the approved claims, the profile basics,
+the removed claims and the draft. Its findings drive one rewrite, then go to the user
+(`needs_redraft()`, max 2 attempts). In a live run it caught two inflated statements
+("…equipped me with the skills to design RAG pipelines") and the rewrite fixed them.
 
 ### Human-in-the-loop
 **How does the fit review pause work?**
@@ -61,6 +77,18 @@ Continue, stop ("not a fit"), or add context ("I used Airflow at work"). Adding 
 the search and re-runs the evidence loop for every requirement that isn't "met", with the note
 as an extra evidence item labelled "Your note". The resume value is validated by
 `FitReviewDecision`, so an unknown action is rejected.
+
+**What does the user decide at the claim check?**
+For each claim: keep it (tick), reword it (edit the text), or drop it (untick). Unticked or
+missing claims count as removed (`claim_check`, "when in doubt, leave it out"), and at least one
+must be kept. Kept claims without document evidence, and reworded ones, are saved as confirmed
+facts in long-term memory, so the next job treats them as evidence instead of asking again.
+
+**What can the user do at the draft review?**
+Edit the bullets and the letter directly, regenerate one section with an instruction ("shorter,
+mention the remote setup"), export a DOCX, copy the text, and rate each part 👍/👎. **Accept &
+save** finishes the run. The AI version and, if changed, the edited version are saved in the
+`Draft` table, and the Notes tab lists every version.
 
 ### UI
 **How does `interrupt()` work with Streamlit, which reruns the whole script on every click?**
@@ -172,6 +200,16 @@ with a hint.
 paste the job text instead." The same happens for blocked URLs. An empty knowledge base stops
 the run before any LLM call, with a pointer to onboarding.
 
+**What if the model's answer is too long?**
+The answer is cut off at `max_tokens` and can't be parsed (`openai.LengthFinishReasonError`).
+`invoke_structured()` turns that into a friendly `StructuredOutputError` without a useless retry.
+A live test found this with 15 requirements, so grading now runs in batches of at most 20
+(requirement, chunk) pairs (`GRADE_BATCH_PAIRS`, D36).
+
+**What if the DOCX export fails?**
+`app/services/export.py` → `export_drafts()` catches the error, logs it, and returns a `.txt`
+file instead, so the user still gets their text (§10).
+
 **What does the user see when something fails?**
 Never a stack trace. Code raises an `AppError` subclass (`app/utils/errors.py`), and the UI
 shows its `user_message`, such as "The AI service is busy, please retry". The full details go to
@@ -188,15 +226,18 @@ goes through `get_llm()`, which raises `ConfigError` with a clear fix.
 | LLM provider | OpenRouter (OpenAI-compatible API) |
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
-| Tests | 107 offline + 2 live (`uv run pytest`, `uv run pytest -m live`) |
-| Pages working | Get started, Board, Job workspace (Fit tab) |
-| Workflow stages shown in UI | not_started, fit_review, interrupted, failed, finished |
-| Graph nodes (analysis) | 8: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, save_to_tracker |
-| Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement |
+| Tests | 131 offline + 4 live (`uv run pytest`, `uv run pytest -m live`) |
+| Pages working | Get started, Board, Job workspace (Fit, Claim check, Documents, Notes tabs) |
+| Workflow stages shown in UI | not_started, fit_review, claim_check, draft_review, interrupted, failed, finished |
+| Graph nodes | 14: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, plan_claims, claim_check, remember_confirmed_facts, draft_materials, output_guard, draft_review, save_to_tracker |
+| Human-in-the-loop pauses | 3: fit_review, claim_check, draft_review |
+| Claims and drafts | max 10 claims; letter ≤ 280 words (medium); 3–6 bullets; max 2 draft attempts per round |
+| Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement, grading in batches of 20 pairs |
 | Fit score | must 3 / nice 1; met 1 / partial 0.5 / missing 0; half-up; cap 40 if blocking |
 | Sample scores (one run) | good 84, partial 43, poor 0 (German C1 blocking) |
 | LLM calls per analysis | 5–8, about $0.003 with `openai/gpt-4o-mini` |
-| Prompt version | 2026-10-28.2 |
+| Prompt version | 2026-10-28.4 (9 prompts) |
+| LLM calls, continue → drafts | 3–5 (claims, draft, guard, maybe a rewrite + guard) |
 | Chunking | 500 characters, 80 overlap, `RecursiveCharacterTextSplitter` |
 | Embeddings | `openai/text-embedding-3-small` via OpenRouter (1,536 dimensions) |
 | Vector store | Chroma, cosine distance, `data/runtime/chroma/` |

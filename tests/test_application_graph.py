@@ -1,6 +1,7 @@
 # What: end-to-end tests of the application graph with a scripted fake LLM and fake search.
 # Why: checks the wiring without network or cost: node order, the agentic RAG rewrite loop, the
 #      fit_review interrupt, every resume option, early exits, and resuming after a restart.
+#      The claim check and drafting half is tested in tests/test_drafting_graph.py.
 # Used by: pytest.
 
 from pathlib import Path
@@ -10,7 +11,12 @@ from langgraph.types import Command
 
 from app.agent.application_graph import build_application_graph, make_checkpointer, thread_config
 from app.agent.nodes.ingest import EMPTY_KB_MESSAGE, NOT_A_JOB_MESSAGE
-from app.agent.state import FitAssessment, JobPostingExtraction
+from app.agent.state import (
+    ExtractedRequirement,
+    FitAssessment,
+    JobPostingExtraction,
+    RequirementList,
+)
 from app.utils.errors import FetchError
 from tests.graph_fakes import (
     EXTRACTION,
@@ -173,5 +179,23 @@ def test_resumes_after_restart_from_sqlite_checkpoint(tmp_path: Path) -> None:
 
     graph.invoke(Command(resume={"action": "continue"}), config)
 
-    assert graph.get_state(config).next == ()
-    assert saved.calls == [(7, "Junior AI Engineer", 86)]
+    # "Continue" goes on to the claim check, which pauses again.
+    assert graph.get_state(config).next == ("claim_check",)
+
+
+def test_grading_is_split_into_small_batches() -> None:
+    # 12 requirements that each match both corpus chunks = 24 pairs > GRADE_BATCH_PAIRS (20).
+    many = RequirementList(
+        requirements=[
+            ExtractedRequirement(
+                text=f"Python and RAG chatbot skill {i}", category="skill", importance="must"
+            )
+            for i in range(12)
+        ]
+    )
+    llm = make_llm({RequirementList: many})
+    graph, config = run(make_deps(llm))
+
+    assert llm.schemas_called().count("GradeList") == 2
+    fit = graph.get_state(config).values["fit"]
+    assert all(m.status == "met" for m in fit.matches)  # grades from both batches were kept

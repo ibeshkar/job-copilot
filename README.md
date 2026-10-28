@@ -4,7 +4,8 @@ An AI agent that helps job seekers find out whether they really fit a role, prov
 evidence from their own documents, write honest tailored applications, and track every
 application in one place.
 
-> 🚧 Work in progress. Phases 1–4 are done: onboarding, knowledge base, fit analysis, board and Fit tab. See `PROJECT_PLAN.md` for the full plan and
+> 🚧 Work in progress. Phases 1–5 are done: onboarding, knowledge base, fit analysis, board,
+> claim check, drafts with fact check, DOCX export. See `PROJECT_PLAN.md` for the full plan and
 > `docs/phase-notes/` for what each phase added.
 
 ## Quick start
@@ -19,6 +20,7 @@ uv run streamlit run app/main.py
 uv run python scripts/analyse_sample_jobs.py   # fit analysis on the 3 sample jobs (real LLM)
 uv run ruff check .              # lint
 uv run pytest                    # unit tests (no network)
+uv run pytest -m live            # end-to-end tests with the real LLM (costs a few cents)
 ```
 
 ## Privacy

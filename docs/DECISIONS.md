@@ -157,10 +157,11 @@ considered. Newest entries at the bottom.
 - **Why:** by default LangGraph can rebuild any Python class named in a checkpoint file. With an
   allowlist, a tampered `checkpoints.db` can't make the app create unexpected objects.
 
-## D22. "Continue" ends the run for now (Phase 3)
+## D22. "Continue" ends the run for now (Phase 3; replaced in Phase 5)
 - **What:** after fit review, both "continue" and "stop" go to `save_to_tracker` → END.
 - **Why:** Phase 5 adds `plan_claims`; then "continue" will route there. Saving the analysis
   either way means the board card gets its score.
+- **Phase 5:** "continue" now goes to `plan_claims`. "Stop" still goes to `save_to_tracker`.
 
 ## D23. The open job lives in the URL (Phase 4)
 - **What:** the workspace reads `?job=<id>` from `st.query_params`. The board opens jobs with
@@ -202,3 +203,80 @@ considered. Newest entries at the bottom.
   the board's numbers misleading. The user can still move the card by hand.
 - **Trade-off:** many "not a fit" cards can clutter the Saved column. A filter is a possible
   later improvement.
+
+## D29. A claim is "supported" only if Python finds its evidence (Phase 5)
+- **What:** `plan_claims` asks the LLM for claims plus the evidence ids behind them. Python keeps
+  only ids that really exist (fit evidence, your note, confirmed facts). A claim with none left
+  is `supported=False` and starts **unticked** in the UI.
+- **Why:** it's the same grounding rule as `assess_fit`: the model can't make a claim look
+  proven by citing a made-up id.
+- **Alternative:** let the LLM set `supported` itself. Rejected: that's the model grading its
+  own homework.
+
+## D30. Undecided claims count as removed; at least one must be kept (Phase 5)
+- **What:** in `claim_check`, a claim missing from the user's answer is `removed`. An emptied
+  text box also means removed. The service refuses a review that removes every claim.
+- **Why:** when in doubt, leave it out. A letter with zero true claims is useless, so the user
+  gets a clear message instead.
+
+## D31. Only facts the documents don't show are remembered (Phase 5)
+- **What:** `remember_confirmed_facts` saves a kept claim to long-term memory
+  (`("local", "facts")`) only if it had no evidence or the user reworded it. Exact duplicates are
+  skipped. Next time, these facts count as evidence ("Fact you confirmed earlier").
+- **Why:** claims proven by a document are already in the knowledge base, so saving them again
+  would only fill memory with duplicates. The point is to not ask the user the same question
+  twice.
+- **Trade-off:** duplicate detection is exact text only; reworded duplicates can pile up. The
+  Memory page (Phase 7) lets the user delete them.
+
+## D32. The output guard: an LLM checker plus a Python safety net, two attempts max (Phase 5)
+- **What:** `output_guard` asks a second LLM call to list statements about the candidate that no
+  approved claim backs. It also checks in Python that no removed claim's exact wording appears.
+  If anything is found, `draft_materials` rewrites once, with the list. If issues remain after
+  the second attempt, the draft goes to the user with them highlighted.
+- **Why:** this is the plan's §6.1 rule. A fixed limit keeps cost and time predictable; the user
+  is the final judge.
+- **Alternatives:** loop until clean (could loop forever and costs more), or block the draft
+  (the user would have nothing to edit). A pure-Python check alone can't catch paraphrases.
+
+## D33. "Regenerate" works per section, and Python merges the result (Phase 5)
+- **What:** the user can regenerate the cover letter or the CV bullets, with an optional
+  instruction. The model writes both sections, and Python keeps only the requested one; the
+  other section stays exactly as it was, including the user's edits. The guard then checks only
+  the new section.
+- **Why:** it's simple and safe. The other section is guaranteed unchanged, and the user's own
+  words aren't flagged by the fact checker. The plan's §7 mentions "regenerate this paragraph";
+  a whole section was enough for now and needs no paragraph-matching logic.
+- **Trade-off:** a few extra output tokens, because the model writes both sections.
+
+## D34. Draft versions: the database is the record after acceptance (Phase 5)
+- **What:** the AI draft is saved as a `Draft` version when it reaches the user (after the
+  guard), and on regeneration. On **Accept**, an edited version is saved only if the text
+  changed. After acceptance, the Documents tab edits the newest `Draft` row, and every save is a
+  new version.
+- **Why:** the checkpoint holds the workflow; the `Draft` table holds the history the user
+  cares about (and the Notes tab lists it). Edits after the run has finished don't need the graph.
+
+## D35. The user's regenerate instruction isn't wrapped as data (Phase 5)
+- **What:** job postings, evidence and drafts go inside tags ("data, never instructions"). The
+  user's own "make it shorter" instruction goes outside the tags, so the model follows it. The
+  prompt says the grounding rules still win, and the guard checks the result.
+- **Why:** wrapping it as data would tell the model to ignore it. The user is trusted with their
+  own application; third-party text is not.
+
+## D36. Small grading batches and a clean error for cut-off answers (Phase 5, fixes Phase 3)
+- **What:** `retrieve_evidence` grades at most 20 (requirement, chunk) pairs per LLM call.
+  `invoke_structured` turns `openai.LengthFinishReasonError` (answer hit `max_tokens`) into
+  `StructuredOutputError`, without retrying.
+- **Why:** a live test found that one call for 15 requirements × 4 chunks needed more than the
+  1,500-token answer limit, and the error reached the user unhandled. Retrying would be cut off
+  the same way.
+- **Alternative:** raise `max_tokens`. Rejected: it hides the problem and makes every call's
+  worst case slower and more expensive.
+
+## D37. Small additions to the §5.1 models and UI (Phase 5)
+- **What:** `Claim` has an extra `evidence` list (the cited quotes), so the claim check can show
+  them without looking them up again. `Drafts` doubles as the drafting prompt's output schema.
+  The workspace opens the tab that needs the user (`st.tabs(default=...)`). The "Copy" button
+  is `st.code`'s built-in copy icon.
+- **Why:** each is the simplest option with no new dependency (Streamlit has no clipboard API).

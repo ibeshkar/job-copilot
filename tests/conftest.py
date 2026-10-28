@@ -76,6 +76,7 @@ def fake_app(app_db, monkeypatch):
     clear_app_caches()
     deps = make_deps()
     deps.save_job = applications.save_analysis_to_job  # write results to the temp database
+    deps.save_draft = applications.save_draft_version
     graph = build_application_graph(deps, make_checkpointer(app_db / "checkpoints.db"))
     monkeypatch.setattr(applications, "get_graph", lambda: graph)
     return deps

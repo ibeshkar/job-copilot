@@ -1,11 +1,12 @@
-# What: reusable Streamlit widgets: empty states, status/fit badges and the fit card.
+# What: reusable Streamlit widgets: empty states, status/fit badges, the fit card, claim
+#       badges and the reviewed-claims list, the fact-check warning and draft history.
 # Why: the board and the workspace show the same badges, and keeping the fit card here keeps
 #      the page files short. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
 
 import streamlit as st
 
-from app.agent.state import FitReport, JobPosting, Requirement
+from app.agent.state import Claim, FitReport, JobPosting, Requirement, UnsupportedStatement
 
 STATUS_LABELS = {
     "saved": "🔖 Saved",
@@ -15,6 +16,7 @@ STATUS_LABELS = {
     "rejected": "✖️ Rejected",
 }
 MATCH_ICONS = {"met": "✅", "partial": "⚠️", "missing": "❌"}
+DECISION_ICONS = {"approved": "✅", "edited": "✏️", "removed": "🗑️", "pending": "⏳"}
 
 
 def coming_soon(phase: int, what: str) -> None:
@@ -44,6 +46,10 @@ def stage_badge(stage: str, review_action: str | None) -> str:
         return ":blue-badge[👀 review the fit]"
     if stage in ("interrupted", "not_started"):
         return ":orange-badge[⏳ analysis not finished]"
+    if stage == "claim_check":
+        return ":blue-badge[✅ check the claims]"
+    if stage == "draft_review":
+        return ":blue-badge[📝 review the drafts]"
     if stage == "failed":
         return ":red-badge[analysis failed]"
     if review_action == "stop":
@@ -135,3 +141,51 @@ def fit_card(
             "The AI only decides met / partial / missing; the arithmetic is plain Python, so "
             "the same assessment always gives the same score."
         )
+
+
+# ---------------------------------------------------------------- claims and drafts
+
+
+def claim_badge(claim: Claim) -> str:
+    """Green if documents back the claim, orange if only the user can vouch for it."""
+    if claim.supported:
+        return ":green-badge[backed by your documents]"
+    return ":orange-badge[no evidence in your documents]"
+
+
+def claim_evidence(claim: Claim) -> None:
+    """The evidence quotes a claim cites (inside an expander)."""
+    if not claim.evidence:
+        st.caption("No document mentions this. Keep it only if it's true.")
+    for ev in claim.evidence:
+        st.markdown(f"**📄 {ev.doc_name}**")
+        st.markdown(f"> {ev.snippet}")
+
+
+def reviewed_claims(claims: list[Claim], new_facts: list[str]) -> None:
+    """Read-only list of the claims after the claim check, with the user's decisions."""
+    for claim in claims:
+        text = f"~~{claim.text}~~" if claim.user_decision == "removed" else claim.text
+        st.markdown(f"{DECISION_ICONS[claim.user_decision]} {text} {claim_badge(claim)}")
+    if new_facts:
+        st.info(
+            "I remembered these as facts you confirmed (see them on the Memory page):\n"
+            + "\n".join(f"- {fact}" for fact in new_facts),
+            icon="🧠",
+        )
+
+
+def guard_issues_box(issues: list[UnsupportedStatement]) -> None:
+    """Highlight statements the fact-checker couldn't match to an approved claim."""
+    if not issues:
+        st.success(
+            "Fact check passed: every statement about you is backed by a claim you approved.",
+            icon="🔎",
+        )
+        return
+    lines = "\n".join(f'- "{i.quote}": {i.reason}' for i in issues)
+    st.warning(
+        "**Please check these statements.** The fact-checker couldn't match them to a claim "
+        f"you approved. Edit or delete them unless they're true.\n\n{lines}",
+        icon="🔎",
+    )

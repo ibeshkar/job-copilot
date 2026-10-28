@@ -1,15 +1,17 @@
 # What: everything the Board and Job workspace pages do with jobs: add a job and run the fit
-#       analysis (with progress messages), read where a job's workflow stands, resume the fit
-#       review, change a job's board column, delete a job.
+#       analysis (with progress messages), read where a job's workflow stands, resume the three
+#       reviews (fit, claim check, drafts), draft versions, ratings and export, change a job's
+#       board column, delete a job.
 # Why: it implements the Streamlit + LangGraph interrupt pattern (PROJECT_PLAN.md §7) in one
 #      testable place. Pages only draw widgets and call these functions; they never touch the
 #      graph or the LLM directly.
 # Used by: app/ui/pages/1_board.py, app/ui/pages/2_job_workspace.py, app/agent/deps.py
-#          (save_analysis_to_job), tests/test_applications_service.py.
+#          (save_analysis_to_job, save_draft_version), tests/test_applications_service.py.
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Literal
 
@@ -17,18 +19,33 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from app.agent.application_graph import get_application_graph, thread_config
-from app.agent.state import FitReport, FitReviewDecision, JobPosting, Requirement
+from app.agent.state import (
+    Claim,
+    ClaimReviewDecision,
+    DraftReviewDecision,
+    Drafts,
+    FitReport,
+    FitReviewDecision,
+    JobPosting,
+    Requirement,
+    UnsupportedStatement,
+)
 from app.config import PROJECT_ROOT, get_settings
 from app.db import repo
-from app.db.models import Job, JobStatus
+from app.db.models import Draft, Job, JobStatus
 from app.guards.input_guard import looks_like_url
+from app.services.export import ExportFile
+from app.services.export import export_drafts as _export
 from app.utils.errors import AppError, ConfigError, NotFoundError, friendly_message
 from app.utils.logging import get_logger, log_exception
 
 logger = get_logger(__name__)
 
 ProgressFn = Callable[[str], None]
-Stage = Literal["not_started", "interrupted", "fit_review", "finished", "failed"]
+Stage = Literal[
+    "not_started", "interrupted", "fit_review", "claim_check", "draft_review", "finished", "failed"
+]
+REVIEW_STAGES = ("fit_review", "claim_check", "draft_review")  # interrupt payload types
 
 SAMPLE_JOBS_DIR = PROJECT_ROOT / "data" / "samples" / "jobs"
 PLACEHOLDER_TITLE = "New job"
@@ -61,6 +78,21 @@ class WorkflowView:
     review_action: str | None = None
     extra_context: str | None = None
     rag_iterations: int = 0
+    claims: list[Claim] = field(default_factory=list)
+    new_facts: list[str] = field(default_factory=list)
+    drafts: Drafts | None = None
+    user_edits: Drafts | None = None
+    guard_issues: list[UnsupportedStatement] = field(default_factory=list)
+
+
+@dataclass
+class DraftVersion:
+    """One saved version of a job's drafts (a row of the Draft table)."""
+
+    version: int
+    drafts: Drafts
+    is_user_edited: bool
+    created_at: datetime
 
 
 @dataclass
@@ -76,6 +108,7 @@ class JobCard:
     next_action_date: datetime | None
     stage: Stage
     review_action: str | None
+    notes: str = ""
 
 
 # ---------------------------------------------------------------- graph access
@@ -110,6 +143,19 @@ def _progress_message(node: str, update: dict | None) -> str | None:
         return "Nothing found for some requirements, trying other search words…"
     if node == "assess_fit" and update.get("fit"):
         return f"Scored the fit: {update['fit'].score}/100"
+    if node == "plan_claims":
+        claims = update.get("claims", [])
+        backed = sum(1 for c in claims if c.supported)
+        return f"Planned {len(claims)} claims about you ({backed} backed by your documents)"
+    if node == "remember_confirmed_facts" and update.get("new_facts"):
+        return f"Remembered {len(update['new_facts'])} fact(s) you confirmed"
+    if node == "draft_materials":
+        return "Wrote the drafts"
+    if node == "output_guard":
+        issues = update.get("guard_issues", [])
+        if not issues:
+            return "Fact check passed: every statement is backed by an approved claim"
+        return f"Fact check found {len(issues)} unsupported statement(s)"
     if node == "save_to_tracker":
         return "Saved to your board"
     return None
@@ -139,7 +185,7 @@ def get_workflow_view(job_id: int) -> WorkflowView:
 
     Stages:
         not_started: no saved state (the run failed before its first step finished).
-        fit_review: paused at the fit review, waiting for the user.
+        fit_review / claim_check / draft_review: paused, waiting for the user's review.
         interrupted: stopped mid-way (e.g. the AI service failed); can be retried.
         failed: stopped with a user-facing error (e.g. not a job posting).
         finished: ran to the end.
@@ -152,8 +198,11 @@ def get_workflow_view(job_id: int) -> WorkflowView:
         stage: Stage = "not_started"
     elif values.get("errors"):
         stage = "failed"
-    elif any(isinstance(p, dict) and p.get("type") == "fit_review" for p in pending):
-        stage = "fit_review"
+    elif review := next(
+        (p["type"] for p in pending if isinstance(p, dict) and p.get("type") in REVIEW_STAGES),
+        None,
+    ):
+        stage = review  # the interrupt payload's type says which review the UI must show
     elif state.next:
         stage = "interrupted"
     else:
@@ -170,6 +219,11 @@ def get_workflow_view(job_id: int) -> WorkflowView:
         review_action=values.get("review_action"),
         extra_context=values.get("extra_context"),
         rag_iterations=values.get("rag_iterations", 0),
+        claims=values.get("claims", []),
+        new_facts=values.get("new_facts", []),
+        drafts=values.get("drafts"),
+        user_edits=values.get("user_edits"),
+        guard_issues=values.get("guard_issues", []),
     )
 
 
@@ -259,6 +313,30 @@ def retry_analysis(job_id: int, on_progress: ProgressFn | None = None) -> RunRes
     return RunResult(ok=True, job_id=job_id)
 
 
+def _resume(
+    job_id: int, stage: Stage, make_payload: Callable[[], dict], on_progress: ProgressFn | None
+) -> RunResult:
+    """Resume a graph paused at `stage` with the user's answer (the interrupt pattern, §7).
+
+    `make_payload` builds and validates the answer; a validation error becomes a failed result.
+    """
+    try:
+        _require_llm_key()
+        payload = make_payload()
+        if get_workflow_view(job_id).stage != stage:
+            return RunResult(
+                ok=False, job_id=job_id, message="This job isn't waiting for this review anymore."
+            )
+        _stream(Command(resume=payload), _config_for(job_id), on_progress)
+    except AppError as exc:
+        return RunResult(ok=False, job_id=job_id, message=exc.user_message)
+    except Exception as exc:
+        log_exception(logger, "Resume failed", job_id=job_id, stage=stage)
+        return RunResult(ok=False, job_id=job_id, message=friendly_message(exc))
+    _sync_job(job_id)
+    return RunResult(ok=True, job_id=job_id)
+
+
 def submit_fit_review(
     job_id: int,
     action: str,
@@ -269,24 +347,118 @@ def submit_fit_review(
 
     Args:
         job_id: the job whose workflow is waiting at the fit review.
-        action: "continue", "stop" or "add_context".
+        action: "continue" (go on to the claim check), "stop" or "add_context".
         text: the extra context, for "add_context".
     """
-    try:
-        _require_llm_key()
-        decision = FitReviewDecision(action=action, text=text)
-        if get_workflow_view(job_id).stage != "fit_review":
-            return RunResult(
-                ok=False, job_id=job_id, message="This job isn't waiting for a review anymore."
-            )
-        _stream(Command(resume=decision.model_dump()), _config_for(job_id), on_progress)
-    except AppError as exc:
-        return RunResult(ok=False, job_id=job_id, message=exc.user_message)
-    except Exception as exc:
-        log_exception(logger, "Fit review failed", job_id=job_id)
-        return RunResult(ok=False, job_id=job_id, message=friendly_message(exc))
-    _sync_job(job_id)
-    return RunResult(ok=True, job_id=job_id)
+    return _resume(
+        job_id,
+        "fit_review",
+        lambda: FitReviewDecision(action=action, text=text).model_dump(),
+        on_progress,
+    )
+
+
+def submit_claim_review(
+    job_id: int, decisions: list[dict], on_progress: ProgressFn | None = None
+) -> RunResult:
+    """Resume the claim check and write the drafts.
+
+    Args:
+        job_id: the job whose workflow is waiting at the claim check.
+        decisions: one {"id": "C1", "action": "approve" | "edit" | "remove", "text": ...} per
+            claim. Claims left out count as removed.
+    """
+    review = ClaimReviewDecision.model_validate({"decisions": decisions})
+    if not any(d.action != "remove" for d in review.decisions):
+        return RunResult(
+            ok=False,
+            job_id=job_id,
+            message="Keep at least one claim, otherwise there is nothing true to write about.",
+        )
+    return _resume(job_id, "claim_check", review.model_dump, on_progress)
+
+
+def submit_draft_review(
+    job_id: int,
+    action: str,
+    *,
+    edited: Drafts | None = None,
+    section: str | None = None,
+    instruction: str | None = None,
+    on_progress: ProgressFn | None = None,
+) -> RunResult:
+    """Resume the draft review: accept the drafts (with the user's edits) or regenerate one
+    section ("cover_letter" or "cv_bullets") with an optional instruction."""
+    return _resume(
+        job_id,
+        "draft_review",
+        lambda: DraftReviewDecision(
+            action=action, edited=edited, section=section, instruction=instruction
+        ).model_dump(mode="json"),
+        on_progress,
+    )
+
+
+# ---------------------------------------------------------------- drafts
+
+
+def save_draft_version(job_id: int, drafts: Drafts, is_user_edited: bool = False) -> None:
+    """Save drafts as the job's next version in the Draft table."""
+    with repo.session_scope() as session:
+        repo.add_draft(
+            session, job_id, drafts.cv_bullets, drafts.cover_letter, is_user_edited=is_user_edited
+        )
+
+
+def _version(row: Draft) -> DraftVersion:
+    return DraftVersion(
+        version=row.version,
+        drafts=Drafts(
+            cv_bullets=json.loads(row.cv_bullets_json),
+            cover_letter=row.cover_letter,
+            used_claim_ids=[],
+        ),
+        is_user_edited=row.is_user_edited,
+        created_at=row.created_at,
+    )
+
+
+def list_draft_versions(job_id: int) -> list[DraftVersion]:
+    """All saved versions of a job's drafts, newest first."""
+    with repo.session_scope() as session:
+        return [_version(row) for row in reversed(repo.list_drafts(session, job_id))]
+
+
+def latest_drafts(job_id: int) -> Drafts | None:
+    """The newest saved drafts of a job (what the Documents tab shows after acceptance)."""
+    with repo.session_scope() as session:
+        row = repo.latest_draft(session, job_id)
+        return _version(row).drafts if row else None
+
+
+def save_edited_drafts(job_id: int, drafts: Drafts) -> bool:
+    """Save the user's edits as a new version. Returns False if nothing changed."""
+    current = latest_drafts(job_id)
+    if current is not None and (current.cv_bullets, current.cover_letter) == (
+        drafts.cv_bullets,
+        drafts.cover_letter,
+    ):
+        return False
+    save_draft_version(job_id, drafts, is_user_edited=True)
+    return True
+
+
+def rate_drafts(job_id: int, target: str, rating: int, comment: str = "") -> None:
+    """Save a 👍 (+1) / 👎 (-1) rating for the "letter" or the "bullets"."""
+    with repo.session_scope() as session:
+        repo.add_feedback(session, target, rating, comment, job_id=job_id)
+
+
+def export_drafts(job_id: int, drafts: Drafts) -> ExportFile:
+    """The drafts as a .docx download (or .txt if Word export fails)."""
+    with repo.session_scope() as session:
+        row = repo.get_job(session, job_id)
+    return _export(drafts, row.title, row.company)
 
 
 # ---------------------------------------------------------------- board
@@ -314,6 +486,7 @@ def _card(row: Job) -> JobCard:
         next_action_date=row.next_action_date,
         stage=view.stage,
         review_action=view.review_action,
+        notes=row.notes,
     )
 
 
@@ -337,6 +510,21 @@ def change_status(job_id: int, status: str) -> None:
     """Move a job to another board column."""
     with repo.session_scope() as session:
         repo.update_job(session, job_id, status=status)
+
+
+def save_notes(
+    job_id: int, notes: str, next_action: str | None, next_action_date: date | None
+) -> None:
+    """Save the job's notes and next action (shown on its board card)."""
+    due = datetime.combine(next_action_date, time()) if next_action_date else None
+    with repo.session_scope() as session:
+        repo.update_job(
+            session,
+            job_id,
+            notes=notes.strip(),
+            next_action=(next_action or "").strip() or None,
+            next_action_date=due,
+        )
 
 
 def delete_job(job_id: int) -> None:

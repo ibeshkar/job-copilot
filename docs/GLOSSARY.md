@@ -11,12 +11,18 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Chroma**: a vector database that runs inside our app and saves to `data/runtime/chroma/`; no server needed.
 - **Chunk overlap**: characters shared by neighbouring chunks (80 here) so a sentence on the border isn't cut in half.
 - **Chunk**: a small piece of a document (about 500 characters here) that is embedded and searched on its own.
+- **Claim**: one statement the application makes about you, e.g. "Built a RAG chatbot with LangChain"; drafts may only use claims you approved.
+- **Claim check**: the second human-in-the-loop pause: you approve, edit or remove each claim before anything is written.
 - **`Command(resume=...)`**: how we continue a paused graph and hand it the user's answer.
 - **Conditional edge**: a graph edge that picks the next node with a function, e.g. "rewrite queries or assess fit?".
+- **Confirmed fact**: a claim you kept although no document shows it; saved to long-term memory and used as evidence next time.
 - **Cosine similarity**: a measure of how similar two vectors are, based on the angle between them; we turn it into a 0–1 relevance score.
 - **Delimiters**: tags like `<job_posting>` around outside text, so the LLM can tell data from instructions.
 - **Dependency injection**: giving a function the services it uses (LLM, search) as arguments instead of importing them, so tests can pass fakes.
 - **Dialog (`st.dialog`)**: a pop-up window in Streamlit; ours holds the "Add job" form.
+- **DOCX**: the Word file format; `app/services/export.py` builds one with `python-docx` (falls back to `.txt`).
+- **Draft review**: the third pause: you edit the drafts, regenerate a section, or accept.
+- **Draft version**: one saved copy of a job's CV bullets and cover letter in the `Draft` table (AI draft or your edit).
 - **Edge**: a connection in a graph: "after node A, run node B".
 - **Embedding**: a list of numbers (1,536 here) that represents the meaning of a text; similar texts get similar numbers.
 - **Engine (SQLAlchemy)**: the object that knows how to connect to the database; created once and reused.
@@ -38,13 +44,16 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Knowledge base**: all the user's documents in the vector store; the only source of facts about the user.
 - **LangGraph**: a library for building LLM apps as graphs of steps with shared state, loops and pauses.
 - **Lint / linter (ruff)**: a tool that checks code for mistakes and style problems without running it.
+- **LLM as a judge**: using a second LLM call to check the output of the first; our output guard is one.
 - **Long-term memory**: facts about the user that last across all chats and jobs; stored in the LangGraph Store.
+- **`max_tokens`**: the longest answer the model may give (1,500 here); a longer answer is cut off and fails to parse.
 - **Metadata**: extra labels saved with each chunk (`doc_name`, `doc_type`, `chunk_id`), used for citations and filters.
 - **Namespace**: a folder-like path in the Store, e.g. `("local", "profile")`: user id, then kind of memory.
 - **Node**: one step in a LangGraph graph: a function that reads the state and returns updates.
 - **Onboarding wizard**: the 3-step first-run setup: profile, documents, preferences.
 - **OpenRouter**: a service that forwards requests in the OpenAI API format to many model providers (OpenAI, Anthropic, Google, ...) with one key.
 - **ORM (Object-Relational Mapper)**: a library that lets you work with database rows as Python objects instead of writing SQL by hand. We use SQLModel.
+- **Output guard**: the fact-checking step after drafting: lists statements about you that no approved claim backs.
 - **Prompt injection**: text that tries to give an LLM new instructions, e.g. "ignore all previous instructions" inside a job posting.
 - **pydantic-settings**: a library that reads settings from environment variables and `.env` and checks their types.
 - **Query parameters**: the `?job=3` part of a URL; we use it to remember the open job across refreshes.
@@ -52,6 +61,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **RAG (Retrieval-Augmented Generation)**: search the user's documents first, then give the best pieces to the LLM, so it answers from facts.
 - **Red flag**: a practical blocker found by comparing the job with the profile: language, visa, seniority, location or deal-breaker.
 - **Reducer**: a rule that says how LangGraph merges a node's update into the state, e.g. append to a list instead of replacing it.
+- **Regenerate (section)**: ask for a new cover letter or new CV bullets, optionally with an instruction; the other section stays as it is.
 - **Repository (repo) layer**: the module with all database functions (`app/db/repo.py`); other code calls it instead of writing queries.
 - **Requirement**: one thing the job asks for, with an id (R1…), a category and an importance (must / nice).
 - **`SecretStr`**: a Pydantic type that hides a secret's value when printed or logged.
@@ -63,12 +73,13 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`st.cache_resource`**: a Streamlit decorator that runs a function once per server process and reuses the result.
 - **`st.navigation`**: Streamlit's way to define a multipage app and its sidebar menu in code.
 - **`st.status`**: a Streamlit box that shows progress lines while a long task runs, then turns green or red.
-- **Stage (workflow)**: where a job's run stands: not_started, fit_review, interrupted, failed or finished; read from the checkpointer.
+- **Stage (workflow)**: where a job's run stands: not_started, fit_review, claim_check, draft_review, interrupted, failed or finished; read from the checkpointer.
 - **State (LangGraph)**: the shared dictionary all nodes read and update; ours is `ApplicationState`.
 - **Store (LangGraph)**: LangGraph's key-value storage for long-term memory, organised by namespaces; ours is a SQLite file.
 - **`stream_mode="updates"`**: makes `graph.stream()` yield each node's update as soon as it finishes; we turn these into progress messages.
 - **Streamlit rerun**: Streamlit runs the whole page script again on every click; anything that should happen once must be cached.
 - **Structured output**: making the LLM answer in a fixed Pydantic format instead of free text.
+- **Supported claim**: a claim that cites evidence Python could find; unsupported ones start unticked.
 - **tenacity**: a Python library for retrying a call with growing waits (we use it for busy servers).
 - **Text splitter**: code that cuts text into chunks, trying paragraph breaks first, then sentences, then words (`RecursiveCharacterTextSplitter`).
 - **thread_id**: the name of one saved conversation or workflow run in LangGraph; each job gets `job-<id>`.

@@ -22,6 +22,7 @@ MAX_EVIDENCE_PER_REQUIREMENT = 4
 MAX_REWRITES = 2  # stops runaway loops and cost (§9)
 MIN_GRADE_SCORE = 0.4  # a chunk must be graded relevant AND at least this strong
 USER_NOTE_CHUNK_ID = "user-note"
+GRADE_BATCH_PAIRS = 20  # (requirement, chunk) pairs per grading call; keeps answers short
 
 
 def _requirements_block(requirements: list[Requirement]) -> str:
@@ -53,7 +54,29 @@ def _grade(
     requirements: dict[str, Requirement],
     candidates: dict[str, list[Evidence]],
 ) -> dict[str, list[Evidence]]:
-    """Ask the LLM which candidate chunks really support each requirement (one batched call)."""
+    """Ask the LLM which candidate chunks really support each requirement.
+
+    Pairs are graded in batches of at most GRADE_BATCH_PAIRS. One call for 15 requirements × 4
+    chunks would need a ~1,800-token answer, more than the max_tokens limit.
+    """
+    graded: dict[str, list[Evidence]] = {}
+    batch: dict[str, list[Evidence]] = {}
+    for rid, chunks in candidates.items():
+        if batch and sum(map(len, batch.values())) + len(chunks) > GRADE_BATCH_PAIRS:
+            graded.update(_grade_batch(deps, requirements, batch))
+            batch = {}
+        batch[rid] = chunks
+    if batch:
+        graded.update(_grade_batch(deps, requirements, batch))
+    return graded
+
+
+def _grade_batch(
+    deps: GraphDeps,
+    requirements: dict[str, Requirement],
+    candidates: dict[str, list[Evidence]],
+) -> dict[str, list[Evidence]]:
+    """Grade one batch of (requirement, chunk) pairs in a single LLM call."""
     lines = []
     for rid, chunks in candidates.items():
         if not chunks:

@@ -1,7 +1,8 @@
 # What: headless UI tests (Streamlit AppTest) for the Board and the Job workspace, using the
 #       offline fake graph.
 # Why: checks the Phase 4 "done when": a job added from the UI shows its fit card, and a
-#      browser refresh (a new AppTest session with the same ?job= URL) shows it again.
+#      browser refresh (a new AppTest session with the same ?job= URL) shows it again. Phase 5
+#      adds the claim check form, the draft review and the notes.
 # Used by: pytest.
 
 from pathlib import Path
@@ -110,3 +111,64 @@ def test_workspace_without_jobs_points_to_board(fake_app) -> None:
     at = _open_workspace(_app())
 
     assert any("No jobs yet" in info.value for info in at.info)
+
+
+# ---------------------------------------------------------------- Phase 5: claims and drafts
+
+
+def _at_claim_check() -> int:
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+    applications.submit_fit_review(job_id, "continue")
+    return job_id
+
+
+def test_claim_check_starts_unsupported_claims_unticked(fake_app) -> None:
+    job_id = _at_claim_check()
+
+    at = _open_workspace(_app(job_id))
+
+    assert not at.exception
+    assert [at.checkbox(key=f"keep_{job_id}_C{i}").value for i in (1, 2, 3)] == [
+        True,
+        True,
+        False,
+    ]
+    assert any("no evidence" in w.value for w in at.warning)
+
+
+def test_claim_check_to_accepted_drafts(fake_app) -> None:
+    job_id = _at_claim_check()
+    at = _open_workspace(_app(job_id))
+
+    at.checkbox(key=f"keep_{job_id}_C2").uncheck()
+    _button(at, "Confirm claims and write drafts ▶").click().run()
+
+    assert not at.exception
+    view = applications.get_workflow_view(job_id)
+    assert view.stage == "draft_review"
+    assert "RAG chatbot" not in view.drafts.cover_letter  # the unticked claim is not used
+    letter = at.text_area(key=f"letter_{job_id}_1")
+    assert letter.value == view.drafts.cover_letter
+    assert any("Fact check passed" in s.value for s in at.success)
+
+    letter.input(letter.value + "\nP.S. I can start in May.").run()
+    _button(at, "✅ Accept & save").click().run()
+
+    assert not at.exception
+    assert applications.get_workflow_view(job_id).stage == "finished"
+    assert applications.latest_drafts(job_id).cover_letter.endswith("I can start in May.")
+
+
+def test_notes_are_saved(fake_app) -> None:
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+    at = _open_workspace(_app(job_id))
+
+    # Widgets inside a form send their values only when the form is submitted.
+    next(t for t in at.text_area if t.label == "Notes").input("Recruiter: Anna")
+    next(t for t in at.text_input if t.label == "Next action").input("Send CV")
+    _button(at, "Save notes").click().run()
+
+    card = applications.get_job_summary(job_id)
+    assert (card.notes, card.next_action) == ("Recruiter: Anna", "Send CV")

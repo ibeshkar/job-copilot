@@ -607,11 +607,11 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** the user can add a job from the UI, see the fit card, and refreshing the browser keeps it.
 
 ### Phase 5: Claim check, drafting, export (3h)
-- [ ] Nodes: `plan_claims`, `remember_confirmed_facts`, `draft_materials`, `output_guard`
-- [ ] Interrupts: `claim_check`, `draft_review` (with regenerate-section)
-- [ ] Claim check tab UI; Documents tab with editable drafts, rating, versioning to the `Draft` table
-- [ ] `services/export.py` DOCX export + copy button
-- [ ] Tests: the drafting prompt receives only approved claims; output guard flags an injected fake claim
+- [x] Nodes: `plan_claims`, `remember_confirmed_facts`, `draft_materials`, `output_guard`
+- [x] Interrupts: `claim_check`, `draft_review` (with regenerate-section)
+- [x] Claim check tab UI; Documents tab with editable drafts, rating, versioning to the `Draft` table
+- [x] `services/export.py` DOCX export + copy button
+- [x] Tests: the drafting prompt receives only approved claims; output guard flags an injected fake claim
 - **Done when:** the full flow from adding a job to an exported DOCX works for the demo persona, and removed claims never appear in the letter.
 
 ### Phase 6: Copilot chat + tools + toggles (2.5h)
