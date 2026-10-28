@@ -21,12 +21,13 @@ from app.db.repo import init_db  # noqa: E402
 def clear_app_caches() -> None:
     """Forget cached settings, engine, memory store and vector store, so the next call
     opens them again from the current RUNTIME_DIR."""
+    from app.agent.application_graph import get_application_graph
     from app.config import get_settings
     from app.db.repo import get_engine
     from app.memory.store import get_store
     from app.rag.ingest import get_vectorstore
 
-    for cached in (get_settings, get_engine, get_store, get_vectorstore):
+    for cached in (get_settings, get_engine, get_store, get_vectorstore, get_application_graph):
         cached.cache_clear()
 
 
@@ -59,3 +60,22 @@ def app_db(tmp_path, monkeypatch):
     init_db()
     yield tmp_path
     clear_app_caches()
+
+
+@pytest.fixture
+def fake_app(app_db, monkeypatch):
+    """The app wired to an offline fake graph (scripted LLM, tiny search) in a temp folder.
+
+    Returns the GraphDeps, so a test can swap the LLM (e.g. to simulate an outage).
+    """
+    from app.agent.application_graph import build_application_graph, make_checkpointer
+    from app.services import applications
+    from tests.graph_fakes import make_deps
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")  # the service checks a key exists
+    clear_app_caches()
+    deps = make_deps()
+    deps.save_job = applications.save_analysis_to_job  # write results to the temp database
+    graph = build_application_graph(deps, make_checkpointer(app_db / "checkpoints.db"))
+    monkeypatch.setattr(applications, "get_graph", lambda: graph)
+    return deps

@@ -62,6 +62,29 @@ the search and re-runs the evidence loop for every requirement that isn't "met",
 as an extra evidence item labelled "Your note". The resume value is validated by
 `FitReviewDecision`, so an unknown action is rejected.
 
+### UI
+**How does `interrupt()` work with Streamlit, which reruns the whole script on every click?**
+Nothing important lives in Streamlit's memory. The graph's state is saved in SQLite under
+`thread_id = job-<id>`. On every rerun, `app/services/applications.py` → `get_workflow_view()`
+calls `graph.get_state()` and returns a stage (e.g. `fit_review`), and the Fit tab draws that
+step. A button calls `submit_fit_review()`, which resumes with `Command(resume=...)`.
+
+**What happens if the user refreshes the browser during the fit review?**
+They see the same fit card and buttons. The open job is in the URL (`?job=3`, see
+`app/ui/state.py`), and the paused run is in the checkpointer. `tests/test_ui_pages.py` checks
+this with a fresh `AppTest` session on the same URL.
+
+**How does the user see progress during a 20-second analysis?**
+`add_job()` uses `graph.stream(..., stream_mode="updates")`. After each node it sends a short
+message ("Extracted 8 requirements", "Scored the fit: 84/100") to `st.status`'s `write`, so the
+user sees the agent work step by step.
+
+**What are the empty, loading and error states?**
+Empty: the board says "No jobs yet…" and points to the sample jobs; the workspace without jobs
+points to the board; an empty knowledge base shows a warning. Loading: `st.status` with step
+messages. Error: friendly messages in the dialog (input problems), or "⏳ analysis not finished"
+with **Retry analysis** (outages). Never a stack trace.
+
 ### Code organisation
 **How is the code organised?**
 In layers: `app/ui/` (Streamlit pages only), `app/agent/` (LLM and graphs), `app/db/` (tables
@@ -165,7 +188,9 @@ goes through `get_llm()`, which raises `ConfigError` with a clear fix.
 | LLM provider | OpenRouter (OpenAI-compatible API) |
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
-| Tests | 91 offline + 2 live (`uv run pytest`, `uv run pytest -m live`) |
+| Tests | 107 offline + 2 live (`uv run pytest`, `uv run pytest -m live`) |
+| Pages working | Get started, Board, Job workspace (Fit tab) |
+| Workflow stages shown in UI | not_started, fit_review, interrupted, failed, finished |
 | Graph nodes (analysis) | 8: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, save_to_tracker |
 | Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement |
 | Fit score | must 3 / nice 1; met 1 / partial 0.5 / missing 0; half-up; cap 40 if blocking |

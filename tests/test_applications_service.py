@@ -1,0 +1,131 @@
+# What: tests for app/services/applications.py, the layer between the pages and the graph.
+# Why: it implements the interrupt pattern (start, read state, resume) and the board logic.
+#      Everything runs offline with the fake graph from tests/graph_fakes.py.
+# Used by: pytest.
+
+import pytest
+
+from app.agent.state import RequirementList
+from app.db import repo
+from app.services import applications
+from app.utils.errors import LLMServiceError
+from tests.graph_fakes import POSTING, make_llm
+
+
+def _jobs() -> list:
+    with repo.session_scope() as session:
+        return repo.list_jobs(session)
+
+
+def test_add_job_runs_to_fit_review_and_updates_the_card(fake_app) -> None:
+    progress: list[str] = []
+
+    result = applications.add_job(POSTING, on_progress=progress.append)
+
+    assert result.ok
+    assert "Extracted 3 requirements" in progress
+    assert "Scored the fit: 86/100" in progress
+    view = applications.get_workflow_view(result.job_id)
+    assert view.stage == "fit_review"
+    card = applications.list_board()["saved"][0]
+    assert (card.title, card.company, card.fit_score, card.stage) == (
+        "Junior AI Engineer",
+        "Lumen Health",
+        86,
+        "fit_review",
+    )
+
+
+def test_rejected_input_removes_the_card(fake_app) -> None:
+    result = applications.add_job("Python job")
+
+    assert not result.ok
+    assert "too short" in result.message
+    assert _jobs() == []
+
+
+def test_no_api_key_gives_a_friendly_message(fake_app, monkeypatch) -> None:
+    from app.config import get_settings
+
+    # Settings would fall back to the developer's .env, so remove the key on the object itself.
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", None)
+
+    result = applications.add_job(POSTING)
+
+    assert not result.ok and "API key" in result.message
+    assert _jobs() == []
+
+
+def test_outage_keeps_the_card_and_retry_continues(fake_app) -> None:
+    def busy(messages):
+        raise LLMServiceError("503")
+
+    fake_app.llm = make_llm({RequirementList: busy})
+    result = applications.add_job(POSTING)
+
+    assert not result.ok
+    assert result.message == "The AI service is busy, please retry."
+    assert applications.get_workflow_view(result.job_id).stage == "interrupted"
+
+    fake_app.llm = make_llm()  # the service is back
+    retry = applications.retry_analysis(result.job_id)
+
+    assert retry.ok
+    assert applications.get_workflow_view(result.job_id).stage == "fit_review"
+    # Retry continued from the saved step: the posting wasn't extracted a second time.
+    assert fake_app.llm.schemas_called()[0] == "RequirementList"
+
+
+def test_not_a_fit_finishes_the_run(fake_app) -> None:
+    job_id = applications.add_job(POSTING).job_id
+
+    result = applications.submit_fit_review(job_id, "stop")
+
+    assert result.ok
+    view = applications.get_workflow_view(job_id)
+    assert (view.stage, view.review_action) == ("finished", "stop")
+    again = applications.submit_fit_review(job_id, "continue")
+    assert not again.ok and "isn't waiting" in again.message
+
+
+def test_add_context_rechecks_and_pauses_again(fake_app) -> None:
+    job_id = applications.add_job(POSTING).job_id
+
+    result = applications.submit_fit_review(
+        job_id, "add_context", text="I run Kubernetes clusters at home."
+    )
+
+    assert result.ok
+    view = applications.get_workflow_view(job_id)
+    assert view.stage == "fit_review"
+    assert view.fit.score == 100
+    assert applications.get_job_summary(job_id).fit_score == 100
+
+
+def test_invalid_action_is_rejected(fake_app) -> None:
+    job_id = applications.add_job(POSTING).job_id
+
+    assert not applications.submit_fit_review(job_id, "hire me").ok
+
+
+def test_change_status_and_delete(fake_app) -> None:
+    job_id = applications.add_job(POSTING).job_id
+
+    applications.change_status(job_id, "applied")
+    assert [c.id for c in applications.list_board()["applied"]] == [job_id]
+    with pytest.raises(ValueError):
+        applications.change_status(job_id, "hired")
+
+    applications.delete_job(job_id)
+    assert _jobs() == []
+    assert (
+        applications.get_graph().get_state({"configurable": {"thread_id": f"job-{job_id}"}}).values
+        == {}
+    )
+
+
+def test_sample_jobs() -> None:
+    samples = applications.sample_jobs()
+
+    assert len(samples) == 3
+    assert next(iter(samples)).startswith("Good fit: Junior AI Engineer")

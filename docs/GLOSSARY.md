@@ -5,6 +5,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Agentic RAG**: RAG where the agent grades its own search results and searches again with new words if nothing relevant was found.
 - **AppTest**: Streamlit's tool for running an app in a test without a browser.
 - **Blocking red flag**: a red flag that makes the job unrealistic (e.g. a required language you don't speak); it caps the fit score at 40.
+- **Board (Kanban)**: the tracker page: one column per application status, one card per job.
 - **CEFR level**: the European scale for language skill: A1, A2 (basic), B1, B2 (independent), C1, C2 (proficient).
 - **Checkpointer**: LangGraph's short-term memory; saves the graph state after every step under a `thread_id`, so a run can pause and resume.
 - **Chroma**: a vector database that runs inside our app and saves to `data/runtime/chroma/`; no server needed.
@@ -15,6 +16,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Cosine similarity**: a measure of how similar two vectors are, based on the angle between them; we turn it into a 0–1 relevance score.
 - **Delimiters**: tags like `<job_posting>` around outside text, so the LLM can tell data from instructions.
 - **Dependency injection**: giving a function the services it uses (LLM, search) as arguments instead of importing them, so tests can pass fakes.
+- **Dialog (`st.dialog`)**: a pop-up window in Streamlit; ours holds the "Add job" form.
 - **Edge**: a connection in a graph: "after node A, run node B".
 - **Embedding**: a list of numbers (1,536 here) that represents the meaning of a text; similar texts get similar numbers.
 - **Engine (SQLAlchemy)**: the object that knows how to connect to the database; created once and reused.
@@ -23,8 +25,10 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`.env` file**: a local text file with secret settings (like API keys) that is never committed to git.
 - **Evidence**: our object for one search hit: chunk id, file name, a snippet of up to 300 characters, and a relevance score.
 - **Few-shot prompting**: putting a worked example in the prompt so the model copies the pattern.
+- **Fit card**: the Fit tab's view of one analysis: score, red flags, requirements with evidence, tips.
 - **Fit score**: 0–100, computed in Python: must = 3, nice = 1; met = 1, partial = 0.5, missing = 0; capped at 40 by a blocking red flag.
 - **Fixture (pytest)**: setup code that gives a test something it needs, such as an empty database.
+- **Fragment (Streamlit)**: part of a page that can rerun on its own; a dialog is one.
 - **Grading (RAG)**: an LLM check of whether a retrieved chunk really supports a requirement.
 - **Grounding**: making the model base its answers only on given evidence, and checking that it cites it.
 - **Human-in-the-loop (HITL)**: the agent stops and lets a person review or decide before it continues.
@@ -43,6 +47,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **ORM (Object-Relational Mapper)**: a library that lets you work with database rows as Python objects instead of writing SQL by hand. We use SQLModel.
 - **Prompt injection**: text that tries to give an LLM new instructions, e.g. "ignore all previous instructions" inside a job posting.
 - **pydantic-settings**: a library that reads settings from environment variables and `.env` and checks their types.
+- **Query parameters**: the `?job=3` part of a URL; we use it to remember the open job across refreshes.
 - **Query rewriting**: asking the LLM for different search words when the first search found nothing.
 - **RAG (Retrieval-Augmented Generation)**: search the user's documents first, then give the best pieces to the LLM, so it answers from facts.
 - **Red flag**: a practical blocker found by comparing the job with the profile: language, visa, seniority, location or deal-breaker.
@@ -50,14 +55,18 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Repository (repo) layer**: the module with all database functions (`app/db/repo.py`); other code calls it instead of writing queries.
 - **Requirement**: one thing the job asks for, with an id (R1…), a category and an importance (must / nice).
 - **`SecretStr`**: a Pydantic type that hides a secret's value when printed or logged.
+- **Service layer**: plain Python functions between the pages and the agent (`app/services/`); pages call them instead of the graph or LLM.
 - **Session (database)**: one unit of work with the database; changes are saved together on `commit`.
 - **SQL injection**: an attack where user input is run as SQL; the ORM prevents it by sending values separately from the query.
 - **SQLModel**: an ORM that combines Pydantic models and SQLAlchemy tables in one class.
 - **SSRF (Server-Side Request Forgery)**: tricking a server into fetching an internal address; blocked by `url_guard`.
 - **`st.cache_resource`**: a Streamlit decorator that runs a function once per server process and reuses the result.
 - **`st.navigation`**: Streamlit's way to define a multipage app and its sidebar menu in code.
+- **`st.status`**: a Streamlit box that shows progress lines while a long task runs, then turns green or red.
+- **Stage (workflow)**: where a job's run stands: not_started, fit_review, interrupted, failed or finished; read from the checkpointer.
 - **State (LangGraph)**: the shared dictionary all nodes read and update; ours is `ApplicationState`.
 - **Store (LangGraph)**: LangGraph's key-value storage for long-term memory, organised by namespaces; ours is a SQLite file.
+- **`stream_mode="updates"`**: makes `graph.stream()` yield each node's update as soon as it finishes; we turn these into progress messages.
 - **Streamlit rerun**: Streamlit runs the whole page script again on every click; anything that should happen once must be cached.
 - **Structured output**: making the LLM answer in a fixed Pydantic format instead of free text.
 - **tenacity**: a Python library for retrying a call with growing waits (we use it for busy servers).

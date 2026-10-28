@@ -287,3 +287,40 @@ or 2 MB.
 
 **Analogy:** a receptionist who checks the address on every parcel before a courier goes out,
 and never sends one to the company's own server room.
+
+---
+
+## Human-in-the-loop with Streamlit reruns
+
+**One sentence:** Streamlit forgets everything between clicks, so the page asks the
+checkpointer "where is this job's workflow?" on every rerun and draws that step.
+
+**Analogy:** a bookmark in a library book. You can leave, come back days later, or hand the
+book to someone else; the bookmark (the checkpoint) shows exactly where to continue.
+
+**The pattern (PROJECT_PLAN.md §7):**
+1. Each job has a fixed `thread_id = "job-<id>"`, stored in the `Job` row.
+2. Start: `graph.stream({"raw_input": …}, config, stream_mode="updates")` runs until the
+   `interrupt()` in `fit_review`.
+3. Every rerun: `graph.get_state(config)`. If a pending interrupt has `type == "fit_review"`,
+   draw the fit card and the buttons.
+4. Click: `graph.stream(Command(resume={"action": "stop"}), config)`.
+5. The open job is in the URL (`?job=3`), so a browser refresh lands on the same job.
+
+**Where it is in our code:** `app/services/applications.py` → `get_workflow_view()`.
+
+```python
+state = get_graph().get_state(_config_for(job_id))
+values = state.values or {}
+pending = [i.value for task in state.tasks for i in task.interrupts]
+if not values:
+    stage = "not_started"
+elif values.get("errors"):
+    stage = "failed"
+elif any(isinstance(p, dict) and p.get("type") == "fit_review" for p in pending):
+    stage = "fit_review"
+elif state.next:
+    stage = "interrupted"      # stopped mid-way, e.g. the AI service was down
+else:
+    stage = "finished"
+```

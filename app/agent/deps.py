@@ -17,7 +17,7 @@ from app.memory.store import Preferences, Profile
 class GraphDeps:
     """Everything the application graph needs from the outside world."""
 
-    llm: BaseChatModel
+    llm: BaseChatModel | None  # None when no API key: saved runs can be read, not run
     search: Callable[[str, int], list[Evidence]]  # (query, k) → best chunks
     knowledge_base_size: Callable[[], int]  # number of chunks; 0 blocks the analysis
     get_profile: Callable[[], Profile | None]
@@ -26,37 +26,26 @@ class GraphDeps:
     save_job: Callable[[int, JobPosting, FitReport | None], None]  # write results to the board
 
 
-def _save_job_to_db(job_id: int, job: JobPosting, fit: FitReport | None) -> None:
-    """Copy the analysis results onto the job's row in the tracker database."""
-    from app.db import repo
-
-    with repo.session_scope() as session:
-        repo.update_job(
-            session,
-            job_id,
-            title=job.title,
-            company=job.company,
-            url=job.source_url,
-            raw_text=job.raw_text,
-            posting_json=job.model_dump_json(),
-            fit_score=fit.score if fit else None,
-        )
-
-
 def default_deps() -> GraphDeps:
-    """The real services: OpenRouter LLM, Chroma search, SQLite memory and database."""
+    """The real services: OpenRouter LLM, Chroma search, SQLite memory and database.
+
+    Without an API key the LLM is None. The graph can still be built, so the UI can show
+    saved analyses; starting or resuming a run raises ConfigError.
+    """
     from app.agent.llm import get_llm
+    from app.config import get_settings
     from app.memory.store import get_preferences, get_profile
     from app.rag.ingest import count_chunks
     from app.rag.retriever import search_evidence
+    from app.services.applications import save_analysis_to_job
     from app.services.web_fetch import fetch_page_text
 
     return GraphDeps(
-        llm=get_llm(),
+        llm=get_llm() if get_settings().has_llm_key else None,
         search=lambda query, k: search_evidence(query, k=k),
         knowledge_base_size=count_chunks,
         get_profile=get_profile,
         get_preferences=get_preferences,
         fetch_url=fetch_page_text,
-        save_job=_save_job_to_db,
+        save_job=save_analysis_to_job,
     )

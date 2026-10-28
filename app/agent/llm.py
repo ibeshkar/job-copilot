@@ -107,7 +107,7 @@ def _invoke_with_retry(runnable: Any, messages: list[BaseMessage]) -> dict[str, 
     return runnable.invoke(messages)
 
 
-def invoke_structured(llm: BaseChatModel, schema: type[T], messages: list[BaseMessage]) -> T:
+def invoke_structured(llm: BaseChatModel | None, schema: type[T], messages: list[BaseMessage]) -> T:
     """Call the LLM and get back an instance of `schema` (structured output).
 
     Busy or unreachable servers are retried 3 times with growing waits. If the answer doesn't
@@ -123,9 +123,11 @@ def invoke_structured(llm: BaseChatModel, schema: type[T], messages: list[BaseMe
 
     Raises:
         LLMServiceError: the service stayed busy or unreachable.
-        ConfigError: the API key was rejected.
+        ConfigError: no API key (llm is None), or the key was rejected.
         StructuredOutputError: the answer still didn't match the schema after the retry.
     """
+    if llm is None:
+        raise ConfigError("OPENROUTER_API_KEY is not set")
     structured = llm.with_structured_output(schema, include_raw=True)
     attempt_messages = list(messages)
     for attempt in (1, 2):

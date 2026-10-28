@@ -601,9 +601,9 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** running the graph from a script on the 3 sample jobs gives sensible scores (good > partial > poor) and pauses at fit review.
 
 ### Phase 4: Board + Job workspace, Fit tab (2.5h)
-- [ ] Board page: columns, job cards, "Add job" dialog → creates `Job` + starts the graph with `st.status` progress
-- [ ] Fit tab: score, red flags, requirement table with evidence expanders, action buttons that resume the graph
-- [ ] The interrupt-rendering pattern from section 7 (state survives refresh)
+- [x] Board page: columns, job cards, "Add job" dialog → creates `Job` + starts the graph with `st.status` progress
+- [x] Fit tab: score, red flags, requirement table with evidence expanders, action buttons that resume the graph
+- [x] The interrupt-rendering pattern from section 7 (state survives refresh)
 - **Done when:** the user can add a job from the UI, see the fit card, and refreshing the browser keeps it.
 
 ### Phase 5: Claim check, drafting, export (3h)

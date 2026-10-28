@@ -4,7 +4,7 @@ An AI agent that helps job seekers find out whether they really fit a role, prov
 evidence from their own documents, write honest tailored applications, and track every
 application in one place.
 
-> 🚧 Work in progress. Phases 1–3 (foundation, knowledge base and memory, fit-analysis graph) are done. See `PROJECT_PLAN.md` for the full plan and
+> 🚧 Work in progress. Phases 1–4 are done: onboarding, knowledge base, fit analysis, board and Fit tab. See `PROJECT_PLAN.md` for the full plan and
 > `docs/phase-notes/` for what each phase added.
 
 ## Quick start

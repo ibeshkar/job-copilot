@@ -161,3 +161,44 @@ considered. Newest entries at the bottom.
 - **What:** after fit review, both "continue" and "stop" go to `save_to_tracker` → END.
 - **Why:** Phase 5 adds `plan_claims`; then "continue" will route there. Saving the analysis
   either way means the board card gets its score.
+
+## D23. The open job lives in the URL (Phase 4)
+- **What:** the workspace reads `?job=<id>` from `st.query_params`. The board opens jobs with
+  `st.switch_page(…, query_params={"job": id})`.
+- **Why:** `st.session_state` is wiped by a browser refresh, but the URL is not. This is what
+  makes "refreshing the browser keeps the fit card" work, and it makes job links bookmarkable.
+- **Alternative:** store "current job" in session state or in the database. Session state
+  fails the refresh test; the database would be global, not per browser tab.
+
+## D24. A service layer runs the workflow for the pages (Phase 4)
+- **What:** `app/services/applications.py` starts runs, reads the stage, resumes, retries and
+  syncs the score to the `Job` row. Pages call only these functions.
+- **Why:** rule 3 of the plan, and testability: 9 service tests and 7 UI tests run offline
+  against a fake graph (`tests/graph_fakes.py`).
+
+## D25. Bad input removes the new card; an outage keeps it (Phase 4)
+- **What:** if the run ends with a user-facing error (too short, not a posting, unreadable
+  link), `add_job()` deletes the card and returns the reason. If it crashes for a technical
+  reason, the card stays ("⏳ analysis not finished") and can be retried from the last checkpoint.
+- **Why:** a rejected paste shouldn't litter the board, but work done before an outage
+  shouldn't be thrown away either.
+
+## D26. The graph can be built without an API key (Phase 4)
+- **What:** `default_deps()` sets `llm=None` when no key is set. `invoke_structured()` raises
+  `ConfigError` for `None`. The service checks for a key before starting or resuming.
+- **Why:** the board must open, and saved analyses must be readable, without a key
+  (§10: "the app stays usable for browsing").
+
+## D27. The Add-job dialog's open state is kept in `session_state` (Phase 4)
+- **What:** the "➕ Add job" button sets a flag, and the dialog is drawn while the flag is set.
+  `on_dismiss` and a successful analysis clear it.
+- **Why:** it keeps the dialog (and the pasted text) open through any full-page rerun, and it
+  makes the dialog testable with Streamlit's `AppTest`, which doesn't emulate dialog reruns.
+
+## D28. "Not a fit" doesn't move the card (Phase 4)
+- **What:** "Not a fit" ends the workflow and shows a "🚫 not a fit" badge, but the card stays
+  in its column.
+- **Why:** "Rejected" means the employer said no. Mixing in the user's own decision would make
+  the board's numbers misleading. The user can still move the card by hand.
+- **Trade-off:** many "not a fit" cards can clutter the Saved column. A filter is a possible
+  later improvement.
