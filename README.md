@@ -1,0 +1,25 @@
+# Job Application Copilot
+
+An AI agent that helps job seekers find out whether they really fit a role, prove it with
+evidence from their own documents, write honest tailored applications, and track every
+application in one place.
+
+> 🚧 Work in progress. Phase 1 (foundation) is done. See `PROJECT_PLAN.md` for the full plan and
+> `docs/phase-notes/` for what each phase added.
+
+## Quick start
+```bash
+uv sync                          # create .venv and install dependencies
+# put your OPENROUTER_API_KEY in .env (create it from .env.example if missing)
+uv run streamlit run app/main.py
+```
+
+## Development
+```bash
+uv run ruff check .              # lint
+uv run pytest                    # unit tests (no network)
+```
+
+## Privacy
+All data is stored locally in `data/runtime/` (gitignored). Text you analyse is sent to OpenRouter,
+which forwards it to the model provider (and to Tavily for company research, once that's added).
