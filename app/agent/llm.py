@@ -1,13 +1,36 @@
 # What: `get_llm()` and `get_embeddings()`, the factories for the chat and embedding models
-#       (both served by OpenRouter).
+#       (both served by OpenRouter), and `invoke_structured()`, the one way nodes call the LLM
+#       when they need data back.
 # Why: every graph node and the copilot get their model from here, so the model name,
-#      temperature and max tokens come from settings (or the dev settings page) in one place.
-# Used by: app/rag/ingest.py (embeddings), later the graph nodes, copilot graph and guards.
+#      temperature and max tokens come from settings in one place. `invoke_structured` adds the
+#      error handling from PROJECT_PLAN.md §10: retries for busy servers and one retry for
+#      answers that don't match the Pydantic schema.
+# Used by: app/rag/ingest.py (embeddings), app/agent/nodes/*.py, app/agent/application_graph.py.
 
+from typing import Any, TypeVar
+
+import openai
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pydantic import BaseModel
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from app.agent.prompts import structured_retry_message
 from app.config import Settings, get_settings
-from app.utils.errors import ConfigError
+from app.utils.errors import ConfigError, LLMServiceError, StructuredOutputError
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
+T = TypeVar("T", bound=BaseModel)
+
+# Errors worth retrying: the request may work a few seconds later.
+_TRANSIENT_ERRORS = (
+    openai.APIConnectionError,
+    openai.APITimeoutError,
+    openai.RateLimitError,
+    openai.InternalServerError,
+)
 
 
 def get_llm(
@@ -72,3 +95,61 @@ def get_embeddings(settings: Settings | None = None) -> OpenAIEmbeddings:
         check_embedding_ctx_length=False,
         max_retries=2,
     )
+
+
+@retry(
+    retry=retry_if_exception_type(_TRANSIENT_ERRORS),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),  # 1s, 2s, then give up
+    reraise=True,
+)
+def _invoke_with_retry(runnable: Any, messages: list[BaseMessage]) -> dict[str, Any]:
+    return runnable.invoke(messages)
+
+
+def invoke_structured(llm: BaseChatModel, schema: type[T], messages: list[BaseMessage]) -> T:
+    """Call the LLM and get back an instance of `schema` (structured output).
+
+    Busy or unreachable servers are retried 3 times with growing waits. If the answer doesn't
+    match the schema, the model gets one more try with the validation error added.
+
+    Args:
+        llm: the chat model (from `get_llm()`, or a fake in tests).
+        schema: the Pydantic model the answer must match.
+        messages: the prompt, built by a helper in app/agent/prompts.py.
+
+    Returns:
+        The parsed answer.
+
+    Raises:
+        LLMServiceError: the service stayed busy or unreachable.
+        ConfigError: the API key was rejected.
+        StructuredOutputError: the answer still didn't match the schema after the retry.
+    """
+    structured = llm.with_structured_output(schema, include_raw=True)
+    attempt_messages = list(messages)
+    for attempt in (1, 2):
+        try:
+            result = _invoke_with_retry(structured, attempt_messages)
+        except openai.AuthenticationError as exc:
+            raise ConfigError(
+                "OpenRouter rejected the API key",
+                user_message="OpenRouter rejected the API key. Check OPENROUTER_API_KEY in .env.",
+            ) from exc
+        except _TRANSIENT_ERRORS as exc:
+            raise LLMServiceError(str(exc)) from exc
+
+        if result.get("parsing_error") is None and result.get("parsed") is not None:
+            return result["parsed"]
+
+        error = str(result.get("parsing_error") or "empty answer")
+        logger.warning(
+            "Structured output failed for %s (attempt %d): %s | raw=%r",
+            schema.__name__,
+            attempt,
+            error,
+            result.get("raw"),
+        )
+        attempt_messages = [*messages, structured_retry_message(error)]
+
+    raise StructuredOutputError(f"{schema.__name__} did not validate after a retry")

@@ -2,40 +2,68 @@
 
 One line per term, in alphabetical order. Added to after every phase.
 
+- **Agentic RAG**: RAG where the agent grades its own search results and searches again with new words if nothing relevant was found.
 - **AppTest**: Streamlit's tool for running an app in a test without a browser.
+- **Blocking red flag**: a red flag that makes the job unrealistic (e.g. a required language you don't speak); it caps the fit score at 40.
+- **CEFR level**: the European scale for language skill: A1, A2 (basic), B1, B2 (independent), C1, C2 (proficient).
+- **Checkpointer**: LangGraph's short-term memory; saves the graph state after every step under a `thread_id`, so a run can pause and resume.
 - **Chroma**: a vector database that runs inside our app and saves to `data/runtime/chroma/`; no server needed.
 - **Chunk overlap**: characters shared by neighbouring chunks (80 here) so a sentence on the border isn't cut in half.
 - **Chunk**: a small piece of a document (about 500 characters here) that is embedded and searched on its own.
+- **`Command(resume=...)`**: how we continue a paused graph and hand it the user's answer.
+- **Conditional edge**: a graph edge that picks the next node with a function, e.g. "rewrite queries or assess fit?".
 - **Cosine similarity**: a measure of how similar two vectors are, based on the angle between them; we turn it into a 0–1 relevance score.
+- **Delimiters**: tags like `<job_posting>` around outside text, so the LLM can tell data from instructions.
+- **Dependency injection**: giving a function the services it uses (LLM, search) as arguments instead of importing them, so tests can pass fakes.
+- **Edge**: a connection in a graph: "after node A, run node B".
 - **Embedding**: a list of numbers (1,536 here) that represents the meaning of a text; similar texts get similar numbers.
 - **Engine (SQLAlchemy)**: the object that knows how to connect to the database; created once and reused.
 - **Entry point**: the file you start the app with; here `app/main.py`.
 - **`.env.example`**: a committed copy of `.env` with empty values, so others know which settings exist without seeing your secrets.
 - **`.env` file**: a local text file with secret settings (like API keys) that is never committed to git.
 - **Evidence**: our object for one search hit: chunk id, file name, a snippet of up to 300 characters, and a relevance score.
+- **Few-shot prompting**: putting a worked example in the prompt so the model copies the pattern.
+- **Fit score**: 0–100, computed in Python: must = 3, nice = 1; met = 1, partial = 0.5, missing = 0; capped at 40 by a blocking red flag.
 - **Fixture (pytest)**: setup code that gives a test something it needs, such as an empty database.
+- **Grading (RAG)**: an LLM check of whether a retrieved chunk really supports a requirement.
+- **Grounding**: making the model base its answers only on given evidence, and checking that it cites it.
+- **Human-in-the-loop (HITL)**: the agent stops and lets a person review or decide before it continues.
 - **In-memory database**: a SQLite database that lives only in RAM and disappears after the test; it keeps tests fast and isolated.
 - **Ingest**: the process of loading, chunking, embedding and storing a document.
+- **`interrupt()`**: the LangGraph function that pauses a graph inside a node and sends a payload to the UI.
 - **Knowledge base**: all the user's documents in the vector store; the only source of facts about the user.
+- **LangGraph**: a library for building LLM apps as graphs of steps with shared state, loops and pauses.
 - **Lint / linter (ruff)**: a tool that checks code for mistakes and style problems without running it.
 - **Long-term memory**: facts about the user that last across all chats and jobs; stored in the LangGraph Store.
 - **Metadata**: extra labels saved with each chunk (`doc_name`, `doc_type`, `chunk_id`), used for citations and filters.
 - **Namespace**: a folder-like path in the Store, e.g. `("local", "profile")`: user id, then kind of memory.
+- **Node**: one step in a LangGraph graph: a function that reads the state and returns updates.
 - **Onboarding wizard**: the 3-step first-run setup: profile, documents, preferences.
 - **OpenRouter**: a service that forwards requests in the OpenAI API format to many model providers (OpenAI, Anthropic, Google, ...) with one key.
 - **ORM (Object-Relational Mapper)**: a library that lets you work with database rows as Python objects instead of writing SQL by hand. We use SQLModel.
+- **Prompt injection**: text that tries to give an LLM new instructions, e.g. "ignore all previous instructions" inside a job posting.
 - **pydantic-settings**: a library that reads settings from environment variables and `.env` and checks their types.
+- **Query rewriting**: asking the LLM for different search words when the first search found nothing.
 - **RAG (Retrieval-Augmented Generation)**: search the user's documents first, then give the best pieces to the LLM, so it answers from facts.
+- **Red flag**: a practical blocker found by comparing the job with the profile: language, visa, seniority, location or deal-breaker.
+- **Reducer**: a rule that says how LangGraph merges a node's update into the state, e.g. append to a list instead of replacing it.
 - **Repository (repo) layer**: the module with all database functions (`app/db/repo.py`); other code calls it instead of writing queries.
+- **Requirement**: one thing the job asks for, with an id (R1…), a category and an importance (must / nice).
 - **`SecretStr`**: a Pydantic type that hides a secret's value when printed or logged.
 - **Session (database)**: one unit of work with the database; changes are saved together on `commit`.
 - **SQL injection**: an attack where user input is run as SQL; the ORM prevents it by sending values separately from the query.
 - **SQLModel**: an ORM that combines Pydantic models and SQLAlchemy tables in one class.
+- **SSRF (Server-Side Request Forgery)**: tricking a server into fetching an internal address; blocked by `url_guard`.
 - **`st.cache_resource`**: a Streamlit decorator that runs a function once per server process and reuses the result.
 - **`st.navigation`**: Streamlit's way to define a multipage app and its sidebar menu in code.
+- **State (LangGraph)**: the shared dictionary all nodes read and update; ours is `ApplicationState`.
 - **Store (LangGraph)**: LangGraph's key-value storage for long-term memory, organised by namespaces; ours is a SQLite file.
 - **Streamlit rerun**: Streamlit runs the whole page script again on every click; anything that should happen once must be cached.
+- **Structured output**: making the LLM answer in a fixed Pydantic format instead of free text.
+- **tenacity**: a Python library for retrying a call with growing waits (we use it for busy servers).
 - **Text splitter**: code that cuts text into chunks, trying paragraph breaks first, then sentences, then words (`RecursiveCharacterTextSplitter`).
 - **thread_id**: the name of one saved conversation or workflow run in LangGraph; each job gets `job-<id>`.
+- **trafilatura**: a library that pulls the main text out of a web page, without menus and ads.
 - **uv**: a fast Python package and project manager; `uv sync` installs everything from `pyproject.toml`.
 - **Vector store**: a database that stores embeddings and finds the ones closest to a query.
+- **Workflow (vs. agent)**: fixed steps in an order set by code; an agent lets the LLM pick the next step.

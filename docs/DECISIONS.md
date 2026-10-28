@@ -101,3 +101,63 @@ considered. Newest entries at the bottom.
   wizard's logic: upload limits, ingest plus `Document` row, demo persona, summary.
 - **Why:** rule 3 of the plan (no business logic in Streamlit files). It also makes the upload
   rules testable without a browser.
+
+## D14. Graph nodes get their services through `GraphDeps` (Phase 3)
+- **What:** `app/agent/deps.py` → `GraphDeps` holds the LLM, search, profile loader, URL fetcher
+  and database writer. The graph receives it once (`partial(node, deps=deps)`).
+- **Why:** tests pass a scripted fake LLM and fake search, so the whole graph runs offline in
+  about a second (`tests/test_application_graph.py`).
+- **Alternative:** nodes import `get_llm()` directly and tests monkeypatch it. That's less code
+  but fragile, and hides which services a node uses.
+
+## D15. Language requirements are structured; red flags are objects (Phase 3)
+- **What:** `JobPosting.language_requirements` is a list of `LanguageRequirement(language,
+  level, required)`, not plain strings. `FitReport.red_flags` is a list of
+  `RedFlag(kind, message, blocking)`, not strings. This changes §5.1 of the plan.
+- **Why:** the "blocking flag caps the score at 40" rule needs to know which flags block, and
+  comparing "German C1" with the profile's "German A2" must not parse LLM text with regex
+  (rule 4). The LLM fills the structured fields; Python compares the levels.
+
+## D16. A "met" without a real citation is downgraded (Phase 3)
+- **What:** in `assess_fit`, the LLM must list `supporting_chunk_ids`. Ids we never gave it are
+  ignored. A "met" or "partial" with no valid id becomes "missing" ("Downgraded: no evidence").
+  The profile is offered as one extra evidence item (`[profile]`) for things like languages.
+- **Why:** this is the main guard against inventing experience at the analysis stage.
+- **Trade-off:** a real skill that only appears in the user's head shows as missing until they
+  use "Add context". That's intentional: honest by default.
+
+## D17. The RAG retry loop is two graph nodes, not a loop inside one node (Phase 3)
+- **What:** `retrieve_evidence` ⇄ `rewrite_queries` with a conditional edge and a counter
+  (`rag_iterations`, max 2).
+- **Why:** the agentic decision is visible in the graph diagram, in LangSmith traces and in
+  `stream()` progress.
+- **Alternative:** a `while` loop inside one node is simpler, but invisible.
+
+## D18. Batched planning and grading (Phase 3)
+- **What:** one LLM call plans queries for all requirements, and one call grades all
+  (requirement, chunk) pairs.
+- **Why:** 15 requirements × 4 chunks graded one by one would be 60 calls per job. Batched, a
+  typical job needs 5–8 calls (about $0.003 with `gpt-4o-mini`).
+- **Trade-off:** one long grading prompt. If a model skips a pair, that chunk is simply not used.
+
+## D19. The fit score rounds half up (Phase 3)
+- **What:** `int(x + 0.5)` instead of Python's `round()`.
+- **Why:** `round(62.5)` is 62 ("banker's rounding"), which looks like a bug when explaining the
+  formula. A unit test caught it.
+
+## D20. Prompt-injection phrases are flagged, not blocked (Phase 3)
+- **What:** `check_job_text` adds a warning but lets the analysis run.
+- **Why:** real postings can contain words like "system" or "instructions". Blocking would
+  annoy users, and the real defence is structural (delimiters, Python score, HITL). Phase 7
+  adds the LLM topic classifier for the chat.
+
+## D21. The checkpointer only loads our own types (Phase 3)
+- **What:** `make_checkpointer()` passes `JsonPlusSerializer(allowed_msgpack_modules=
+  CHECKPOINT_TYPES)`.
+- **Why:** by default LangGraph can rebuild any Python class named in a checkpoint file. With an
+  allowlist, a tampered `checkpoints.db` can't make the app create unexpected objects.
+
+## D22. "Continue" ends the run for now (Phase 3)
+- **What:** after fit review, both "continue" and "stop" go to `save_to_tracker` → END.
+- **Why:** Phase 5 adds `plan_claims`; then "continue" will route there. Saving the analysis
+  either way means the board card gets its score.

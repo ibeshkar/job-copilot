@@ -1,13 +1,65 @@
-# What: Pydantic models for data that flows through the agent (PROJECT_PLAN.md §5.1).
+# What: Pydantic models for data that flows through the agent (PROJECT_PLAN.md §5.1), the
+#       smaller "LLM output" models each prompt must return, and the graph state.
 # Why: LLM answers must come back as typed objects (structured output), never as free text we
 #      parse with regex. Shared models also give the UI, the graphs and the tests one vocabulary.
-# Used by: app/rag/retriever.py (Evidence), app/memory/store.py (StyleRule); Phase 3 adds the
-#          job, requirement and fit models plus the graph state.
+# Used by: app/agent/nodes/*, app/agent/application_graph.py, app/rag/retriever.py,
+#          app/memory/store.py, and later the UI pages.
 
+import operator
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, Field
+
+# ---------------------------------------------------------------- domain models (§5.1)
+
+CefrLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2", "native", "unknown"]
+
+
+class LanguageRequirement(BaseModel):
+    """One language the job asks for, e.g. German at C1, required."""
+
+    language: str = Field(description="Language name in English, e.g. 'German'")
+    level: CefrLevel = Field(
+        description="CEFR level. Map words: basic=A2, good=B2, fluent/business fluent=C1, "
+        "native/mother tongue=native. Use 'unknown' if no level is given."
+    )
+    required: bool = Field(description="True if the posting requires it, False if 'a plus'")
+
+    def __str__(self) -> str:
+        level = "" if self.level == "unknown" else f" {self.level}"
+        return f"{self.language}{level}{'' if self.required else ' (nice to have)'}"
+
+
+class JobPostingExtraction(BaseModel):
+    """What the LLM extracts from a posting. Code adds the raw text and URL afterwards."""
+
+    title: str
+    company: str
+    location: str | None
+    remote_policy: Literal["onsite", "hybrid", "remote", "unknown"]
+    seniority: Literal["intern", "junior", "mid", "senior", "lead", "unknown"]
+    language_requirements: list[LanguageRequirement]
+    visa_sponsorship: Literal["yes", "no", "unknown"]
+    salary_range: str | None
+    summary: str = Field(description="2-3 sentences: what the team does and what the role is")
+    is_job_posting: bool = Field(description="False if the text is clearly not a job posting")
+
+
+class JobPosting(JobPostingExtraction):
+    """A structured job posting, as stored in the graph state and the `Job.posting_json` column."""
+
+    raw_text: str
+    source_url: str | None = None
+
+
+class Requirement(BaseModel):
+    """One thing the employer asks for, e.g. "3+ years Python" (must)."""
+
+    id: str
+    text: str
+    category: Literal["skill", "experience", "education", "language", "soft_skill", "other"]
+    importance: Literal["must", "nice"]
 
 
 class Evidence(BaseModel):
@@ -19,9 +71,166 @@ class Evidence(BaseModel):
     relevance: float = Field(ge=0.0, le=1.0, description="0 = unrelated, 1 = exact match")
 
 
+class RequirementMatch(BaseModel):
+    """How well the user meets one requirement, with the evidence for it."""
+
+    requirement_id: str
+    status: Literal["met", "partial", "missing"]
+    evidence: list[Evidence]
+    explanation: str
+    honest_positioning: str | None
+
+
+class RedFlag(BaseModel):
+    """A practical blocker found by comparing the job with the profile (checked in Python)."""
+
+    kind: Literal["language", "visa", "seniority", "location", "deal_breaker"]
+    message: str
+    blocking: bool  # True caps the fit score at 40 (§5.2)
+
+
+class FitReport(BaseModel):
+    """The result of the fit analysis, shown on the fit card."""
+
+    matches: list[RequirementMatch]
+    score: int  # 0..100, computed in Python by app/agent/nodes/fit.py → compute_fit_score
+    red_flags: list[RedFlag]
+    strengths_summary: str
+    questions_to_ask_employer: list[str]
+
+
+class Claim(BaseModel):
+    """A statement about the candidate that a draft may use (Phase 5)."""
+
+    id: str
+    text: str
+    evidence_chunk_ids: list[str]
+    supported: bool
+    user_decision: Literal["pending", "approved", "edited", "removed"] = "pending"
+
+
+class Drafts(BaseModel):
+    """Generated CV bullets and cover letter (Phase 5)."""
+
+    cv_bullets: list[str]
+    cover_letter: str
+    used_claim_ids: list[str]
+
+
 class StyleRule(BaseModel):
     """A writing preference the app learned or the user stated, e.g. "Avoid 'passionate'"."""
 
     rule: str
     source: Literal["edit_diff", "explicit", "rating"]
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+# ---------------------------------------------------------------- LLM output models
+# Each prompt in app/agent/prompts.py returns exactly one of these. They have no default
+# values on purpose: OpenAI's strict JSON-schema mode requires every field to be filled.
+
+
+class ExtractedRequirement(BaseModel):
+    text: str = Field(description="Short, self-contained requirement, e.g. '3+ years of Python'")
+    category: Literal["skill", "experience", "education", "language", "soft_skill", "other"]
+    importance: Literal["must", "nice"]
+
+
+class RequirementList(BaseModel):
+    requirements: list[ExtractedRequirement]
+
+
+class SearchQuery(BaseModel):
+    requirement_id: str
+    query: str = Field(description="What to search for in the candidate's documents")
+
+
+class SearchQueries(BaseModel):
+    queries: list[SearchQuery]
+
+
+class ChunkGrade(BaseModel):
+    requirement_id: str
+    chunk_id: str
+    relevant: bool = Field(description="Does this chunk show the candidate has (part of) it?")
+    score: float = Field(ge=0.0, le=1.0, description="How strongly it supports it, 0..1")
+
+
+class GradeList(BaseModel):
+    grades: list[ChunkGrade]
+
+
+class MatchClassification(BaseModel):
+    requirement_id: str
+    status: Literal["met", "partial", "missing"]
+    supporting_chunk_ids: list[str] = Field(
+        description="Ids of the evidence chunks that justify the status. Empty if missing."
+    )
+    explanation: str = Field(description="One sentence")
+    honest_positioning: str | None = Field(
+        description="For partial/missing: one honest sentence on how to address the gap. "
+        "Null when met."
+    )
+
+
+class FitAssessment(BaseModel):
+    matches: list[MatchClassification]
+    strengths_summary: str = Field(description="2-3 sentences, grounded in the evidence")
+    questions_to_ask_employer: list[str] = Field(description="2-4 questions")
+    deal_breaker_hits: list[str] = Field(
+        description="Which of the candidate's deal-breakers this job hits. Empty if none."
+    )
+
+
+# ---------------------------------------------------------------- human-in-the-loop answers
+
+
+class FitReviewDecision(BaseModel):
+    """What the user chose on the fit card; the value passed to `Command(resume=...)`."""
+
+    action: Literal["continue", "stop", "add_context"]
+    text: str | None = None  # the extra context, for "add_context"
+
+
+# ---------------------------------------------------------------- graph state
+
+
+class ApplicationState(TypedDict, total=False):
+    """Everything the application workflow graph knows about one job (one thread).
+
+    The checkpointer saves this after every node, so the workflow can pause for the user and
+    continue later, even after a restart.
+    """
+
+    job_id: int | None
+    raw_input: str  # what the user pasted: a URL or the job text
+    job: JobPosting | None
+    requirements: list[Requirement]
+    search_queries: dict[str, str]  # requirement id → query still to run
+    evidence: dict[str, list[Evidence]]  # requirement id → relevant chunks (graded)
+    fit: FitReport | None
+    claims: list[Claim]
+    drafts: Drafts | None
+    user_edits: Drafts | None
+    extra_context: str | None  # notes the user added at fit review ("I also used Airflow")
+    rag_iterations: int  # how many times queries were rewritten (max 2)
+    review_action: str | None  # the user's choice at fit review
+    # `operator.add` is a reducer: when a node returns {"warnings": [...]}, LangGraph appends to
+    # the list instead of replacing it, so warnings from different nodes are all kept.
+    warnings: Annotated[list[str], operator.add]  # shown to the user, e.g. "possible injection"
+    errors: Annotated[list[str], operator.add]  # non-empty means the workflow stopped early
+
+
+# Types the checkpointer may turn back into Python objects when it loads a saved state.
+# Anything else in a checkpoint is refused (see application_graph.make_checkpointer).
+CHECKPOINT_TYPES: list[type] = [
+    LanguageRequirement,
+    JobPosting,
+    Requirement,
+    Evidence,
+    RequirementMatch,
+    RedFlag,
+    FitReport,
+    Claim,
+    Drafts,
+]

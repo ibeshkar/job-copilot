@@ -594,10 +594,10 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** a new user completes onboarding and sees the chunk count; the profile persists after a restart.
 
 ### Phase 3: Application workflow graph, analysis half (3h)
-- [ ] `state.py` models (section 5.1)
-- [ ] Nodes: `input_guard`, `ingest_job` (+ `url_guard`, trafilatura), `extract_requirements` (few-shot), `retrieve_evidence` (agentic RAG with grade + rewrite), `assess_fit` (LLM classify + deterministic score + red flags vs. profile)
-- [ ] `interrupt` for `fit_review`; compile with `SqliteSaver`
-- [ ] Tests: fit-score function (pure), url_guard blocks `http://127.0.0.1`, graph runs end-to-end with a mocked LLM
+- [x] `state.py` models (section 5.1)
+- [x] Nodes: `input_guard`, `ingest_job` (+ `url_guard`, trafilatura), `extract_requirements` (few-shot), `retrieve_evidence` (agentic RAG with grade + rewrite), `assess_fit` (LLM classify + deterministic score + red flags vs. profile)
+- [x] `interrupt` for `fit_review`; compile with `SqliteSaver`
+- [x] Tests: fit-score function (pure), url_guard blocks `http://127.0.0.1`, graph runs end-to-end with a mocked LLM
 - **Done when:** running the graph from a script on the 3 sample jobs gives sensible scores (good > partial > poor) and pauses at fit review.
 
 ### Phase 4: Board + Job workspace, Fit tab (2.5h)
