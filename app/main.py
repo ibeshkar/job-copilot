@@ -7,6 +7,7 @@ import streamlit as st
 
 from app.config import get_settings
 from app.db.repo import init_db
+from app.memory.store import get_profile
 from app.utils.logging import configure_logging, get_logger
 
 st.set_page_config(page_title="Job Application Copilot", page_icon="🧭", layout="wide")
@@ -22,14 +23,17 @@ def _startup() -> None:
 
 _startup()
 settings = get_settings()
+profile = get_profile()
+# New users land on the wizard; once a profile exists the board is the home page.
+onboarded = profile is not None
 
 # Paths are relative to this file.
 pages = {
     "Start": [
-        st.Page("ui/pages/0_onboarding.py", title="Get started", icon="👋"),
+        st.Page("ui/pages/0_onboarding.py", title="Get started", icon="👋", default=not onboarded),
     ],
     "Applications": [
-        st.Page("ui/pages/1_board.py", title="Board", icon="🗂️", default=True),
+        st.Page("ui/pages/1_board.py", title="Board", icon="🗂️", default=onboarded),
         st.Page("ui/pages/2_job_workspace.py", title="Job workspace", icon="🧭"),
         st.Page("ui/pages/3_copilot_chat.py", title="Copilot chat", icon="💬"),
     ],
@@ -43,6 +47,8 @@ nav = st.navigation(pages)
 
 with st.sidebar:
     st.caption("Job Application Copilot")
+    if profile:
+        st.markdown(f"👤 **{profile.name}**")
     st.caption(f"Model: `{settings.default_model}`")
 
 # The app stays usable for browsing without a key; only AI features need it (PROJECT_PLAN.md §10).

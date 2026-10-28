@@ -582,15 +582,15 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** `streamlit run app/main.py` opens with navigation; `pytest` passes.
 
 ### Phase 2: Knowledge base and memory (2h)
-- [ ] `rag/ingest.py`:
+- [x] `rag/ingest.py`:
   - Load PDF/DOCX/MD/TXT
   - Chunk with `RecursiveCharacterTextSplitter` (≈500 chars, 80 overlap)
   - Metadata: `doc_name`, `doc_type`, `chunk_id`
   - Persistent Chroma; re-uploading the same file replaces its chunks
-- [ ] `rag/retriever.py` → `list[Evidence]`
-- [ ] `memory/store.py`: profile, preferences, facts and style-rule CRUD on the LangGraph Store
-- [ ] Onboarding wizard page (3 steps) + "Use demo persona" button
-- [ ] Tests: ingest the sample docs, retrieval returns the expected doc for "RAG chatbot"
+- [x] `rag/retriever.py` → `list[Evidence]`
+- [x] `memory/store.py`: profile, preferences, facts and style-rule CRUD on the LangGraph Store
+- [x] Onboarding wizard page (3 steps) + "Use demo persona" button
+- [x] Tests: ingest the sample docs, retrieval returns the expected doc for "RAG chatbot"
 - **Done when:** a new user completes onboarding and sees the chunk count; the profile persists after a restart.
 
 ### Phase 3: Application workflow graph, analysis half (3h)

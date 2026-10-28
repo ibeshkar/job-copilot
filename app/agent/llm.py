@@ -1,9 +1,10 @@
-# What: `get_llm()`, the single factory that creates the chat model (served by OpenRouter).
+# What: `get_llm()` and `get_embeddings()`, the factories for the chat and embedding models
+#       (both served by OpenRouter).
 # Why: every graph node and the copilot get their model from here, so the model name,
 #      temperature and max tokens come from settings (or the dev settings page) in one place.
-# Used by: later the graph nodes in app/agent/nodes/, app/agent/copilot_graph.py and guards.
+# Used by: app/rag/ingest.py (embeddings), later the graph nodes, copilot graph and guards.
 
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.config import Settings, get_settings
 from app.utils.errors import ConfigError
@@ -49,4 +50,25 @@ def get_llm(
         max_retries=1,
         # Return token counts in the stream too, needed for cost tracking.
         stream_usage=True,
+    )
+
+
+def get_embeddings(settings: Settings | None = None) -> OpenAIEmbeddings:
+    """Create the embedding model that turns text into vectors for the knowledge base.
+
+    Raises:
+        ConfigError: no OpenRouter API key is set.
+    """
+    settings = settings or get_settings()
+    if not settings.has_llm_key:
+        raise ConfigError("OPENROUTER_API_KEY is not set")
+
+    return OpenAIEmbeddings(
+        model=settings.embedding_model,
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
+        # The length check uses OpenAI's tokenizer, which doesn't know OpenRouter model ids
+        # like "openai/text-embedding-3-small". Our chunks are ~500 chars, far below the limit.
+        check_embedding_ctx_length=False,
+        max_retries=2,
     )

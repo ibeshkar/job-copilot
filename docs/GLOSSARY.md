@@ -2,24 +2,40 @@
 
 One line per term, in alphabetical order. Added to after every phase.
 
-- **`.env` file**: a local text file with secret settings (like API keys) that is never committed to git.
 - **AppTest**: Streamlit's tool for running an app in a test without a browser.
-- **`.env.example`**: a committed copy of `.env` with empty values, so others know which settings exist without seeing your secrets.
+- **Chroma**: a vector database that runs inside our app and saves to `data/runtime/chroma/`; no server needed.
+- **Chunk overlap**: characters shared by neighbouring chunks (80 here) so a sentence on the border isn't cut in half.
+- **Chunk**: a small piece of a document (about 500 characters here) that is embedded and searched on its own.
+- **Cosine similarity**: a measure of how similar two vectors are, based on the angle between them; we turn it into a 0–1 relevance score.
+- **Embedding**: a list of numbers (1,536 here) that represents the meaning of a text; similar texts get similar numbers.
 - **Engine (SQLAlchemy)**: the object that knows how to connect to the database; created once and reused.
 - **Entry point**: the file you start the app with; here `app/main.py`.
+- **`.env.example`**: a committed copy of `.env` with empty values, so others know which settings exist without seeing your secrets.
+- **`.env` file**: a local text file with secret settings (like API keys) that is never committed to git.
+- **Evidence**: our object for one search hit: chunk id, file name, a snippet of up to 300 characters, and a relevance score.
 - **Fixture (pytest)**: setup code that gives a test something it needs, such as an empty database.
 - **In-memory database**: a SQLite database that lives only in RAM and disappears after the test; it keeps tests fast and isolated.
+- **Ingest**: the process of loading, chunking, embedding and storing a document.
+- **Knowledge base**: all the user's documents in the vector store; the only source of facts about the user.
 - **Lint / linter (ruff)**: a tool that checks code for mistakes and style problems without running it.
+- **Long-term memory**: facts about the user that last across all chats and jobs; stored in the LangGraph Store.
+- **Metadata**: extra labels saved with each chunk (`doc_name`, `doc_type`, `chunk_id`), used for citations and filters.
+- **Namespace**: a folder-like path in the Store, e.g. `("local", "profile")`: user id, then kind of memory.
+- **Onboarding wizard**: the 3-step first-run setup: profile, documents, preferences.
 - **OpenRouter**: a service that forwards requests in the OpenAI API format to many model providers (OpenAI, Anthropic, Google, ...) with one key.
 - **ORM (Object-Relational Mapper)**: a library that lets you work with database rows as Python objects instead of writing SQL by hand. We use SQLModel.
 - **pydantic-settings**: a library that reads settings from environment variables and `.env` and checks their types.
+- **RAG (Retrieval-Augmented Generation)**: search the user's documents first, then give the best pieces to the LLM, so it answers from facts.
 - **Repository (repo) layer**: the module with all database functions (`app/db/repo.py`); other code calls it instead of writing queries.
 - **`SecretStr`**: a Pydantic type that hides a secret's value when printed or logged.
 - **Session (database)**: one unit of work with the database; changes are saved together on `commit`.
 - **SQL injection**: an attack where user input is run as SQL; the ORM prevents it by sending values separately from the query.
 - **SQLModel**: an ORM that combines Pydantic models and SQLAlchemy tables in one class.
-- **`st.navigation`**: Streamlit's way to define a multipage app and its sidebar menu in code.
-- **Streamlit rerun**: Streamlit runs the whole page script again on every click; anything that should happen once must be cached.
 - **`st.cache_resource`**: a Streamlit decorator that runs a function once per server process and reuses the result.
+- **`st.navigation`**: Streamlit's way to define a multipage app and its sidebar menu in code.
+- **Store (LangGraph)**: LangGraph's key-value storage for long-term memory, organised by namespaces; ours is a SQLite file.
+- **Streamlit rerun**: Streamlit runs the whole page script again on every click; anything that should happen once must be cached.
+- **Text splitter**: code that cuts text into chunks, trying paragraph breaks first, then sentences, then words (`RecursiveCharacterTextSplitter`).
 - **thread_id**: the name of one saved conversation or workflow run in LangGraph; each job gets `job-<id>`.
 - **uv**: a fast Python package and project manager; `uv sync` installs everything from `pyproject.toml`.
+- **Vector store**: a database that stores embeddings and finds the ones closest to a query.

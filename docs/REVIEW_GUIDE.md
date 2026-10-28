@@ -32,6 +32,36 @@ in-memory database (`tests/conftest.py`) and never touch real data. It also give
 tracker tool (Phase 6) a safe, validated API: for example, `update_job()` rejects unknown fields
 and invalid statuses.
 
+### Memory
+**What is the difference between the checkpointer and the Store?**
+The checkpointer saves the state of one graph run (one `thread_id`), like a save game, so a
+job's workflow can pause for the user and continue later. The Store is long-term memory about
+the user across all runs: profile, preferences, confirmed facts and style rules. Ours is a
+`SqliteStore` in `app/memory/store.py`; the checkpointer comes in Phase 3.
+
+**How is long-term memory organised?**
+In namespaces: tuples like `("local", "profile")`, with the user id first. The profile and
+preferences each have one item (key `"main"`). Facts and style rules have one item per entry
+(random key), so each can be deleted on its own. "Delete all my data" removes everything under
+`("local",)`.
+
+### RAG
+**How do documents get into the knowledge base?**
+`app/rag/ingest.py` → `ingest_file()`: extract the text (pypdf, python-docx or plain text),
+split it into ~500-character chunks with 80 characters of overlap, embed each chunk with
+`openai/text-embedding-3-small` through OpenRouter, and store it in Chroma with metadata
+(`doc_name`, `doc_type`, `chunk_id`). Re-uploading a file deletes its old chunks first.
+
+**Why RAG instead of putting all the documents in the prompt?**
+Three reasons. Cost: each call sends only a few relevant paragraphs, not every document.
+Scale: past letters and project READMEs pile up over time. Citations: each chunk has a file name
+and id, so we can show the user exactly which sentence proves a requirement.
+
+**How do you know retrieval works?**
+`tests/test_rag.py` ingests the demo persona and checks that "RAG chatbot" finds
+`project_documind_readme.md`. Offline, it uses fake keyword embeddings. The live test uses the
+real model and checks that the README is the top hit. Phase 9 adds a proper evaluation.
+
 ### Security
 **How are secrets handled?**
 They're read from `.env` by `app/config.py` → `Settings` and stored as `SecretStr`, which hides
@@ -41,6 +71,11 @@ committed.
 **How is SQL injection prevented?**
 All queries use the SQLModel ORM (`app/db/repo.py`), which sends values as bound parameters.
 No query is built by joining strings.
+
+**What uploads are allowed?**
+Only PDF, DOCX, TXT and MD, up to 5 MB each and 10 files at once. Files without readable text
+(for example scanned images) are rejected with a clear message. One bad file doesn't stop the
+others (`app/services/onboarding.py` → `add_documents()`).
 
 ### Error handling
 **What does the user see when something fails?**
@@ -59,5 +94,10 @@ goes through `get_llm()`, which raises `ConfigError` with a clear fix.
 | LLM provider | OpenRouter (OpenAI-compatible API) |
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
-| Tests | 17 (run with `uv run pytest`) |
+| Tests | 40 offline + 1 live (`uv run pytest`, `uv run pytest -m live`) |
+| Chunking | 500 characters, 80 overlap, `RecursiveCharacterTextSplitter` |
+| Embeddings | `openai/text-embedding-3-small` via OpenRouter (1,536 dimensions) |
+| Vector store | Chroma, cosine distance, `data/runtime/chroma/` |
+| Long-term memory | LangGraph `SqliteStore`, `data/runtime/memory.db` |
+| Demo knowledge base | 4 documents, 21 chunks |
 | Sample jobs | 3: good, partial and poor fit (German C1) |

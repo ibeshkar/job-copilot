@@ -48,6 +48,12 @@ class GuardBlockedError(AppError):
     user_message = "This input can't be processed. Please check it and try again."
 
 
+class DocumentError(AppError):
+    """An uploaded document is not allowed (type, size) or has no readable text."""
+
+    user_message = "This document can't be added. Use PDF, DOCX, TXT or MD files up to 5 MB."
+
+
 class NotFoundError(AppError):
     """A database record (job, draft, ...) does not exist."""
 

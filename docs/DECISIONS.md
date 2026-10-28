@@ -66,3 +66,38 @@ considered. Newest entries at the bottom.
   variable names with empty values, and it is committed.
 - **Why:** anyone who clones the repo (a reviewer, or you on a new laptop) needs to know which
   variables exist, but must never see your keys. The example file documents them safely.
+
+## D9. Memory namespaces start with the user id (Phase 2)
+- **What:** namespaces are `(user_id, kind)`, for example `("local", "profile")` and
+  `("local", "style_rules")`. The plan wrote `("user", "profile")`; we read "user" as a placeholder.
+- **Why:** with the user id as the first part, adding more users later is just a different id,
+  and "Delete all my data" is one prefix search: `store.search(("local",))`.
+- **Alternative:** a fixed `("user", …)` namespace. That's simpler, but every user would share it.
+
+## D10. Re-uploading a file deletes its chunks first; chunk ids are stable (Phase 2)
+- **What:** chunk ids are `<filename>#<n>`. Before adding a file, all chunks with that
+  `doc_name` are deleted.
+- **Why:** an "upsert" alone would leave old chunks behind when the new version is shorter
+  (for example, an old `cv.md#9` when the new CV has only 7 chunks).
+- **Trade-off:** two different files with the same name replace each other. That's usually what
+  the user means ("my updated CV").
+
+## D11. Document type is guessed from the file name (Phase 2)
+- **What:** `guess_doc_type()` maps names like `*cv*`, `*readme*` and `*brag*` to `cv`,
+  `project`, `brag_doc`, …, otherwise `other`.
+- **Why:** it keeps the wizard to one upload box. The type is only used to filter searches.
+- **Alternative:** a type dropdown per file (more accurate, more clicks), or an LLM classifier
+  (costs money for little gain). We may add the dropdown later.
+
+## D12. Offline fake embeddings in unit tests (Phase 2)
+- **What:** `tests/fakes.py` → `KeywordEmbeddings` hashes words into a vector. One test marked
+  `@pytest.mark.live` uses the real OpenRouter model.
+- **Why:** tests must run without a network, for free, and give the same result every time.
+- **Trade-off:** fake embeddings only match exact words (no synonyms), so the offline test is
+  looser (top 4) than the live one (top 1).
+
+## D13. A service layer for onboarding (Phase 2)
+- **What:** `app/services/onboarding.py` (not listed in the plan's folder tree) holds the
+  wizard's logic: upload limits, ingest plus `Document` row, demo persona, summary.
+- **Why:** rule 3 of the plan (no business logic in Streamlit files). It also makes the upload
+  rules testable without a browser.

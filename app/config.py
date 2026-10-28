@@ -72,6 +72,16 @@ class Settings(BaseSettings):
         return self.runtime_dir / "app.db"
 
     @property
+    def chroma_dir(self) -> Path:
+        """Folder of the persistent Chroma vector store (the knowledge base)."""
+        return self.runtime_dir / "chroma"
+
+    @property
+    def memory_db_path(self) -> Path:
+        """SQLite file for the LangGraph Store (long-term memory: profile, preferences, ...)."""
+        return self.runtime_dir / "memory.db"
+
+    @property
     def app_db_url(self) -> str:
         """SQLAlchemy URL for the app database."""
         return f"sqlite:///{self.app_db_path}"
