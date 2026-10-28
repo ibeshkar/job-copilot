@@ -67,6 +67,16 @@ class Settings(BaseSettings):
         return self.openrouter_api_key is not None
 
     @property
+    def has_tavily_key(self) -> bool:
+        """True when company research (Tavily) can run."""
+        return self.tavily_api_key is not None
+
+    @property
+    def has_adzuna_keys(self) -> bool:
+        """True when job search (Adzuna) can run; it needs both an app id and a key."""
+        return self.adzuna_app_id is not None and self.adzuna_app_key is not None
+
+    @property
     def app_db_path(self) -> Path:
         """SQLite file for the tracker tables (jobs, drafts, usage, ...)."""
         return self.runtime_dir / "app.db"

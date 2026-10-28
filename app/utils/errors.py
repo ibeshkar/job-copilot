@@ -1,7 +1,7 @@
 # What: the app's own exception types, each carrying a friendly message for the user.
 # Why: the UI must never show a stack trace (PROJECT_PLAN.md §10). Code raises these, and the
 #      UI shows `user_message` while the technical details go to the log.
-# Used by: app/agent/llm.py, app/db/repo.py, and later the graph nodes, tools, guards and UI pages.
+# Used by: app/agent/llm.py, app/db/repo.py, the graph nodes, app/tools/*, guards and UI pages.
 
 
 class AppError(Exception):
@@ -52,6 +52,12 @@ class DocumentError(AppError):
     """An uploaded document is not allowed (type, size) or has no readable text."""
 
     user_message = "This document can't be added. Use PDF, DOCX, TXT or MD files up to 5 MB."
+
+
+class ExternalServiceError(AppError):
+    """An outside service (Tavily, Adzuna) is down, rejected the key or returned nothing useful."""
+
+    user_message = "That service isn't available right now. Please try again later."
 
 
 class NotFoundError(AppError):

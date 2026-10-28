@@ -615,11 +615,11 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** the full flow from adding a job to an exported DOCX works for the demo persona, and removed claims never appear in the letter.
 
 ### Phase 6: Copilot chat + tools + toggles (2.5h)
-- [ ] Implement the 5 tools + `registry.py`
-- [ ] `copilot_graph.py` (custom ReAct graph, dynamic tool binding, HITL for write tools)
-- [ ] Chat page: streaming, tool-call expanders, approval card, starter prompts, "New chat"
-- [ ] Sidebar tool toggles (disabled with a hint if API keys are missing)
-- [ ] Company tab in the workspace uses `research_company`
+- [x] Implement the 5 tools + `registry.py`
+- [x] `copilot_graph.py` (custom ReAct graph, dynamic tool binding, HITL for write tools)
+- [x] Chat page: streaming, tool-call expanders, approval card, starter prompts, "New chat"
+- [x] Sidebar tool toggles (disabled with a hint if API keys are missing)
+- [x] Company tab in the workspace uses `research_company`
 - **Done when:** "Research the company for my newest job and move it to Applied" uses 2 tools and asks for approval before the tracker update.
 
 ### Phase 7: Hardening, usage, observability, dev settings (1.5h)

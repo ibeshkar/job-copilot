@@ -2,7 +2,8 @@
 #       offline fake graph.
 # Why: checks the Phase 4 "done when": a job added from the UI shows its fit card, and a
 #      browser refresh (a new AppTest session with the same ?job= URL) shows it again. Phase 5
-#      adds the claim check form, the draft review and the notes.
+#      adds the claim check form, the draft review and the notes; Phase 6 the copilot chat
+#      (starter prompts, tool expanders, the approval card), tool toggles and the Company tab.
 # Used by: pytest.
 
 from pathlib import Path
@@ -172,3 +173,77 @@ def test_notes_are_saved(fake_app) -> None:
 
     card = applications.get_job_summary(job_id)
     assert (card.notes, card.next_action) == ("Recruiter: Anna", "Send CV")
+
+
+# ---------------------------------------------------------------- Phase 6: copilot chat
+
+
+def _open_chat(at: AppTest) -> AppTest:
+    at.switch_page("ui/pages/3_copilot_chat.py")
+    return at.run()
+
+
+def test_sidebar_switches_off_tools_without_keys(fake_app, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "tavily_api_key", None)
+    save_profile(Profile(name="Alex"))
+
+    at = _app().run()
+
+    company = at.sidebar.toggle(key="tool_company")
+    assert company.disabled and company.value is False
+    assert at.sidebar.toggle(key="tool_tracker").value is True
+    assert any("TAVILY_API_KEY" in c.value for c in at.sidebar.caption)
+
+
+def test_chat_starter_prompt_gets_an_answer_with_tool_expander(copilot_app) -> None:
+    from langchain_core.messages import AIMessage
+
+    from tests.copilot_fakes import calls, two_jobs
+
+    save_profile(Profile(name="Alex"))
+    two_jobs()
+    copilot_app([calls(("get_applications", {})), AIMessage("You applied to nothing yet.")])
+    at = _open_chat(_app())
+    assert not at.exception
+
+    _button(at, "Summarise my applications this week").click().run()
+
+    assert not at.exception
+    assert any(e.label == "🔧 Used: 🗂️ Read and update my tracker" for e in at.expander)
+    assert any("You applied to nothing yet." in m.value for m in at.markdown)
+
+
+def test_chat_approval_card_moves_the_job(copilot_app) -> None:
+    from tests.copilot_fakes import research_and_move_script, two_jobs
+
+    save_profile(Profile(name="Alex"))
+    _, new = two_jobs()
+    copilot_app(research_and_move_script(new))
+    at = _open_chat(_app())
+
+    at.chat_input[0].set_value("Research the company for my newest job and move it to Applied")
+    at.run()
+
+    assert not at.exception
+    assert any("move to Applied" in m.value for m in at.markdown)
+    assert at.chat_input[0].disabled  # no new message until the user decides
+    _button(at, "✅ Approve").click().run()
+
+    assert not at.exception
+    assert applications.get_job_summary(new).status == "applied"
+
+
+def test_company_tab_without_tavily_key(fake_app, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "tavily_api_key", None)
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+
+    at = _open_workspace(_app(job_id))
+
+    assert not at.exception
+    assert any("TAVILY_API_KEY" in i.value for i in at.info)
+    assert _button(at, "🔎 Research Lumen Health").disabled

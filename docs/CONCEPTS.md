@@ -106,7 +106,7 @@ decide which step comes next.
 **Analogy:** a workflow is a recipe ("chop, then fry, then season"); an agent is a chef who looks
 in the fridge and decides what to cook.
 
-| | Workflow (our application graph) | Agent (our copilot chat, Phase 6) |
+| | Workflow (our application graph) | Agent (our copilot chat) |
 |---|---|---|
 | Who picks the next step | our code (edges) | the LLM (tool calls) |
 | Good for | high-stakes, repeatable, auditable tasks | open questions |
@@ -401,3 +401,94 @@ flowchart LR
 
 **Where it is in our code:** `app/agent/application_graph.py` (wiring),
 `app/services/applications.py` → `_resume()` (one function resumes all three).
+
+---
+
+## Function calling: the full loop
+
+**One sentence:** we tell the model which tools exist (name, description, argument schema);
+instead of text it can answer "call `update_tracker` with `job_id=3`", our code runs the tool,
+and the result goes back to the model as a new message.
+
+**Analogy:** a manager (the model) with a team of specialists (the tools). The manager can't
+open the filing cabinet, but can write "Anna, please move file 3 to Applied" on a note. Anna does
+it and writes back "done". The manager reads the note and replies to the customer.
+
+**The loop, with a real message sequence** ("Move my newest job to Applied"):
+| # | Message | Who makes it |
+|---|---|---|
+| 1 | `SystemMessage` (rules, profile, date, tools) + `HumanMessage("Move my newest job to Applied.")` | `agent` node |
+| 2 | `AIMessage(tool_calls=[{"name": "get_applications", "args": {}, "id": "call_1"}])` | the LLM |
+| 3 | `ToolMessage("- id 2: Junior AI Engineer at Lumen Health \| saved …", tool_call_id="call_1")` | `ToolNode` |
+| 4 | `AIMessage(tool_calls=[{"name": "update_tracker", "args": {"job_id": 2, "status": "applied"}}])` | the LLM |
+| 5 | ✋ pause: "Job #2 (Junior AI Engineer at Lumen Health): move to Applied" → user approves | `approve` node |
+| 6 | `ToolMessage("Done. Job #2 … move to Applied")` | `ToolNode` |
+| 7 | `AIMessage("I moved Junior AI Engineer at Lumen Health to Applied.")` → END | the LLM |
+
+**The schema the model sees** (generated from our Pydantic args by `bind_tools`, shortened):
+```json
+{"type": "function", "function": {
+  "name": "update_tracker",
+  "description": "Change one job on the tracker: its status (...). The user must approve ...",
+  "parameters": {"type": "object", "required": ["job_id"], "properties": {
+    "job_id": {"type": "integer", "description": "The job id from get_applications"},
+    "status": {"anyOf": [{"enum": ["saved", "applied", "interview", "offer", "rejected"]},
+                         {"type": "null"}], "description": "New board column"},
+    "note": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "next_action": {"anyOf": [{"type": "string"}, {"type": "null"}]}}}}}
+```
+The `enum` means the model can't invent a status like "hired". If it tries, the arguments fail
+validation, and the error goes back to the model as a ToolMessage.
+
+**Where it is in our code:** `app/agent/copilot_graph.py` → `agent`, `run_tools`;
+`app/tools/tracker.py` → `update_tracker`.
+
+```python
+tools = _enabled(state, deps)                      # from the sidebar toggles
+llm = deps.llm.bind_tools(tools)                   # 1. send the schemas with the request
+response = invoke_chat(llm, [system, *recent_messages(state["messages"])])
+# 2. response.tool_calls == [{"name": "get_applications", "args": {}, "id": "call_1"}]
+...
+node = ToolNode(_enabled(state, deps), handle_tool_errors=_tool_error)
+return node.invoke(state)                          # 3. run them → ToolMessages → back to agent
+```
+
+---
+
+## The copilot: a ReAct agent with an approval step
+
+**One sentence:** the copilot loops "think → use a tool → read the result" until it can answer,
+and it stops to ask you before any tool that changes your data.
+
+**Analogy:** a research assistant with a library card and a key to your filing cabinet. They
+can look anything up on their own, but they knock on your door before moving a file.
+
+```mermaid
+flowchart LR
+    S[START] --> G[input_guard]
+    G -->|too long / empty| E[END]
+    G --> A[agent: LLM + enabled tools]
+    A -->|read tools| T[tools: ToolNode]
+    T --> A
+    A -->|update_tracker| H{{approve: interrupt}}
+    H -->|yes| T
+    H -->|no: 'declined' results| A
+    A -->|no tool calls| E
+```
+
+| Safety rail | Where |
+|---|---|
+| Only enabled tools are bound **and** can run | `agent`, `run_tools` (D39) |
+| Write tools need approval with a plain-English summary | `approve`, `describe_update()` (D40) |
+| Web results are wrapped as `<untrusted_web_content>` | `app/tools/company.py`, `job_search.py` (D42) |
+| Max 12 steps per message | `RECURSION_LIMIT` → friendly message in `services/copilot.py` |
+| Max 4,000 characters per message | `input_guard` (the topic classifier comes in Phase 7) |
+| Tool errors reach the model as friendly text | `_tool_error()` |
+
+**Why ReAct here but a workflow for applications?** A chat question can need any mix of tools
+in any order ("research the company and move it to Applied" needs three). For applications the
+order must never change, and every claim must pass the claim check. See "Workflow vs. agent".
+
+**Tests:** `tests/test_copilot_graph.py` →
+`test_research_and_move_asks_before_the_tracker_update`, `test_declined_update_changes_nothing`,
+`test_disabled_tool_is_not_run`; the live `tests/test_live_copilot.py`.

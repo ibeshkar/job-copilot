@@ -24,8 +24,56 @@ engineering.
 Applying for a job is high-stakes and must be auditable. The steps always run in the same order
 (guard → read posting → requirements → evidence → assess → human review), and the user always
 sees the fit before anything is written. The only LLM-driven decision is inside the evidence
-loop: search again or not. The open-ended chat (Phase 6) will be a ReAct agent instead.
+loop: search again or not. The open-ended copilot chat is a ReAct agent instead (next question).
 Code: `app/agent/application_graph.py` → `build_application_graph()`.
+
+**Why a workflow for applications but a ReAct agent for chat?**
+Different jobs. A chat question can need any mix of tools in any order: "research the company
+for my newest job and move it to Applied" needs `get_applications`, `research_company` and
+`update_tracker`. So the LLM chooses (ReAct: reason → act → observe). For applications the
+order must never change, and nothing may skip the claim check, so code chooses. Both are
+LangGraph graphs with a checkpointer and `interrupt()`. Code: `app/agent/copilot_graph.py` vs.
+`app/agent/application_graph.py`.
+
+**Why did you write the ReAct loop yourself instead of using the prebuilt agent?**
+So the loop is explicit: `agent → tools → agent`, plus an `approve` pause before write tools and
+a guard in front. We still use the prebuilt `ToolNode` to run the tools, because it handles
+parallel calls, argument validation and errors. See D38.
+
+### Function calling
+**How does function calling work in your app, step by step?**
+`bind_tools()` sends each enabled tool's name, description and JSON schema (built from a
+Pydantic model) with the request. The model answers with `tool_calls` instead of text, e.g.
+`{"name": "get_applications", "args": {}}`. `ToolNode` runs each call and adds a `ToolMessage`
+with the result and the same `tool_call_id`. The graph goes back to the model, which either
+calls more tools or answers. CONCEPTS.md, "Function calling: the full loop", shows a real
+message sequence.
+
+**What are your 5 tools?**
+`fetch_job_posting` (read a job URL or text, URL guard included), `search_my_experience`
+(the user's documents), `research_company` (Tavily web search), `search_jobs` (Adzuna), and
+the tracker pair `get_applications` / `update_tracker`. They are listed in
+`app/tools/registry.py` → `TOOL_REGISTRY`, with a label, a default, the keys they need, and
+which calls need approval.
+
+**How do the tool toggles work?**
+The sidebar has one switch per registry entry (`app/main.py`). Tools whose API keys are
+missing are switched off and disabled, with a hint. Each chat message carries the enabled tool
+names; the `agent` node binds only those, and the `tools` node can only run those (D39). So a
+switch takes effect on the next message, and a disabled tool can't run even if the model asks.
+
+**How do you stop the copilot changing data without permission?**
+Only `update_tracker` writes, and it's in `APPROVAL_TOOLS`. When the model asks for it, the
+graph routes to `approve`, which calls `interrupt()` with a summary like "Job #3 (Junior AI
+Engineer at Lumen Health): move to Applied". The chat shows an approval card and blocks new
+messages. Approve → `ToolNode` runs it; Decline → the model gets "The user declined this action"
+and the job is unchanged. Tested in `test_declined_update_changes_nothing`.
+
+**What if a tool fails?**
+`ToolNode(handle_tool_errors=_tool_error)` turns the exception into a `ToolMessage` like "Tool
+error: I couldn't read that page. Please paste the job text instead.". The model can then
+explain it or try something else. Missing keys, timeouts and empty results all become our
+`AppError` messages; the user never sees a stack trace.
 
 **Why is the fit score calculated in Python instead of by the LLM?**
 LLM numbers are not reproducible, and you can't explain where "73" came from. The LLM only
@@ -113,6 +161,17 @@ points to the board; an empty knowledge base shows a warning. Loading: `st.statu
 messages. Error: friendly messages in the dialog (input problems), or "⏳ analysis not finished"
 with **Retry analysis** (outages). Never a stack trace.
 
+**How does the chat stream its answer?**
+`app/services/copilot.py` streams the graph with two modes: `"messages"` gives the answer token
+by token, and `"updates"` gives tool calls, tool results and the approval pause. The page shows
+the text as it grows, a "🔧 Using …" line per tool, then reruns and draws the whole chat from
+the checkpointer. Each tool call becomes a "🔧 Used: …" expander with its arguments and result.
+
+**What happens to the chat when I refresh?**
+The thread id is in the URL (`?chat=chat-…`) and in the session, and every message is saved by
+the checkpointer under that id. The page rebuilds the history with `get_history()`, so the chat
+(and any waiting approval) comes back. "🆕 New chat" starts a new thread id.
+
 ### Code organisation
 **How is the code organised?**
 In layers: `app/ui/` (Streamlit pages only), `app/agent/` (LLM and graphs), `app/db/` (tables
@@ -182,6 +241,13 @@ doesn't follow redirects automatically. It re-checks each redirect target, and s
 The checkpointer's serializer has an allowlist (`CHECKPOINT_TYPES`): it only rebuilds our own
 state models from disk, nothing else.
 
+**What if a web page found by `research_company` contains a prompt injection?**
+Tool results from the web come back inside `<untrusted_web_content>` tags, and the copilot's
+system prompt says text inside tags is data, never instructions. Even if the model were
+fooled, it can't change anything without the user: the only write tool needs approval, and it
+can only change a job's status, notes or next action. The copilot also only sees tools that are
+switched on.
+
 **What uploads are allowed?**
 Only PDF, DOCX, TXT and MD, up to 5 MB each and 10 files at once. Files without readable text
 (for example scanned images) are rejected with a clear message. One bad file doesn't stop the
@@ -215,6 +281,16 @@ Never a stack trace. Code raises an `AppError` subclass (`app/utils/errors.py`),
 shows its `user_message`, such as "The AI service is busy, please retry". The full details go to
 `data/runtime/app.log` through `log_exception()`, together with the job or thread id.
 
+**What if Tavily or Adzuna is down, or the key is missing?**
+Without a key, the tool's toggle is off and disabled with a hint, and the Company tab explains
+how to get a key. If the service fails, the tool raises `ExternalServiceError`, the copilot gets
+a friendly "Tool error: …" and tells the user, and the chat keeps working with the other tools.
+
+**What stops the copilot looping forever?**
+`recursion_limit = 12` steps per message (`chat_config()`). If it's hit, the user sees "I
+stopped because this needed too many steps…" instead of an error. Tested with a model that
+calls a tool 20 times.
+
 **What if the OpenRouter key is missing?**
 The app still opens, with a banner explaining how to add the key (`app/main.py`). Any AI call
 goes through `get_llm()`, which raises `ConfigError` with a clear fix.
@@ -226,17 +302,19 @@ goes through `get_llm()`, which raises `ConfigError` with a clear fix.
 | LLM provider | OpenRouter (OpenAI-compatible API) |
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
-| Tests | 131 offline + 4 live (`uv run pytest`, `uv run pytest -m live`) |
-| Pages working | Get started, Board, Job workspace (Fit, Claim check, Documents, Notes tabs) |
+| Tests | 172 offline + 6 live (`uv run pytest`, `uv run pytest -m live`) |
+| Pages working | Get started, Board, Job workspace (Fit, Claim check, Documents, Company, Notes tabs), Copilot chat |
 | Workflow stages shown in UI | not_started, fit_review, claim_check, draft_review, interrupted, failed, finished |
 | Graph nodes | 14: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, plan_claims, claim_check, remember_confirmed_facts, draft_materials, output_guard, draft_review, save_to_tracker |
-| Human-in-the-loop pauses | 3: fit_review, claim_check, draft_review |
+| Human-in-the-loop pauses | 3 in the application graph (fit_review, claim_check, draft_review) + 1 in the chat (tool_approval) |
+| Copilot tools | 5 toggles / 6 tools: fetch_job_posting, search_my_experience, research_company (Tavily), search_jobs (Adzuna), get_applications + update_tracker (needs approval) |
+| Copilot graph | input_guard → agent ⇄ tools, approve before write tools; max 12 steps, 4,000 chars per message, last 30 messages sent |
 | Claims and drafts | max 10 claims; letter ≤ 280 words (medium); 3–6 bullets; max 2 draft attempts per round |
 | Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement, grading in batches of 20 pairs |
 | Fit score | must 3 / nice 1; met 1 / partial 0.5 / missing 0; half-up; cap 40 if blocking |
 | Sample scores (one run) | good 84, partial 43, poor 0 (German C1 blocking) |
 | LLM calls per analysis | 5–8, about $0.003 with `openai/gpt-4o-mini` |
-| Prompt version | 2026-10-28.4 (9 prompts) |
+| Prompt version | 2026-10-28.6 (11 prompts + 6 tool descriptions) |
 | LLM calls, continue → drafts | 3–5 (claims, draft, guard, maybe a rewrite + guard) |
 | Chunking | 500 characters, 80 overlap, `RecursiveCharacterTextSplitter` |
 | Embeddings | `openai/text-embedding-3-small` via OpenRouter (1,536 dimensions) |

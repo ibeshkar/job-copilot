@@ -80,3 +80,27 @@ def fake_app(app_db, monkeypatch):
     graph = build_application_graph(deps, make_checkpointer(app_db / "checkpoints.db"))
     monkeypatch.setattr(applications, "get_graph", lambda: graph)
     return deps
+
+
+@pytest.fixture
+def copilot_app(app_db, monkeypatch):
+    """The chat service wired to a scripted model. Call it with the script to get the LLM.
+
+    Example: `llm = copilot_app([AIMessage("hi")])`.
+    """
+    from app.agent.application_graph import make_checkpointer
+    from app.agent.copilot_graph import build_copilot_graph
+    from app.services import copilot
+    from tests.copilot_fakes import make_copilot_deps
+    from tests.fakes import FakeToolLLM
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    clear_app_caches()
+
+    def setup(script: list) -> FakeToolLLM:
+        llm = FakeToolLLM(script)
+        graph = build_copilot_graph(make_copilot_deps(llm), make_checkpointer(app_db / "chat.db"))
+        monkeypatch.setattr(copilot, "get_graph", lambda: graph)
+        return llm
+
+    return setup

@@ -1,6 +1,7 @@
 # What: the Streamlit entry point. Run it with `streamlit run app/main.py`.
-# Why: it sets up the things every page needs (logging, database tables, the sidebar, a warning
-#      if the API key is missing) and then hands control to the page the user picked.
+# Why: it sets up the things every page needs (logging, database tables, the sidebar with the
+#      copilot's tool toggles, a warning if the API key is missing) and then hands control to
+#      the page the user picked.
 # Used by: Streamlit only. Pages live in app/ui/pages/ and are registered below.
 
 import streamlit as st
@@ -8,6 +9,8 @@ import streamlit as st
 from app.config import get_settings
 from app.db.repo import init_db
 from app.memory.store import get_profile
+from app.tools.registry import TOOL_REGISTRY, default_toggles, missing_keys
+from app.ui.state import tool_toggle_key
 from app.utils.logging import configure_logging, get_logger
 
 st.set_page_config(page_title="Job Application Copilot", page_icon="🧭", layout="wide")
@@ -50,6 +53,21 @@ with st.sidebar:
     if profile:
         st.markdown(f"👤 **{profile.name}**")
     st.caption(f"Model: `{settings.default_model}`")
+
+    # Tool toggles (S2): what the copilot chat may use. Read by app/ui/state.enabled_toggles().
+    with st.expander("🔧 Copilot tools"):
+        defaults = default_toggles()
+        for name, spec in TOOL_REGISTRY.items():
+            missing = missing_keys(spec)
+            st.toggle(
+                spec.label,
+                value=name in defaults,
+                key=tool_toggle_key(name),
+                disabled=bool(missing),
+                help=spec.description,
+            )
+            if missing:
+                st.caption(f"Off: set {' and '.join(missing)} in `.env` to use it.")
 
 # The app stays usable for browsing without a key; only AI features need it (PROJECT_PLAN.md §10).
 if not settings.has_llm_key:

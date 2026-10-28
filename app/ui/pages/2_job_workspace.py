@@ -1,6 +1,7 @@
 # What: the Job workspace: one job's details in tabs. The Fit, Claim check and Documents tabs
 #       render whatever the paused workflow is waiting for (fit review, claim check, draft
-#       review) and send the user's decision back. Notes keeps notes, next action and versions.
+#       review) and send the user's decision back. Company shows web research about the
+#       employer. Notes keeps notes, next action and versions.
 # Why: this is the interrupt-rendering pattern from PROJECT_PLAN.md §7. On every rerun the page
 #      reads the saved graph state, so refreshing the browser or restarting the app shows the
 #      same step again.
@@ -11,8 +12,9 @@ import re
 import streamlit as st
 
 from app.agent.state import Drafts
+from app.config import get_settings
 from app.db.models import JobStatus
-from app.services import applications
+from app.services import applications, company
 from app.services.applications import RunResult, WorkflowView
 from app.services.export import drafts_to_text
 from app.ui.components import (
@@ -320,6 +322,73 @@ def _documents_tab(view: WorkflowView) -> None:
         )
 
 
+# ---------------------------------------------------------------- company tab
+
+
+def _bullets(title: str, items: list[str]) -> None:
+    if items:
+        st.markdown(f"**{title}**")
+        st.markdown("\n".join(f"- {item}" for item in items))
+
+
+def _company_tab(job_id: int) -> None:
+    card = applications.get_job_summary(job_id)
+    settings = get_settings()
+    research = company.saved_research(job_id)
+    if not settings.has_tavily_key:
+        st.info(
+            "Company research uses Tavily web search. Get a free key at tavily.com, set "
+            "`TAVILY_API_KEY` in `.env` and restart the app.",
+            icon="🔑",
+        )
+    focus_col, button_col = st.columns([3, 1])
+    focus = focus_col.text_input(
+        "Focus (optional)",
+        placeholder="e.g. tech stack, recent funding, engineering culture",
+        key=f"company_focus_{job_id}",
+        max_chars=200,
+    )
+    label = "🔄 Research again" if research else f"🔎 Research {card.company}"
+    button_col.markdown("&nbsp;")  # lines the button up with the text box
+    if button_col.button(
+        label,
+        disabled=not (settings.has_tavily_key and settings.has_llm_key),
+        use_container_width=True,
+    ):
+        with st.spinner(f"Searching the web for {card.company}…"):
+            fresh, message = company.run_research(job_id, focus)
+        if fresh is None:
+            st.error(message)
+        else:
+            st.rerun()
+
+    if research is None:
+        st.caption("No research yet. It's saved for this job, so you only pay for it once.")
+        return
+    st.markdown(f"#### {research.company}")
+    st.write(research.brief.summary)
+    left, right = st.columns(2)
+    with left:
+        _bullets("Products", research.brief.products)
+        _bullets("Tech stack", research.brief.tech_stack)
+    with right:
+        _bullets("Culture", research.brief.culture)
+        _bullets("Recent news", research.brief.recent_news)
+    if research.brief.talking_points:
+        st.success(
+            "**Things you could mention**\n"
+            + "\n".join(f"- {point}" for point in research.brief.talking_points),
+            icon="💡",
+        )
+    with st.expander(f"🔗 Sources ({len(research.sources)})"):
+        for source in research.sources:
+            st.markdown(f"- [{source.title or source.url}]({source.url})")
+    st.caption(
+        f"Researched {research.researched_at:%d %b %Y %H:%M} UTC from web search results. "
+        "Web content can be wrong or out of date; check the sources."
+    )
+
+
 # ---------------------------------------------------------------- notes tab
 
 
@@ -403,7 +472,7 @@ with claims_tab:
 with docs_tab:
     _documents_tab(view)
 with company_tab:
-    coming_soon(6, "Company research with sources.")
+    _company_tab(job_id)
 with interview_tab:
     coming_soon(8, "A mock interview built from this job's requirements and your gaps.")
 with notes_tab:

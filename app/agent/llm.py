@@ -1,17 +1,18 @@
 # What: `get_llm()` and `get_embeddings()`, the factories for the chat and embedding models
-#       (both served by OpenRouter), and `invoke_structured()`, the one way nodes call the LLM
-#       when they need data back.
+#       (both served by OpenRouter), `invoke_structured()`, the one way nodes call the LLM
+#       when they need data back, and `invoke_chat()` for the copilot's tool-calling replies.
 # Why: every graph node and the copilot get their model from here, so the model name,
 #      temperature and max tokens come from settings in one place. `invoke_structured` adds the
 #      error handling from PROJECT_PLAN.md §10: retries for busy servers and one retry for
 #      answers that don't match the Pydantic schema.
-# Used by: app/rag/ingest.py (embeddings), app/agent/nodes/*.py, app/agent/application_graph.py.
+# Used by: app/rag/ingest.py (embeddings), app/agent/nodes/*.py, app/agent/application_graph.py,
+#          app/agent/copilot_graph.py, app/services/company.py.
 
 from typing import Any, TypeVar
 
 import openai
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -103,7 +104,7 @@ def get_embeddings(settings: Settings | None = None) -> OpenAIEmbeddings:
     wait=wait_exponential(multiplier=1, min=1, max=8),  # 1s, 2s, then give up
     reraise=True,
 )
-def _invoke_with_retry(runnable: Any, messages: list[BaseMessage]) -> dict[str, Any]:
+def _invoke_with_retry(runnable: Any, messages: list[BaseMessage]) -> Any:
     return runnable.invoke(messages)
 
 
@@ -160,3 +161,27 @@ def invoke_structured(llm: BaseChatModel | None, schema: type[T], messages: list
         attempt_messages = [*messages, structured_retry_message(error)]
 
     raise StructuredOutputError(f"{schema.__name__} did not validate after a retry")
+
+
+def invoke_chat(runnable: Any, messages: list[BaseMessage]) -> AIMessage:
+    """Call a chat model (usually with tools bound) and return its message.
+
+    This is the one place where a free-text answer is allowed: the copilot's reply to the user,
+    or its tool calls, which LangChain already parses into structured `tool_calls`. Same error
+    handling as `invoke_structured`, without the schema retry.
+
+    Raises:
+        ConfigError: no API key (runnable is None), or the key was rejected.
+        LLMServiceError: the service stayed busy or unreachable.
+    """
+    if runnable is None:
+        raise ConfigError("OPENROUTER_API_KEY is not set")
+    try:
+        return _invoke_with_retry(runnable, messages)
+    except openai.AuthenticationError as exc:
+        raise ConfigError(
+            "OpenRouter rejected the API key",
+            user_message="OpenRouter rejected the API key. Check OPENROUTER_API_KEY in .env.",
+        ) from exc
+    except _TRANSIENT_ERRORS as exc:
+        raise LLMServiceError(str(exc)) from exc

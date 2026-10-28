@@ -2,8 +2,12 @@
 
 One line per term, in alphabetical order. Added to after every phase.
 
+- **`add_messages`**: the reducer for chat history: new messages are appended instead of replacing the list.
+- **Adzuna**: a job-ad search engine with a free API; our `search_jobs` tool uses it (needs `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`).
 - **Agentic RAG**: RAG where the agent grades its own search results and searches again with new words if nothing relevant was found.
+- **Approval (write tool)**: the copilot's pause before a tool that changes data (`update_tracker`); you approve or decline.
 - **AppTest**: Streamlit's tool for running an app in a test without a browser.
+- **`bind_tools`**: attaches tool schemas to a chat model, so it can answer with tool calls.
 - **Blocking red flag**: a red flag that makes the job unrealistic (e.g. a required language you don't speak); it caps the fit score at 40.
 - **Board (Kanban)**: the tracker page: one column per application status, one card per job.
 - **CEFR level**: the European scale for language skill: A1, A2 (basic), B1, B2 (independent), C1, C2 (proficient).
@@ -23,6 +27,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **DOCX**: the Word file format; `app/services/export.py` builds one with `python-docx` (falls back to `.txt`).
 - **Draft review**: the third pause: you edit the drafts, regenerate a section, or accept.
 - **Draft version**: one saved copy of a job's CV bullets and cover letter in the `Draft` table (AI draft or your edit).
+- **Dynamic tool binding**: choosing which tools to bind on every LLM call (here from the sidebar toggles).
 - **Edge**: a connection in a graph: "after node A, run node B".
 - **Embedding**: a list of numbers (1,536 here) that represents the meaning of a text; similar texts get similar numbers.
 - **Engine (SQLAlchemy)**: the object that knows how to connect to the database; created once and reused.
@@ -35,6 +40,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Fit score**: 0–100, computed in Python: must = 3, nice = 1; met = 1, partial = 0.5, missing = 0; capped at 40 by a blocking red flag.
 - **Fixture (pytest)**: setup code that gives a test something it needs, such as an empty database.
 - **Fragment (Streamlit)**: part of a page that can rerun on its own; a dialog is one.
+- **Function calling (tool calling)**: the model answers with "call tool X with these arguments" instead of text; our code runs it and sends back the result.
 - **Grading (RAG)**: an LLM check of whether a retrieved chunk really supports a requirement.
 - **Grounding**: making the model base its answers only on given evidence, and checking that it cites it.
 - **Human-in-the-loop (HITL)**: the agent stops and lets a person review or decide before it continues.
@@ -59,6 +65,8 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Query parameters**: the `?job=3` part of a URL; we use it to remember the open job across refreshes.
 - **Query rewriting**: asking the LLM for different search words when the first search found nothing.
 - **RAG (Retrieval-Augmented Generation)**: search the user's documents first, then give the best pieces to the LLM, so it answers from facts.
+- **ReAct agent**: an agent that loops reason → act (call a tool) → observe (read the result) until it can answer.
+- **Recursion limit**: the maximum number of graph steps per run (12 for the chat), so a tool loop can't run forever.
 - **Red flag**: a practical blocker found by comparing the job with the profile: language, visa, seniority, location or deal-breaker.
 - **Reducer**: a rule that says how LangGraph merges a node's update into the state, e.g. append to a list instead of replacing it.
 - **Regenerate (section)**: ask for a new cover letter or new CV bullets, optionally with an instruction; the other section stays as it is.
@@ -76,14 +84,22 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Stage (workflow)**: where a job's run stands: not_started, fit_review, claim_check, draft_review, interrupted, failed or finished; read from the checkpointer.
 - **State (LangGraph)**: the shared dictionary all nodes read and update; ours is `ApplicationState`.
 - **Store (LangGraph)**: LangGraph's key-value storage for long-term memory, organised by namespaces; ours is a SQLite file.
+- **Stream modes**: what `graph.stream()` yields: `"updates"` (each finished node), `"messages"` (LLM tokens), or both.
 - **`stream_mode="updates"`**: makes `graph.stream()` yield each node's update as soon as it finishes; we turn these into progress messages.
 - **Streamlit rerun**: Streamlit runs the whole page script again on every click; anything that should happen once must be cached.
 - **Structured output**: making the LLM answer in a fixed Pydantic format instead of free text.
 - **Supported claim**: a claim that cites evidence Python could find; unsupported ones start unticked.
+- **Tavily**: a web search API made for LLMs; our `research_company` tool uses it (needs `TAVILY_API_KEY`).
 - **tenacity**: a Python library for retrying a call with growing waits (we use it for busy servers).
 - **Text splitter**: code that cuts text into chunks, trying paragraph breaks first, then sentences, then words (`RecursiveCharacterTextSplitter`).
 - **thread_id**: the name of one saved conversation or workflow run in LangGraph; each job gets `job-<id>`.
+- **Tool**: a function the LLM may call, described by a name, a description and an argument schema.
+- **Tool call**: the model's request to run a tool: `{"name": "update_tracker", "args": {...}, "id": "call_1"}`.
+- **Tool toggle**: a sidebar switch that turns a copilot tool on or off; off if its API key is missing.
+- **ToolMessage**: the message that carries a tool's result back to the model, linked by `tool_call_id`.
+- **ToolNode**: LangGraph's prebuilt node that runs the tool calls of the last AI message and returns ToolMessages.
 - **trafilatura**: a library that pulls the main text out of a web page, without menus and ads.
+- **Untrusted content**: text from outside (web pages, job ads); wrapped in `<untrusted_web_content>` so the model treats it as data.
 - **uv**: a fast Python package and project manager; `uv sync` installs everything from `pyproject.toml`.
 - **Vector store**: a database that stores embeddings and finds the ones closest to a query.
-- **Workflow (vs. agent)**: fixed steps in an order set by code; an agent lets the LLM pick the next step.
+- **Workflow (vs. agent)**: fixed steps in an order set by code; an agent (our copilot) lets the LLM pick the next step.

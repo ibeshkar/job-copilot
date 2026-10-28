@@ -1,6 +1,8 @@
-# What: test doubles that replace paid, networked services (here: the embedding model).
+# What: test doubles that replace paid, networked services: embeddings, a scripted structured-
+#       output LLM and a scripted tool-calling chat model.
 # Why: unit tests must run offline, fast and for free (PROJECT_PLAN.md §14).
-# Used by: tests/test_rag.py, tests/test_onboarding_service.py.
+# Used by: tests/test_rag.py, tests/test_onboarding_service.py, the graph tests (FakeStructuredLLM)
+#          and the copilot tests (FakeToolLLM).
 
 import hashlib
 import math
@@ -62,3 +64,29 @@ class FakeStructuredLLM:
 
     def schemas_called(self) -> list[str]:
         return [name for name, _ in self.calls]
+
+
+class FakeToolLLM:
+    """Stands in for a tool-calling chat model in copilot tests.
+
+    `script` is a list of answers, one per LLM call: an AIMessage (possibly with tool_calls)
+    or a function that builds one from the messages. `bound` records which tool names were
+    bound for each call, so tests can check the dynamic tool binding.
+    """
+
+    def __init__(self, script: list) -> None:
+        self.script = list(script)
+        self.bound: list[list[str]] = []
+        self.calls: list[list] = []
+        self._tools: list[str] = []
+
+    def bind_tools(self, tools):
+        self._tools = [t.name for t in tools]
+        return self
+
+    def invoke(self, messages):
+        self.bound.append(self._tools)
+        self._tools = []
+        self.calls.append(messages)
+        answer = self.script.pop(0)
+        return answer(messages) if callable(answer) else answer

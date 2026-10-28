@@ -34,6 +34,7 @@ from app.config import PROJECT_ROOT, get_settings
 from app.db import repo
 from app.db.models import Draft, Job, JobStatus
 from app.guards.input_guard import looks_like_url
+from app.services.company import forget_research
 from app.services.export import ExportFile
 from app.services.export import export_drafts as _export
 from app.utils.errors import AppError, ConfigError, NotFoundError, friendly_message
@@ -528,13 +529,14 @@ def save_notes(
 
 
 def delete_job(job_id: int) -> None:
-    """Delete a job, its drafts and its saved workflow state."""
+    """Delete a job, its drafts, its saved workflow state and its company research."""
     with repo.session_scope() as session:
         thread_id = repo.get_job(session, job_id).thread_id
         repo.delete_job(session, job_id)
     checkpointer = get_graph().checkpointer
     if checkpointer is not None and thread_id:
         checkpointer.delete_thread(thread_id)
+    forget_research(job_id)
 
 
 def sample_jobs() -> dict[str, str]:

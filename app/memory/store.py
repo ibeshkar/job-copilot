@@ -1,8 +1,9 @@
-# What: long-term memory: the user's profile, preferences, confirmed facts and style rules,
-#       saved in a LangGraph Store (SQLite file `data/runtime/memory.db`).
+# What: long-term memory: the user's profile, preferences, confirmed facts, style rules and
+#       cached company research, saved in a LangGraph Store (`data/runtime/memory.db`).
 # Why: these facts must survive restarts and be shared by every job and chat. The checkpointer
 #      only remembers one conversation (thread); the Store remembers the user across all of them.
-# Used by: app/services/onboarding.py, app/main.py; later the graphs (style rules, facts),
+# Used by: app/services/onboarding.py, app/main.py, the graphs (style rules, facts),
+#          app/services/company.py (research cache),
 #          the copilot's system prompt and the Memory page.
 
 import sqlite3
@@ -163,3 +164,30 @@ def delete_all_memories(store: BaseStore | None = None, user_id: str = DEFAULT_U
     while items := store.search((user_id,), limit=_SEARCH_LIMIT):
         for item in items:
             store.delete(item.namespace, item.key)
+
+
+# ---------------------------------------------------------------- company research cache
+# Not a memory about the user, but it belongs to the user's data, is shared by all pages, and
+# must survive restarts. Keeping it here means "Delete all my data" removes it too.
+
+
+def save_company_research(
+    job_id: int, research: dict, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
+) -> None:
+    """Remember the company research for one job (JSON-safe dict)."""
+    (store or get_store()).put(_ns("company_research", user_id), str(job_id), research)
+
+
+def get_company_research(
+    job_id: int, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
+) -> dict | None:
+    """The saved company research for one job, or None."""
+    item = (store or get_store()).get(_ns("company_research", user_id), str(job_id))
+    return item.value if item else None
+
+
+def delete_company_research(
+    job_id: int, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
+) -> None:
+    """Forget the company research for one job (when the job is deleted)."""
+    (store or get_store()).delete(_ns("company_research", user_id), str(job_id))
