@@ -115,3 +115,32 @@ def test_new_thread_ids_are_unique() -> None:
     first, second = copilot.new_thread_id(), copilot.new_thread_id()
 
     assert first != second and first.startswith("chat-") and len(first) == 17
+
+
+def test_answer_that_broke_off_can_be_retried(copilot_app) -> None:
+    """No internet mid-answer: one friendly error, then Retry continues without a new message."""
+    from app.utils.errors import NETWORK_MESSAGE, LLMServiceError
+
+    def offline(messages):
+        raise LLMServiceError("connection refused", user_message=NETWORK_MESSAGE)
+
+    copilot_app([offline, AIMessage("Back online: you have 0 jobs.")])
+
+    events = list(copilot.send_message(THREAD, "How many jobs?", []))
+    assert [(e.kind, e.text) for e in events] == [("error", NETWORK_MESSAGE)]
+    assert copilot.can_retry(THREAD)
+
+    retried = list(copilot.retry(THREAD))
+
+    assert [e.text for e in retried if e.kind == "token"] == ["Back online: you have 0 jobs."]
+    assert not copilot.can_retry(THREAD)
+    users = [t for t in copilot.get_history(THREAD) if t.role == "user"]
+    assert len(users) == 1  # the question wasn't sent twice
+
+
+def test_retry_when_nothing_broke(copilot_app) -> None:
+    copilot_app([AIMessage("Hi!")])
+    list(copilot.send_message(THREAD, "hi", []))
+
+    assert not copilot.can_retry(THREAD)
+    assert [e.kind for e in copilot.retry(THREAD)] == ["error"]

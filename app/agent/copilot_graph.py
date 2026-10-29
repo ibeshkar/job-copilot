@@ -1,6 +1,6 @@
 # What: the copilot chat agent (PROJECT_PLAN.md §6.2), a custom ReAct graph:
-#       input_guard → agent (LLM + enabled tools) ⇄ tools, with an `approve` pause before any
-#       tool that writes data (update_tracker).
+#       input_guard (Python rules + LLM topic classifier) → agent (LLM + enabled tools) ⇄ tools,
+#       with an `approve` pause before any tool that writes data (update_tracker).
 # Why: chat questions are open-ended, so here the LLM decides which tools to call and in which
 #      order (ReAct: reason → act → observe → repeat). The graph is written by hand instead of
 #      using the prebuilt agent, so the loop, the dynamic tool binding and the approval step are
@@ -24,17 +24,22 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel
 
-from app.agent.llm import invoke_chat
-from app.agent.prompts import copilot_system_message
+from app.agent.llm import invoke_chat, invoke_structured
+from app.agent.prompts import copilot_system_message, topic_guard_messages
+from app.agent.state import TopicCheck
+from app.guards.input_guard import TOO_LONG_CHAT, check_chat_message
 from app.memory.store import Preferences, Profile
-from app.utils.errors import AppError
+from app.utils.errors import AppError, StructuredOutputError
+from app.utils.logging import get_logger
 
-MAX_CHAT_CHARS = 4_000  # PROJECT_PLAN.md §9
+logger = get_logger(__name__)
+
 MAX_HISTORY_MESSAGES = 30  # older turns are not sent to the model (cost)
 RECURSION_LIMIT = 12  # max graph steps per message: stops runaway tool loops (§6.2)
-TOO_LONG_MESSAGE = (
-    f"That message is too long for me (max {MAX_CHAT_CHARS:,} characters). For a job posting, "
-    "use ➕ Add job on the Board instead."
+TOO_LONG_MESSAGE = TOO_LONG_CHAT
+OFF_TOPIC_MESSAGE = (
+    "I can only help with your job search: your applications, companies, job ads, interviews "
+    "and your own experience. What would you like to know about those?"
 )
 DECLINED_MESSAGE = "The user declined this action. Don't try it again unless they ask."
 SKIPPED_MESSAGE = "Not run, because the user declined an action in the same step."
@@ -108,14 +113,39 @@ def _tool_error(exc: Exception) -> str:
 # ---------------------------------------------------------------- nodes
 
 
-def input_guard(state: CopilotState) -> dict:
-    """Answer directly (without the LLM) if the message is empty or too long."""
+def _previous_reply(messages: list[AnyMessage]) -> str:
+    """The copilot's last text answer before the new message (context for the classifier)."""
+    for message in reversed(messages[:-1]):
+        if isinstance(message, AIMessage) and isinstance(message.content, str) and message.content:
+            return message.content
+    return ""
+
+
+def input_guard(state: CopilotState, deps: CopilotDeps) -> dict:
+    """Two layers before the agent sees a message (PROJECT_PLAN.md §9):
+
+    1. Python rules (free): empty, too long, or an attempt to override the instructions.
+    2. A cheap LLM classifier: is the message about the job search at all?
+
+    A refused message gets a fixed answer, and the graph ends without calling the agent.
+    """
     last = state["messages"][-1]
     text = last.content if isinstance(last.content, str) else str(last.content)
-    if not text.strip():
-        return {"messages": [AIMessage("Please type a question.")]}
-    if len(text) > MAX_CHAT_CHARS:
-        return {"messages": [AIMessage(TOO_LONG_MESSAGE)]}
+    check = check_chat_message(text)
+    if not check.allowed:
+        return {"messages": [AIMessage(check.reason)]}
+
+    try:
+        verdict = invoke_structured(
+            deps.llm, TopicCheck, topic_guard_messages(text, _previous_reply(state["messages"]))
+        )
+    except StructuredOutputError:
+        # Fail open: the agent's own prompt also declines off-topic requests (layer 3).
+        logger.warning("Topic check gave no usable answer; letting the message through")
+        return {}
+    if not verdict.on_topic:
+        logger.info("Chat message refused as off-topic: %s", verdict.reason)
+        return {"messages": [AIMessage(OFF_TOPIC_MESSAGE)]}
     return {}
 
 
@@ -187,7 +217,7 @@ def run_tools(state: CopilotState, deps: CopilotDeps) -> dict:
 
 
 def _after_guard(state: CopilotState) -> str:
-    # The guard answered by itself (e.g. message too long): nothing for the LLM to do.
+    # The guard answered by itself (e.g. off-topic): nothing for the agent to do.
     return END if isinstance(state["messages"][-1], AIMessage) else "agent"
 
 
@@ -205,7 +235,7 @@ def build_copilot_graph(
 ) -> CompiledStateGraph:
     """Build and compile the chat graph. Run it with `chat_config("chat-…")`."""
     graph = StateGraph(CopilotState)
-    graph.add_node("input_guard", input_guard)
+    graph.add_node("input_guard", partial(input_guard, deps=deps))
     graph.add_node("agent", partial(agent, deps=deps))
     graph.add_node("approve", partial(approve, deps=deps), destinations=("tools", "agent"))
     graph.add_node("tools", partial(run_tools, deps=deps))

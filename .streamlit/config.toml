@@ -1,0 +1,16 @@
+# Streamlit settings for the app (read when you run `streamlit run app/main.py` from the
+# project root). Security hardening from PROJECT_PLAN.md §9 and §10.
+
+[server]
+# Uploads are capped at 5 MB per file (the knowledge base rejects bigger files too).
+maxUploadSize = 5
+
+[client]
+# Never show stack traces to the user; app/main.py shows a friendly message and logs details.
+showErrorDetails = "none"
+# Hide the "Deploy" button and developer menu items: this is a local, single-user app.
+toolbarMode = "minimal"
+
+[browser]
+# Don't send usage statistics to Streamlit.
+gatherUsageStats = false

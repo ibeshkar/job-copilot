@@ -10,19 +10,24 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`bind_tools`**: attaches tool schemas to a chat model, so it can answer with tool calls.
 - **Blocking red flag**: a red flag that makes the job unrealistic (e.g. a required language you don't speak); it caps the fit score at 40.
 - **Board (Kanban)**: the tracker page: one column per application status, one card per job.
+- **Budget (token budget)**: the number of tokens a browser session may use before the sidebar warns (`SESSION_TOKEN_BUDGET`, 200,000; warning at 80%).
 - **CEFR level**: the European scale for language skill: A1, A2 (basic), B1, B2 (independent), C1, C2 (proficient).
 - **Checkpointer**: LangGraph's short-term memory; saves the graph state after every step under a `thread_id`, so a run can pause and resume.
 - **Chroma**: a vector database that runs inside our app and saves to `data/runtime/chroma/`; no server needed.
-- **Chunk overlap**: characters shared by neighbouring chunks (80 here) so a sentence on the border isn't cut in half.
 - **Chunk**: a small piece of a document (about 500 characters here) that is embedded and searched on its own.
-- **Claim**: one statement the application makes about you, e.g. "Built a RAG chatbot with LangChain"; drafts may only use claims you approved.
+- **Chunk overlap**: characters shared by neighbouring chunks (80 here) so a sentence on the border isn't cut in half.
 - **Claim check**: the second human-in-the-loop pause: you approve, edit or remove each claim before anything is written.
+- **Claim**: one statement the application makes about you, e.g. "Built a RAG chatbot with LangChain"; drafts may only use claims you approved.
 - **`Command(resume=...)`**: how we continue a paused graph and hand it the user's answer.
 - **Conditional edge**: a graph edge that picks the next node with a function, e.g. "rewrite queries or assess fit?".
 - **Confirmed fact**: a claim you kept although no document shows it; saved to long-term memory and used as evidence next time.
+- **Context variable (`ContextVar`)**: a Python variable whose value belongs to the current task or thread; LangChain uses one to add our usage counter to every LLM call inside `track_usage`.
 - **Cosine similarity**: a measure of how similar two vectors are, based on the angle between them; we turn it into a 0–1 relevance score.
+- **Cost tracking**: counting each action's input and output tokens and pricing them with `MODEL_PRICING`; saved in the `UsageLog` table.
+- **Delete all my data**: the Memory page button that empties the Store, the knowledge base, the database, all saved runs and chats, and the log.
 - **Delimiters**: tags like `<job_posting>` around outside text, so the LLM can tell data from instructions.
 - **Dependency injection**: giving a function the services it uses (LLM, search) as arguments instead of importing them, so tests can pass fakes.
+- **Developer settings**: the password-protected page for model, temperature, max tokens, costs, prompts and raw graph state.
 - **Dialog (`st.dialog`)**: a pop-up window in Streamlit; ours holds the "Add job" form.
 - **DOCX**: the Word file format; `app/services/export.py` builds one with `python-docx` (falls back to `.txt`).
 - **Draft review**: the third pause: you edit the drafts, regenerate a section, or accept.
@@ -32,9 +37,11 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Embedding**: a list of numbers (1,536 here) that represents the meaning of a text; similar texts get similar numbers.
 - **Engine (SQLAlchemy)**: the object that knows how to connect to the database; created once and reused.
 - **Entry point**: the file you start the app with; here `app/main.py`.
-- **`.env.example`**: a committed copy of `.env` with empty values, so others know which settings exist without seeing your secrets.
 - **`.env` file**: a local text file with secret settings (like API keys) that is never committed to git.
+- **`.env.example`**: a committed copy of `.env` with empty values, so others know which settings exist without seeing your secrets.
+- **Error boundary**: a last `try/except` around the whole page (`app/main.py`) that turns any crash into a friendly message and a log entry.
 - **Evidence**: our object for one search hit: chunk id, file name, a snippet of up to 300 characters, and a relevance score.
+- **Fail open / fail closed**: when a check itself fails, "open" lets the input through and "closed" blocks it; our topic classifier fails open on unparseable answers.
 - **Few-shot prompting**: putting a worked example in the prompt so the model copies the pattern.
 - **Fit card**: the Fit tab's view of one analysis: score, red flags, requirements with evidence, tips.
 - **Fit score**: 0–100, computed in Python: must = 3, nice = 1; met = 1, partial = 0.5, missing = 0; capped at 40 by a blocking red flag.
@@ -44,11 +51,13 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Grading (RAG)**: an LLM check of whether a retrieved chunk really supports a requirement.
 - **Grounding**: making the model base its answers only on given evidence, and checking that it cites it.
 - **Human-in-the-loop (HITL)**: the agent stops and lets a person review or decide before it continues.
-- **In-memory database**: a SQLite database that lives only in RAM and disappears after the test; it keeps tests fast and isolated.
 - **Ingest**: the process of loading, chunking, embedding and storing a document.
+- **In-memory database**: a SQLite database that lives only in RAM and disappears after the test; it keeps tests fast and isolated.
+- **Input tokens / output tokens**: the text sent to the model and the text it writes back, counted in tokens; providers price them separately.
 - **`interrupt()`**: the LangGraph function that pauses a graph inside a node and sends a payload to the UI.
 - **Knowledge base**: all the user's documents in the vector store; the only source of facts about the user.
 - **LangGraph**: a library for building LLM apps as graphs of steps with shared state, loops and pauses.
+- **LangSmith**: LangChain's tracing service; it shows each run as a tree of steps with inputs, outputs, tokens and timing.
 - **Lint / linter (ruff)**: a tool that checks code for mistakes and style problems without running it.
 - **LLM as a judge**: using a second LLM call to check the output of the first; our output guard is one.
 - **Long-term memory**: facts about the user that last across all chats and jobs; stored in the LangGraph Store.
@@ -60,7 +69,9 @@ One line per term, in alphabetical order. Added to after every phase.
 - **OpenRouter**: a service that forwards requests in the OpenAI API format to many model providers (OpenAI, Anthropic, Google, ...) with one key.
 - **ORM (Object-Relational Mapper)**: a library that lets you work with database rows as Python objects instead of writing SQL by hand. We use SQLModel.
 - **Output guard**: the fact-checking step after drafting: lists statements about you that no approved claim backs.
+- **Override attempt**: chat text that tries to change the assistant's rules ("ignore previous instructions", "developer mode"); refused without calling the LLM.
 - **Prompt injection**: text that tries to give an LLM new instructions, e.g. "ignore all previous instructions" inside a job posting.
+- **`PROMPT_VERSION`**: a date-based label for the current set of prompts; attached to every trace so runs before and after a prompt change can be compared.
 - **pydantic-settings**: a library that reads settings from environment variables and `.env` and checks their types.
 - **Query parameters**: the `?job=3` part of a URL; we use it to remember the open job across refreshes.
 - **Query rewriting**: asking the LLM for different search words when the first search found nothing.
@@ -72,34 +83,41 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Regenerate (section)**: ask for a new cover letter or new CV bullets, optionally with an instruction; the other section stays as it is.
 - **Repository (repo) layer**: the module with all database functions (`app/db/repo.py`); other code calls it instead of writing queries.
 - **Requirement**: one thing the job asks for, with an id (R1…), a category and an importance (must / nice).
+- **Retry (from checkpoint)**: continuing a broken run with `graph.stream(None, config)`, which runs only the steps that hadn't finished.
+- **Run metadata**: labels attached to a trace, here `prompt_version`, `action` and `job_id` / `thread_id`, used to filter traces in LangSmith.
 - **`SecretStr`**: a Pydantic type that hides a secret's value when printed or logged.
 - **Service layer**: plain Python functions between the pages and the agent (`app/services/`); pages call them instead of the graph or LLM.
 - **Session (database)**: one unit of work with the database; changes are saved together on `commit`.
 - **SQL injection**: an attack where user input is run as SQL; the ORM prevents it by sending values separately from the query.
 - **SQLModel**: an ORM that combines Pydantic models and SQLAlchemy tables in one class.
 - **SSRF (Server-Side Request Forgery)**: tricking a server into fetching an internal address; blocked by `url_guard`.
-- **`st.cache_resource`**: a Streamlit decorator that runs a function once per server process and reuses the result.
-- **`st.navigation`**: Streamlit's way to define a multipage app and its sidebar menu in code.
-- **`st.status`**: a Streamlit box that shows progress lines while a long task runs, then turns green or red.
 - **Stage (workflow)**: where a job's run stands: not_started, fit_review, claim_check, draft_review, interrupted, failed or finished; read from the checkpointer.
 - **State (LangGraph)**: the shared dictionary all nodes read and update; ours is `ApplicationState`.
+- **`st.cache_resource`**: a Streamlit decorator that runs a function once per server process and reuses the result.
+- **`st.navigation`**: Streamlit's way to define a multipage app and its sidebar menu in code.
 - **Store (LangGraph)**: LangGraph's key-value storage for long-term memory, organised by namespaces; ours is a SQLite file.
 - **Stream modes**: what `graph.stream()` yields: `"updates"` (each finished node), `"messages"` (LLM tokens), or both.
-- **`stream_mode="updates"`**: makes `graph.stream()` yield each node's update as soon as it finishes; we turn these into progress messages.
 - **Streamlit rerun**: Streamlit runs the whole page script again on every click; anything that should happen once must be cached.
+- **`stream_mode="updates"`**: makes `graph.stream()` yield each node's update as soon as it finishes; we turn these into progress messages.
 - **Structured output**: making the LLM answer in a fixed Pydantic format instead of free text.
+- **`st.status`**: a Streamlit box that shows progress lines while a long task runs, then turns green or red.
 - **Supported claim**: a claim that cites evidence Python could find; unsupported ones start unticked.
 - **Tavily**: a web search API made for LLMs; our `research_company` tool uses it (needs `TAVILY_API_KEY`).
 - **tenacity**: a Python library for retrying a call with growing waits (we use it for busy servers).
 - **Text splitter**: code that cuts text into chunks, trying paragraph breaks first, then sentences, then words (`RecursiveCharacterTextSplitter`).
 - **thread_id**: the name of one saved conversation or workflow run in LangGraph; each job gets `job-<id>`.
+- **Token**: a piece of text (about ¾ of a word in English) that models read and write; usage and prices are counted in tokens.
 - **Tool**: a function the LLM may call, described by a name, a description and an argument schema.
 - **Tool call**: the model's request to run a tool: `{"name": "update_tracker", "args": {...}, "id": "call_1"}`.
 - **Tool toggle**: a sidebar switch that turns a copilot tool on or off; off if its API key is missing.
 - **ToolMessage**: the message that carries a tool's result back to the model, linked by `tool_call_id`.
 - **ToolNode**: LangGraph's prebuilt node that runs the tool calls of the last AI message and returns ToolMessages.
+- **Topic classifier**: a small LLM call (`TopicCheck`) that decides whether a chat message is about the job search before the copilot sees it.
+- **Trace**: the record of one run in LangSmith: every LLM call, tool call and graph step inside it.
+- **`tracing_context`**: a LangSmith helper that attaches metadata and tags to every trace started inside a `with` block.
 - **trafilatura**: a library that pulls the main text out of a web page, without menus and ads.
 - **Untrusted content**: text from outside (web pages, job ads); wrapped in `<untrusted_web_content>` so the model treats it as data.
+- **UsageLog**: the table with one row per action and model: tokens in, tokens out and cost in US dollars.
 - **uv**: a fast Python package and project manager; `uv sync` installs everything from `pyproject.toml`.
 - **Vector store**: a database that stores embeddings and finds the ones closest to a query.
 - **Workflow (vs. agent)**: fixed steps in an order set by code; an agent (our copilot) lets the LLM pick the next step.

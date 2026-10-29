@@ -261,18 +261,58 @@ def log_usage(
 
 
 def usage_by_action(session: Session, since: datetime | None = None) -> dict[str, dict[str, float]]:
-    """Sum tokens and cost per action, e.g. `{"draft": {"tokens": 1200, "cost_usd": 0.001}}`."""
+    """Sum usage per action, e.g.
+    `{"draft": {"calls": 2, "input_tokens": 900, "output_tokens": 300, "tokens": 1200,
+    "cost_usd": 0.001}}`. `calls` counts logged rows (one per action and model)."""
     query = select(
         UsageLog.action,
-        func.sum(UsageLog.input_tokens + UsageLog.output_tokens),
+        func.count(UsageLog.id),
+        func.sum(UsageLog.input_tokens),
+        func.sum(UsageLog.output_tokens),
         func.sum(UsageLog.cost_usd),
     ).group_by(UsageLog.action)
     if since is not None:
         query = query.where(UsageLog.created_at >= since)
-    return {
-        action: {"tokens": int(tokens or 0), "cost_usd": float(cost or 0.0)}
-        for action, tokens, cost in session.exec(query).all()
-    }
+    report = {}
+    for action, calls, input_tokens, output_tokens, cost in session.exec(query).all():
+        report[action] = {
+            "calls": int(calls),
+            "input_tokens": int(input_tokens or 0),
+            "output_tokens": int(output_tokens or 0),
+            "tokens": int((input_tokens or 0) + (output_tokens or 0)),
+            "cost_usd": float(cost or 0.0),
+        }
+    return report
+
+
+def usage_totals(session: Session, since: datetime | None = None) -> tuple[int, int, float]:
+    """Total (input tokens, output tokens, cost in USD), optionally only rows since `since`."""
+    query = select(
+        func.sum(UsageLog.input_tokens),
+        func.sum(UsageLog.output_tokens),
+        func.sum(UsageLog.cost_usd),
+    )
+    if since is not None:
+        query = query.where(UsageLog.created_at >= since)
+    input_tokens, output_tokens, cost = session.exec(query).one()
+    return int(input_tokens or 0), int(output_tokens or 0), float(cost or 0.0)
+
+
+def latest_usage(session: Session) -> UsageLog | None:
+    """The most recently logged usage row (the last AI action), or None."""
+    query = select(UsageLog).order_by(UsageLog.created_at.desc(), UsageLog.id.desc())
+    return session.exec(query).first()
+
+
+# ---------------------------------------------------------------- delete everything
+
+
+def delete_all_rows(session: Session) -> None:
+    """Empty every app table ("Delete all my data"). Children first, because of foreign keys."""
+    for model in (Draft, Feedback, InterviewSession, Job, Document, UsageLog):
+        for row in session.exec(select(model)).all():
+            session.delete(row)
+    session.commit()
 
 
 # ---------------------------------------------------------------- feedback and interviews

@@ -355,3 +355,114 @@ considered. Newest entries at the bottom.
 - **Why:** in a live test, the softer "politely decline" rule still produced a pizza poem.
   After the change it declined poems and trivia and still answered career questions. Phase 7
   adds the LLM topic classifier from §9 as a real guard.
+
+## D48. The chat guard has two layers: Python rules, then an LLM topic classifier (Phase 7)
+- **What:** `copilot_graph.input_guard` first runs `check_chat_message()` (empty, over 4,000
+  characters, or an attempt to override the instructions). If that passes, a cheap structured
+  call (`TopicCheck`, prompt `TOPIC_GUARD_SYSTEM`) decides "on topic or not". A refused message
+  gets a fixed answer and the agent never sees it.
+- **Why:** the rules are free and catch the obvious cases. The classifier catches "write me a
+  pizza poem", which a prompt rule alone didn't stop reliably (D47). It sees the previous reply,
+  so "yes, do it" counts as on topic.
+- **Fail open:** if the classifier's answer can't be parsed, the message goes through; the
+  agent's own prompt still declines off-topic requests (a third layer). An outage is not
+  "fail open": the user gets the friendly network message and a Retry button.
+- **Alternatives:** a keyword allowlist (too brittle); OpenAI's moderation API (checks harm, not
+  topic). **Trade-off:** one extra small LLM call per chat message (~350 tokens, ~$0.0001).
+
+## D49. Injection phrases: flagged in postings, refused in the chat (Phase 7, extends D20)
+- **What:** the patterns are split. *Override* patterns ("ignore previous instructions",
+  "developer mode", fake `</system>` tags) are flagged in postings and refused in the chat.
+  *Suspicious* phrases ("you are now", "system prompt") are only flagged in postings.
+- **Why:** in a posting, the text is data, so we analyse it and warn. In the chat, the text
+  *is* the instruction, so an override attempt is refused. But "Pretend you are a recruiter" or
+  "You are now my interview coach" are normal requests for interview practice, so role-play
+  phrases are not blocked in the chat.
+
+## D50. Token counting with one registered context variable (Phase 7)
+- **What:** `app/services/usage.py` registers one `ContextVar` with LangChain's
+  `register_configure_hook` at import. `track_usage(action)` puts a fresh
+  `UsageMetadataCallbackHandler` in it for the duration of the action, then prices the counts
+  and writes one `UsageLog` row per model.
+- **Why:** LangChain then adds the handler to every LLM call inside the block, including calls in
+  graph nodes that run in worker threads (LangGraph copies the context). No node or service
+  needs a `callbacks=` argument. `get_usage_metadata_callback()` does the same, but registers a
+  new hook on every call, which grows a global list forever.
+- **Limits:** embedding calls don't report usage through callbacks, so they're not counted
+  (they cost ~$0.00002 per document). Usage is saved even if the action fails, because spent
+  tokens still cost money.
+
+## D51. Prices: longest matching table entry (Phase 7)
+- **What:** `price_for()` tries the exact id, then the longest `MODEL_PRICING` key the model name
+  starts with (with or without the `openai/` prefix). Unknown models cost $0 and log a warning.
+- **Why:** the API answers with dated names like `openai/gpt-4o-mini-2024-07-18`.
+
+## D52. "This session" = this browser session; numbers come from the database (Phase 7)
+- **What:** the first run of a browser session stores its start time in `st.session_state`. The
+  sidebar sums `UsageLog` rows since then, and shows the last logged action.
+- **Why:** services don't touch Streamlit, so they can't add to `session_state`. Reading the
+  database also covers actions whose page reran or switched away right after.
+- **Trade-off:** a refresh starts a new session (badge back to 0); the developer page still
+  shows all-time totals. The 80% budget warning is a warning only; it never blocks.
+
+## D53. LangSmith metadata through `langsmith.tracing_context` (Phase 7)
+- **What:** `track_run(action, **extra)` wraps every action in
+  `tracing_context(metadata={"prompt_version", "action", job_id/thread_id}, tags=[action])` and in
+  `track_usage(action)`. `configure_tracing()` copies the `LANGSMITH_*` settings from `.env` into
+  the environment at startup, because LangChain reads environment variables, not our settings.
+- **Why:** one mechanism for graph runs and plain LLM calls (the company brief isn't a graph).
+  LangChain copies this context onto every LangSmith trace started inside the block.
+- **Alternative:** a `metadata` key in each graph `config`. That doesn't reach plain
+  `invoke_structured()` calls without passing configs through every function.
+
+## D54. Developer overrides live in a JSON file and rebuild the graphs (Phase 7)
+- **What:** the dev page saves model, temperature and max tokens to
+  `data/runtime/dev_settings.json`. `get_settings()` applies it over `.env`, then the cached
+  settings and both graphs are cleared, so the next run builds its LLM with the new values.
+- **Why:** each graph creates its LLM once when it's built. A broken file is ignored (the app
+  still starts). It applies to the whole app, not one browser session, which is fine for a
+  single local user and easy to explain.
+- **Password:** compared with `hmac.compare_digest`. While it's still `change-me`, the page
+  warns but still unlocks, so a first-time user isn't locked out of their own app.
+
+## D55. The OpenRouter key is checked at startup with `GET /key` (Phase 7)
+- **What:** `check_llm_key()` asks OpenRouter's key endpoint (free, no tokens) once and caches
+  the result for 5 minutes (`st.cache_data`). Missing, rejected and unreachable get their own
+  banners; any other answer counts as OK. Tests switch it off (`STARTUP_KEY_CHECK=false`).
+- **Why:** §10 wants an invalid key detected at startup, not at the first click on "Analyse".
+  The same banner tells you when the internet is down.
+
+## D56. "Delete all my data" empties five places, and keeps the developer settings (Phase 7)
+- **What:** `my_data.delete_all_data()` deletes the Store (profile, preferences, facts, style
+  rules, company research), the Chroma collection, every app table, every checkpointer thread
+  (jobs and chats) and empties `app.log`. The page needs the word DELETE typed first.
+- **Why:** the log can contain job titles and parts of AI answers, so it is personal data too.
+  The model choice isn't about the user, so it stays.
+- **Without a key:** deleting chunks needs no embeddings, so `_maintenance_store()` opens Chroma
+  without an embedding model when no key is set.
+
+## D57. A last safety net for crashes, and no stack traces in the browser (Phase 7)
+- **What:** `app/main.py` wraps `nav.run()` in `try/except Exception`: it logs the error with the
+  page title and shows "Sorry, this page ran into a problem…" with a reload button.
+  `.streamlit/config.toml` sets `client.showErrorDetails = "none"` as a second net, plus a 5 MB
+  upload limit.
+- **Why:** §10 says users never see a stack trace. `st.rerun()` and `st.switch_page()` raise
+  `BaseException` subclasses, so the `except Exception` doesn't break navigation.
+
+## D58. Retry continues from the checkpoint, in the chat too (Phase 7)
+- **What:** if an answer breaks off (e.g. no internet), the chat thread's checkpoint still has a
+  pending step. `copilot.can_retry()` sees it; **🔁 Retry** calls `graph.stream(None, …)`,
+  which runs only the pending steps. The workspace's Retry works the same way.
+- **Why:** sending the message again would add the question to the history twice. Reading the
+  state from the checkpointer means the Retry button survives a refresh.
+- **Also:** errors from `openai` and `httpx` now map to specific messages ("check your internet
+  connection" vs. "the service is busy" vs. "check your key"), also when they're the `__cause__`
+  of another error (`friendly_message()`).
+
+## D59. Client-side schema errors get the same one retry (Phase 7, fixes Phase 3)
+- **What:** `invoke_structured()` also catches a pydantic `ValidationError` raised by the call
+  itself and treats it like a `parsing_error`: one retry with the error, then
+  `StructuredOutputError`.
+- **Why:** found in a live run. With strict JSON-schema output, OpenAI's client parses the answer
+  itself and raises, before LangChain can report the error. The analysis crashed instead of
+  retrying.

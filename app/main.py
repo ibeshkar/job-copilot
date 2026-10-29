@@ -1,7 +1,8 @@
 # What: the Streamlit entry point. Run it with `streamlit run app/main.py`.
-# Why: it sets up the things every page needs (logging, database tables, the sidebar with the
-#      copilot's tool toggles, a warning if the API key is missing) and then hands control to
-#      the page the user picked.
+# Why: it sets up the things every page needs (logging, database tables, LangSmith tracing,
+#      the sidebar with the usage badge and the copilot's tool toggles, a banner if the API key
+#      is missing or rejected) and then hands control to the page the user picked. A last
+#      safety net turns any unexpected error into a friendly message (no stack traces, §10).
 # Used by: Streamlit only. Pages live in app/ui/pages/ and are registered below.
 
 import streamlit as st
@@ -9,9 +10,12 @@ import streamlit as st
 from app.config import get_settings
 from app.db.repo import init_db
 from app.memory.store import get_profile
+from app.services import usage
+from app.services.observability import KeyStatus, check_llm_key, configure_tracing
 from app.tools.registry import TOOL_REGISTRY, default_toggles, missing_keys
-from app.ui.state import tool_toggle_key
-from app.utils.logging import configure_logging, get_logger
+from app.ui.state import session_started_at, tool_toggle_key
+from app.utils.errors import friendly_message
+from app.utils.logging import configure_logging, get_logger, log_exception
 
 st.set_page_config(page_title="Job Application Copilot", page_icon="🧭", layout="wide")
 
@@ -21,7 +25,14 @@ def _startup() -> None:
     """One-time setup per server process (Streamlit reruns this file on every click)."""
     configure_logging()
     init_db()
-    get_logger(__name__).info("App started, database ready")
+    tracing = configure_tracing()
+    get_logger(__name__).info("App started, database ready, LangSmith tracing %s", tracing)
+
+
+# Checked at most every 5 minutes, not on every click: it's a network call.
+@st.cache_data(ttl=300, show_spinner=False)
+def _key_status() -> KeyStatus:
+    return check_llm_key()
 
 
 _startup()
@@ -54,6 +65,9 @@ with st.sidebar:
         st.markdown(f"👤 **{profile.name}**")
     st.caption(f"Model: `{settings.default_model}`")
 
+    # Usage badge (§11). Filled in after the page has run, so it includes this run's actions.
+    usage_box = st.container()
+
     # Tool toggles (S2): what the copilot chat may use. Read by app/ui/state.enabled_toggles().
     with st.expander("🔧 Copilot tools"):
         defaults = default_toggles()
@@ -69,12 +83,27 @@ with st.sidebar:
             if missing:
                 st.caption(f"Off: set {' and '.join(missing)} in `.env` to use it.")
 
-# The app stays usable for browsing without a key; only AI features need it (PROJECT_PLAN.md §10).
-if not settings.has_llm_key:
-    st.warning(
-        "**No OpenRouter API key found.** You can look around, but AI features won't work yet. "
-        "Set `OPENROUTER_API_KEY` in the `.env` file and restart the app.",
-        icon="🔑",
-    )
+# The app stays usable for browsing without a working key; only AI features need it (§10).
+key_status = _key_status()
+if not key_status.ok:
+    st.warning(key_status.message, icon="🔑")
 
-nav.run()
+
+def _usage_badge() -> None:
+    session_usage = usage.usage_since(session_started_at())
+    with usage_box:
+        st.markdown(f"💰 This session: **{session_usage.label()}**")
+        if last := usage.last_action():
+            action, last_usage = last
+            st.caption(f"Last AI action: {action} · {last_usage.label()}")
+        if warning := usage.budget_warning(session_usage, settings.session_token_budget):
+            st.warning(warning, icon="💸")
+
+
+try:
+    nav.run()
+except Exception as exc:  # st.rerun / st.switch_page are BaseExceptions and pass through
+    log_exception(get_logger(__name__), "Page crashed", page=nav.title)
+    st.error(f"Sorry, this page ran into a problem. {friendly_message(exc)}", icon="😵")
+    st.button("🔄 Reload the page")
+_usage_badge()

@@ -228,6 +228,16 @@ class FitAssessment(BaseModel):
     )
 
 
+class TopicCheck(BaseModel):
+    """The chat guard's verdict: is this message about the user's job search?"""
+
+    on_topic: bool = Field(
+        description="True for anything about jobs, careers, applications, companies, the "
+        "user's skills or this app, including short follow-ups like 'yes' or 'thanks'."
+    )
+    reason: str = Field(description="One short sentence.")
+
+
 # ---------------------------------------------------------------- human-in-the-loop answers
 
 

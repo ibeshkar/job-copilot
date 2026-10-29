@@ -10,6 +10,10 @@ from collections.abc import Iterator
 # Set before any `app` module is imported, so even import-time setup (like the log file)
 # goes to a throwaway folder instead of data/runtime/.
 os.environ["RUNTIME_DIR"] = tempfile.mkdtemp(prefix="job-copilot-tests-")
+# No network in unit tests: skip asking OpenRouter whether the (fake) key works,
+# and never send traces to LangSmith, even if .env switches tracing on.
+os.environ["STARTUP_KEY_CHECK"] = "false"
+os.environ["LANGSMITH_TRACING"] = "false"
 
 import pytest  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
@@ -22,12 +26,20 @@ def clear_app_caches() -> None:
     """Forget cached settings, engine, memory store and vector store, so the next call
     opens them again from the current RUNTIME_DIR."""
     from app.agent.application_graph import get_application_graph
+    from app.agent.copilot_graph import get_copilot_graph
     from app.config import get_settings
     from app.db.repo import get_engine
     from app.memory.store import get_store
     from app.rag.ingest import get_vectorstore
 
-    for cached in (get_settings, get_engine, get_store, get_vectorstore, get_application_graph):
+    for cached in (
+        get_settings,
+        get_engine,
+        get_store,
+        get_vectorstore,
+        get_application_graph,
+        get_copilot_graph,
+    ):
         cached.cache_clear()
 
 
@@ -97,8 +109,8 @@ def copilot_app(app_db, monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
     clear_app_caches()
 
-    def setup(script: list) -> FakeToolLLM:
-        llm = FakeToolLLM(script)
+    def setup(script: list, on_topic: bool | Exception = True) -> FakeToolLLM:
+        llm = FakeToolLLM(script, on_topic=on_topic)
         graph = build_copilot_graph(make_copilot_deps(llm), make_checkpointer(app_db / "chat.db"))
         monkeypatch.setattr(copilot, "get_graph", lambda: graph)
         return llm

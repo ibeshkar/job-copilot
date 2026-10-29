@@ -1,13 +1,14 @@
 # What: typed application settings loaded from `.env`, plus the model price table.
 # Why: one place to read keys, model choice and file paths, so no other module touches
 #      os.environ directly and secrets never get hard-coded.
-# Used by: app/main.py, app/agent/llm.py, app/db/repo.py, app/utils/logging.py
-#          (and later the usage/cost service and the dev settings page).
+# Used by: almost every module; app/services/usage.py (prices), app/services/dev_settings.py
+#          (writes the model overrides that `get_settings()` applies).
 
+import json
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +22,17 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
     "openai/text-embedding-3-small": {"input": 0.02, "output": 0.0},
 }
+# Chat models offered in the developer settings (embedding models can't chat).
+CHAT_MODELS = [m for m in MODEL_PRICING if "embedding" not in m]
+DEV_OVERRIDES_FILE = "dev_settings.json"  # in runtime_dir; written by the dev settings page
+
+
+class LLMOverrides(BaseModel):
+    """Model settings chosen on the developer settings page. They win over `.env`."""
+
+    default_model: str = Field(min_length=3)
+    temperature: float = Field(ge=0.0, le=2.0)
+    max_tokens: int = Field(ge=64, le=16_000)
 
 
 class Settings(BaseSettings):
@@ -48,6 +60,9 @@ class Settings(BaseSettings):
     langsmith_tracing: bool = False
     langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "job-copilot"
+    # True = LangSmith traces show the run structure, tokens and timing but not the texts
+    # (CV data, job postings). PROJECT_PLAN.md §9.
+    langsmith_hide_inputs: bool = False
 
     # Developer settings page password
     app_dev_password: SecretStr = SecretStr("change-me")
@@ -57,6 +72,11 @@ class Settings(BaseSettings):
     temperature: float = 0.2
     max_tokens: int = 1500
     embedding_model: str = "openai/text-embedding-3-small"
+
+    # Cost guard (§9): the sidebar warns at 80% of this many tokens per browser session.
+    session_token_budget: int = 200_000
+    # Ask OpenRouter at startup whether the key works (§10). Tests switch this off.
+    startup_key_check: bool = True
 
     # Where SQLite databases, Chroma and logs live (gitignored)
     runtime_dir: Path = PROJECT_ROOT / "data" / "runtime"
@@ -97,12 +117,27 @@ class Settings(BaseSettings):
         return f"sqlite:///{self.app_db_path}"
 
 
+def load_llm_overrides(runtime_dir: Path) -> LLMOverrides | None:
+    """The saved developer-settings overrides, or None if there are none (or they're broken)."""
+    path = runtime_dir / DEV_OVERRIDES_FILE
+    if not path.exists():
+        return None
+    try:
+        return LLMOverrides.model_validate(json.loads(path.read_text()))
+    except (ValueError, ValidationError):
+        return None  # a hand-edited, broken file must not stop the app; .env values apply
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Return the settings, loaded once per process.
 
+    Order of priority: developer-settings overrides (`dev_settings.json`) > `.env` > defaults.
     Also makes sure the runtime folder exists, because the database and logs are written there.
     """
     settings = Settings()
     settings.runtime_dir.mkdir(parents=True, exist_ok=True)
+    overrides = load_llm_overrides(settings.runtime_dir)
+    if overrides is not None:
+        settings = settings.model_copy(update=overrides.model_dump())
     return settings

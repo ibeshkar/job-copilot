@@ -80,3 +80,22 @@ def test_answer_cut_off_by_token_limit_fails_cleanly() -> None:
     with pytest.raises(StructuredOutputError):
         invoke_structured(llm, RequirementList, [HumanMessage("hi")])
     assert llm.calls == 1  # asking again would be cut off the same way
+
+
+def test_validation_error_raised_by_the_client_is_retried_too() -> None:
+    """OpenAI's client can raise the ValidationError itself (seen live in Phase 7)."""
+    error = _validation_error()
+    answers = iter([error, GOOD])
+
+    class RaisingRunnable:
+        def invoke(self, messages):
+            answer = next(answers)
+            if isinstance(answer, Exception):
+                raise answer
+            return {"raw": "ok", "parsed": answer, "parsing_error": None}
+
+    class Llm:
+        def with_structured_output(self, schema, include_raw=False):
+            return RaisingRunnable()
+
+    assert invoke_structured(Llm(), RequirementList, [HumanMessage("hi")]) == GOOD

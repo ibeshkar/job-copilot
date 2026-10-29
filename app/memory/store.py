@@ -2,7 +2,8 @@
 #       cached company research, saved in a LangGraph Store (`data/runtime/memory.db`).
 # Why: these facts must survive restarts and be shared by every job and chat. The checkpointer
 #      only remembers one conversation (thread); the Store remembers the user across all of them.
-# Used by: app/services/onboarding.py, app/main.py, the graphs (style rules, facts),
+# Used by: app/services/onboarding.py, app/services/my_data.py (Memory page: edit, delete,
+#          delete all), app/main.py, the graphs (style rules, facts),
 #          app/services/company.py (research cache),
 #          the copilot's system prompt and the Memory page.
 
@@ -91,6 +92,11 @@ def save_profile(
     (store or get_store()).put(_ns("profile", user_id), _MAIN_KEY, profile.model_dump(mode="json"))
 
 
+def delete_profile(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -> None:
+    """Forget the profile (the onboarding wizard is shown again)."""
+    (store or get_store()).delete(_ns("profile", user_id), _MAIN_KEY)
+
+
 def get_preferences(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -> Preferences:
     """Return the saved preferences, or the defaults if none are saved."""
     item = (store or get_store()).get(_ns("preferences", user_id), _MAIN_KEY)
@@ -104,6 +110,11 @@ def save_preferences(
     (store or get_store()).put(
         _ns("preferences", user_id), _MAIN_KEY, preferences.model_dump(mode="json")
     )
+
+
+def delete_preferences(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -> None:
+    """Forget the preferences (the defaults apply again)."""
+    (store or get_store()).delete(_ns("preferences", user_id), _MAIN_KEY)
 
 
 # ---------------------------------------------------------------- facts and style rules
@@ -132,6 +143,18 @@ def list_facts(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -
     return _list("facts", Fact, store, user_id)
 
 
+def update_fact(
+    key: str, text: str, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
+) -> None:
+    """Change the wording of a fact; keeps its job and date. Raises KeyError if it's gone."""
+    store = store or get_store()
+    item = store.get(_ns("facts", user_id), key)
+    if item is None:
+        raise KeyError(key)
+    fact = Fact.model_validate(item.value).model_copy(update={"text": text})
+    store.put(_ns("facts", user_id), key, fact.model_dump(mode="json"))
+
+
 def delete_fact(key: str, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -> None:
     """Forget one fact."""
     (store or get_store()).delete(_ns("facts", user_id), key)
@@ -149,6 +172,18 @@ def list_style_rules(
 ) -> dict[str, StyleRule]:
     """Return all style rules as {key: StyleRule}, oldest first."""
     return _list("style_rules", StyleRule, store, user_id)
+
+
+def update_style_rule(
+    key: str, text: str, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
+) -> None:
+    """Change the wording of a style rule. Raises KeyError if it's gone."""
+    store = store or get_store()
+    item = store.get(_ns("style_rules", user_id), key)
+    if item is None:
+        raise KeyError(key)
+    rule = StyleRule.model_validate(item.value).model_copy(update={"rule": text})
+    store.put(_ns("style_rules", user_id), key, rule.model_dump(mode="json"))
 
 
 def delete_style_rule(

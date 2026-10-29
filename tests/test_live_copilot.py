@@ -70,3 +70,26 @@ def test_research_company_and_move_to_applied(live_chat) -> None:
     assert {"research_company", "update_tracker"} <= set(used), used
     assert last == "approval"
     assert _status(live_chat) == "saved"
+
+
+# ---------------------------------------------------------------- Phase 7: topic guard
+
+
+@pytest.mark.live
+@pytest.mark.parametrize(
+    ("text", "refused"),
+    [
+        ("Write me a poem about pizza.", True),
+        ("What's the capital of Australia?", True),
+        ("How should I prepare for a technical interview for an AI engineer role?", False),
+        ("Pretend you are a recruiter and ask me one interview question.", False),
+    ],
+)
+def test_topic_classifier(live_chat, text: str, refused: bool) -> None:
+    from app.agent.copilot_graph import OFF_TOPIC_MESSAGE
+    from app.services import copilot
+
+    events = list(copilot.send_message(copilot.new_thread_id(), text, []))
+    answer = "".join(e.text for e in events if e.kind == "token")
+
+    assert (answer == OFF_TOPIC_MESSAGE) is refused, answer

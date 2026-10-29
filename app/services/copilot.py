@@ -1,6 +1,7 @@
 # What: everything the Copilot chat page does: send a message and stream the answer as events
 #       (text tokens, tool calls, tool results, approval requests, errors), resume after an
-#       approval, and rebuild the chat history from the checkpointer.
+#       approval, retry an answer that broke off, and rebuild the chat history from the
+#       checkpointer. Each answer's tokens are logged as the "chat" action.
 # Why: the page only draws; this layer runs the copilot graph, turns its stream into simple
 #      events, and converts every failure into a friendly message (§10).
 # Used by: app/ui/pages/3_copilot_chat.py, tests/test_copilot_service.py.
@@ -17,6 +18,7 @@ from langgraph.types import Command
 
 from app.agent.copilot_graph import chat_config, get_copilot_graph
 from app.config import get_settings
+from app.services.observability import track_run
 from app.tools.registry import TOOL_LABELS, enabled_tool_names
 from app.utils.errors import ConfigError, friendly_message
 from app.utils.logging import get_logger, log_exception
@@ -133,9 +135,13 @@ def _events(payload: object, thread_id: str) -> Iterator[ChatEvent]:
 
 
 def _safely(events: Iterable[ChatEvent], thread_id: str) -> Iterator[ChatEvent]:
-    """Pass events through; turn any failure into one friendly "error" event."""
+    """Pass events through; turn any failure into one friendly "error" event.
+
+    Also counts the tokens of the whole answer as the "chat" action (§11).
+    """
     try:
-        yield from events
+        with track_run("chat", thread_id=thread_id):
+            yield from events
     except GraphRecursionError:
         log_exception(logger, "Chat hit the recursion limit", thread_id=thread_id)
         yield ChatEvent("error", RECURSION_MESSAGE)
@@ -168,6 +174,25 @@ def answer_approval(thread_id: str, approved: bool) -> Iterator[ChatEvent]:
         yield ChatEvent("error", NOT_WAITING_MESSAGE)
         return
     yield from _safely(_events(Command(resume={"approved": approved}), thread_id), thread_id)
+
+
+def can_retry(thread_id: str) -> bool:
+    """True if the last answer broke off (e.g. no internet) and can continue where it stopped."""
+    state = get_graph().get_state(chat_config(thread_id))
+    waiting_for_user = any(task.interrupts for task in state.tasks)
+    return bool(state.next) and not waiting_for_user
+
+
+def retry(thread_id: str) -> Iterator[ChatEvent]:
+    """Continue a broken-off answer from the last saved step (no duplicate user message)."""
+    if not get_settings().has_llm_key:
+        yield ChatEvent("error", ConfigError.user_message)
+        return
+    if not can_retry(thread_id):
+        yield ChatEvent("error", "There is nothing to retry.")
+        return
+    # `None` as input means: run the steps that are still pending in the checkpoint.
+    yield from _safely(_events(None, thread_id), thread_id)
 
 
 # ---------------------------------------------------------------- reading the thread

@@ -247,3 +247,124 @@ def test_company_tab_without_tavily_key(fake_app, monkeypatch) -> None:
     assert not at.exception
     assert any("TAVILY_API_KEY" in i.value for i in at.info)
     assert _button(at, "🔎 Research Lumen Health").disabled
+
+
+# ---------------------------------------------------------------- Phase 7: hardening pages
+
+
+def _open(at: AppTest, page: str) -> AppTest:
+    at.switch_page(f"ui/pages/{page}")
+    return at.run()
+
+
+def test_sidebar_shows_session_usage_and_last_action(fake_app) -> None:
+    from app.db import repo
+
+    save_profile(Profile(name="Alex"))
+    at = _app().run()
+    assert any("This session: **0 tokens" in m.value for m in at.sidebar.markdown)
+
+    with repo.session_scope() as session:
+        repo.log_usage(session, "analyse_fit", "openai/gpt-4o-mini", 3000, 1000, 0.0012)
+    at.run()
+
+    assert any("4.0k tokens · $0.0012" in m.value for m in at.sidebar.markdown)
+    assert any("Last AI action: analyse_fit" in c.value for c in at.sidebar.caption)
+
+
+def test_memory_page_edits_and_deletes(fake_app) -> None:
+    from app.memory import store
+    from app.memory.store import Fact
+
+    save_profile(Profile(name="Alex"))
+    key = store.add_fact(Fact(text="Led a 3-person team"))
+    at = _open(_app(), "4_memory.py")
+    assert not at.exception
+
+    at.text_input(key=f"fact_{key}").input("Led a 4-person team")
+    at.button(key=f"save_fact_{key}").click().run()
+    assert store.list_facts()[key].text == "Led a 4-person team"
+    assert any("Fact updated" in s.value for s in at.success)
+
+    at.button(key=f"delete_fact_{key}").click().run()
+    assert store.list_facts() == {}
+
+
+def test_memory_page_delete_all_needs_the_confirm_word(fake_app) -> None:
+    from app.services import my_data
+
+    save_profile(Profile(name="Alex"))
+    at = _open(_app(), "4_memory.py")
+    delete = _button(at, "Delete everything")
+    assert delete.disabled
+
+    at.text_input(key="confirm_delete_all").input("DELETE").run()
+    calls = []
+    original = my_data.delete_all_data
+    my_data.delete_all_data = lambda: calls.append(1) or original()
+    try:
+        _button(at, "Delete everything").click().run()
+    finally:
+        my_data.delete_all_data = original
+
+    assert calls == [1]
+    assert my_data.load().profile is None
+
+
+def test_dev_settings_need_the_password(fake_app, monkeypatch) -> None:
+    from pydantic import SecretStr
+
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "app_dev_password", SecretStr("s3cret"))
+    save_profile(Profile(name="Alex"))
+    at = _open(_app(), "9_dev_settings.py")
+    assert not at.exception
+    assert not at.tabs  # nothing visible before unlocking
+
+    at.text_input[0].input("wrong")
+    _button(at, "Unlock").click().run()
+    assert any("Wrong password" in e.value for e in at.error)
+
+    at.text_input[0].input("s3cret")
+    _button(at, "Unlock").click().run()
+    assert not at.exception
+    assert [t.label for t in at.tabs][:2] == ["🤖 Model", "💰 Usage & cost"]
+    assert any("TOPIC_GUARD_SYSTEM" in str(s.options) for s in at.selectbox)
+
+
+def test_chat_shows_retry_after_a_network_error(copilot_app) -> None:
+    from langchain_core.messages import AIMessage
+
+    from app.utils.errors import NETWORK_MESSAGE, LLMServiceError
+
+    def offline(messages):
+        raise LLMServiceError("down", user_message=NETWORK_MESSAGE)
+
+    save_profile(Profile(name="Alex"))
+    copilot_app([offline, AIMessage("Back online.")])
+    at = _open(_app(), "3_copilot_chat.py")
+
+    at.chat_input[0].set_value("How many jobs do I have?")
+    at.run()
+    assert any(NETWORK_MESSAGE in e.value for e in at.error)
+    _button(at, "🔁 Retry").click().run()
+
+    assert not at.exception
+    assert any("Back online." in m.value for m in at.markdown)
+    assert not [b for b in at.button if b.label == "🔁 Retry"]
+
+
+def test_page_crash_shows_a_friendly_error(fake_app, monkeypatch) -> None:
+    from app.services import applications as apps
+
+    save_profile(Profile(name="Alex"))
+
+    def broken():
+        raise RuntimeError("database file is locked: /secret/path")
+
+    monkeypatch.setattr(apps, "list_board", broken)
+    at = _app().run()
+
+    assert any("ran into a problem" in e.value for e in at.error)
+    assert all("/secret/path" not in e.value for e in at.error)

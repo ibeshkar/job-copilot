@@ -1,5 +1,6 @@
 # What: small helpers for page state: which job is open (URL ?job=3), which chat thread is
-#       open (URL ?chat=chat-…, with a session fallback), and which copilot tools are on.
+#       open (URL ?chat=chat-…, with a session fallback), which copilot tools are on, and when
+#       the browser session started (for the usage badge).
 # Why: Streamlit forgets st.session_state when the browser is refreshed, but the URL survives.
 #      Keeping ids in the URL means a refresh reopens the same job or chat, and the link can be
 #      bookmarked.
@@ -7,6 +8,7 @@
 #          3_copilot_chat.py.
 
 import re
+from datetime import UTC, datetime
 
 import streamlit as st
 
@@ -16,6 +18,7 @@ JOB_PARAM = "job"
 CHAT_PARAM = "chat"
 CHAT_KEY = "chat_thread_id"
 TOOL_KEY_PREFIX = "tool_"
+SESSION_START_KEY = "session_started_at"
 _CHAT_ID_RE = re.compile(r"^chat-[0-9a-f]{12}$")
 WORKSPACE_PAGE = "ui/pages/2_job_workspace.py"  # relative to app/main.py
 BOARD_PAGE = "ui/pages/1_board.py"
@@ -73,3 +76,11 @@ def enabled_toggles() -> list[str]:
         for name in TOOL_REGISTRY
         if st.session_state.get(tool_toggle_key(name), name in defaults)
     ]
+
+
+def session_started_at() -> datetime:
+    """When this browser session started (the "This session" usage badge counts from here).
+
+    A browser refresh starts a new session, so the badge starts again from zero.
+    """
+    return st.session_state.setdefault(SESSION_START_KEY, datetime.now(UTC))

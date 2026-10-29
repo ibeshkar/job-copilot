@@ -1,5 +1,6 @@
 # What: turns an uploaded file into searchable chunks: load text → split into chunks →
 #       embed → save in the persistent Chroma vector store, with metadata for citations.
+# Also: delete one document's chunks or the whole collection ("Delete all my data").
 # Why: the fit analysis must quote evidence from the user's own documents. Chunks are small, so
 #      a search returns the exact paragraph that proves a skill, not a whole CV.
 # Used by: app/services/onboarding.py, app/rag/retriever.py (get_vectorstore), tests/test_rag.py.
@@ -118,10 +119,11 @@ def split_into_chunks(text: str, doc_name: str, doc_type: str) -> list[Chunk]:
 # ---------------------------------------------------------------- vector store
 
 
-def make_vectorstore(embeddings: Embeddings, persist_dir: Path) -> Chroma:
+def make_vectorstore(embeddings: Embeddings | None, persist_dir: Path) -> Chroma:
     """Open (or create) the Chroma collection in `persist_dir`.
 
-    Tests call this directly with fake embeddings and a temporary folder.
+    Tests call this directly with fake embeddings and a temporary folder. `embeddings=None`
+    gives a store that can only list and delete (used to clean up without an API key).
     """
     persist_dir.mkdir(parents=True, exist_ok=True)
     return Chroma(
@@ -145,9 +147,17 @@ def get_vectorstore() -> Chroma:
     return make_vectorstore(get_embeddings(settings), settings.chroma_dir)
 
 
+def _maintenance_store() -> Chroma:
+    """The knowledge base for deleting: works without an API key (deleting needs no embeddings)."""
+    settings = get_settings()
+    if settings.has_llm_key:
+        return get_vectorstore()
+    return make_vectorstore(None, settings.chroma_dir)
+
+
 def delete_document_chunks(doc_name: str, vectorstore: Chroma | None = None) -> int:
     """Remove all chunks of one document. Returns how many were removed."""
-    vectorstore = vectorstore or get_vectorstore()
+    vectorstore = vectorstore or _maintenance_store()
     ids = vectorstore.get(where={"doc_name": doc_name}, include=[])["ids"]
     if ids:
         vectorstore.delete(ids=ids)
@@ -183,6 +193,13 @@ def ingest_file(
     delete_document_chunks(filename, vectorstore)
     vectorstore.add_documents(chunks, ids=[c.metadata["chunk_id"] for c in chunks])
     return len(chunks)
+
+
+def clear_knowledge_base(vectorstore: Chroma | None = None) -> None:
+    """Delete every chunk of every document ("Delete all my data")."""
+    (vectorstore or _maintenance_store()).delete_collection()
+    # The cached store points at the deleted collection; the next use creates a fresh one.
+    get_vectorstore.cache_clear()
 
 
 def count_chunks(vectorstore: Chroma | None = None) -> int:

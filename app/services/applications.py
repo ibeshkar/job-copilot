@@ -4,7 +4,8 @@
 #       board column, delete a job.
 # Why: it implements the Streamlit + LangGraph interrupt pattern (PROJECT_PLAN.md §7) in one
 #      testable place. Pages only draw widgets and call these functions; they never touch the
-#      graph or the LLM directly.
+#      graph or the LLM directly. Every run is wrapped in `track_run(action)` for cost tracking
+#      and LangSmith metadata.
 # Used by: app/ui/pages/1_board.py, app/ui/pages/2_job_workspace.py, app/agent/deps.py
 #          (save_analysis_to_job, save_draft_version), tests/test_applications_service.py.
 
@@ -37,6 +38,7 @@ from app.guards.input_guard import looks_like_url
 from app.services.company import forget_research
 from app.services.export import ExportFile
 from app.services.export import export_drafts as _export
+from app.services.observability import track_run
 from app.utils.errors import AppError, ConfigError, NotFoundError, friendly_message
 from app.utils.logging import get_logger, log_exception
 
@@ -120,7 +122,8 @@ def get_graph() -> CompiledStateGraph:
     return get_application_graph()
 
 
-def _config_for(job_id: int) -> dict:
+def job_config(job_id: int) -> dict:
+    """The graph config (thread id) of one job's workflow run."""
     with repo.session_scope() as session:
         return thread_config(repo.get_job(session, job_id).thread_id)
 
@@ -162,15 +165,21 @@ def _progress_message(node: str, update: dict | None) -> str | None:
     return None
 
 
-def _stream(payload: object, config: dict, on_progress: ProgressFn | None) -> None:
-    """Run the graph until it pauses or ends, reporting each finished step."""
-    for update in get_graph().stream(payload, config, stream_mode="updates"):
-        for node, values in update.items():
-            if node == "__interrupt__":
-                continue
-            message = _progress_message(node, values)
-            if message and on_progress:
-                on_progress(message)
+def _stream(
+    payload: object, config: dict, on_progress: ProgressFn | None, action: str, job_id: int
+) -> None:
+    """Run the graph until it pauses or ends, reporting each finished step.
+
+    `action` names the run for cost tracking and LangSmith (e.g. "analyse_fit", "draft").
+    """
+    with track_run(action, job_id=job_id):
+        for update in get_graph().stream(payload, config, stream_mode="updates"):
+            for node, values in update.items():
+                if node == "__interrupt__":
+                    continue
+                message = _progress_message(node, values)
+                if message and on_progress:
+                    on_progress(message)
 
 
 def _require_llm_key() -> None:
@@ -191,7 +200,7 @@ def get_workflow_view(job_id: int) -> WorkflowView:
         failed: stopped with a user-facing error (e.g. not a job posting).
         finished: ran to the end.
     """
-    state = get_graph().get_state(_config_for(job_id))
+    state = get_graph().get_state(job_config(job_id))
     values = state.values or {}
     pending = [i.value for task in state.tasks for i in task.interrupts]
 
@@ -259,7 +268,7 @@ def add_job(raw_input: str, on_progress: ProgressFn | None = None) -> RunResult:
     If the input is rejected (too short, not a job posting, unreadable link), the card is
     deleted again and the reason is returned, so the user can fix the input. If the run
     breaks for a technical reason (e.g. the AI service is down), the card stays and the
-    workspace offers "Retry analysis".
+    workspace offers "🔁 Retry".
 
     Args:
         raw_input: a job URL or the pasted job text.
@@ -282,7 +291,13 @@ def add_job(raw_input: str, on_progress: ProgressFn | None = None) -> RunResult:
         )
 
     try:
-        _stream({"raw_input": raw, "job_id": job.id}, thread_config(job.thread_id), on_progress)
+        _stream(
+            {"raw_input": raw, "job_id": job.id},
+            thread_config(job.thread_id),
+            on_progress,
+            "analyse_fit",
+            job.id,
+        )
     except Exception as exc:
         log_exception(logger, "Analysis failed", job_id=job.id, thread_id=job.thread_id)
         return RunResult(ok=False, job_id=job.id, message=friendly_message(exc))
@@ -299,14 +314,14 @@ def retry_analysis(job_id: int, on_progress: ProgressFn | None = None) -> RunRes
     """Continue a run that broke mid-way, from the last saved step (or from the start)."""
     try:
         _require_llm_key()
-        config = _config_for(job_id)
+        config = job_config(job_id)
         if get_graph().get_state(config).values:
             payload: object = None  # None = "continue from the last checkpoint"
         else:
             with repo.session_scope() as session:
                 row = repo.get_job(session, job_id)
             payload = {"raw_input": row.url or row.raw_text, "job_id": job_id}
-        _stream(payload, config, on_progress)
+        _stream(payload, config, on_progress, "retry", job_id)
     except Exception as exc:
         log_exception(logger, "Retry failed", job_id=job_id)
         return RunResult(ok=False, job_id=job_id, message=friendly_message(exc))
@@ -315,11 +330,16 @@ def retry_analysis(job_id: int, on_progress: ProgressFn | None = None) -> RunRes
 
 
 def _resume(
-    job_id: int, stage: Stage, make_payload: Callable[[], dict], on_progress: ProgressFn | None
+    job_id: int,
+    stage: Stage,
+    make_payload: Callable[[], dict],
+    on_progress: ProgressFn | None,
+    action: str,
 ) -> RunResult:
     """Resume a graph paused at `stage` with the user's answer (the interrupt pattern, §7).
 
     `make_payload` builds and validates the answer; a validation error becomes a failed result.
+    `action` names the run for cost tracking, e.g. "draft".
     """
     try:
         _require_llm_key()
@@ -328,7 +348,7 @@ def _resume(
             return RunResult(
                 ok=False, job_id=job_id, message="This job isn't waiting for this review anymore."
             )
-        _stream(Command(resume=payload), _config_for(job_id), on_progress)
+        _stream(Command(resume=payload), job_config(job_id), on_progress, action, job_id)
     except AppError as exc:
         return RunResult(ok=False, job_id=job_id, message=exc.user_message)
     except Exception as exc:
@@ -356,6 +376,8 @@ def submit_fit_review(
         "fit_review",
         lambda: FitReviewDecision(action=action, text=text).model_dump(),
         on_progress,
+        # Each choice leads to different LLM work: re-scoring, planning claims, or none.
+        {"add_context": "analyse_fit", "continue": "plan_claims"}.get(action, "fit_review"),
     )
 
 
@@ -376,7 +398,7 @@ def submit_claim_review(
             job_id=job_id,
             message="Keep at least one claim, otherwise there is nothing true to write about.",
         )
-    return _resume(job_id, "claim_check", review.model_dump, on_progress)
+    return _resume(job_id, "claim_check", review.model_dump, on_progress, "draft")
 
 
 def submit_draft_review(
@@ -397,6 +419,7 @@ def submit_draft_review(
             action=action, edited=edited, section=section, instruction=instruction
         ).model_dump(mode="json"),
         on_progress,
+        "redraft" if action == "regenerate" else "accept_drafts",
     )
 
 

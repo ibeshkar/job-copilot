@@ -91,14 +91,15 @@ def _fit_review_actions(job_id: int) -> None:
 def _fit_tab(view: WorkflowView) -> None:
     if view.stage in ("not_started", "interrupted"):
         st.warning(
-            "The analysis didn't finish, maybe because the AI service was busy. "
+            "The last step didn't finish, maybe because the AI service was busy or the internet "
+            "connection dropped. "
             "Your progress is saved; retrying continues from the last finished step.",
             icon="⏳",
         )
-        if st.button("Retry analysis", type="primary"):
+        if st.button("🔁 Retry", type="primary"):
             _after(
                 _run_with_status(
-                    "Analysing fit…",
+                    "Continuing…",
                     lambda p: applications.retry_analysis(view.job_id, on_progress=p),
                 )
             )

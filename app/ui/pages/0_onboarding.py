@@ -7,7 +7,6 @@
 import streamlit as st
 
 from app.memory.store import (
-    Preferences,
     Profile,
     get_preferences,
     get_profile,
@@ -16,17 +15,10 @@ from app.memory.store import (
 )
 from app.services import onboarding
 from app.services.onboarding import IngestReport
+from app.ui.components import preferences_form, profile_form
 
 STEP_KEY = "onboarding_step"
 PROFILE_DRAFT_KEY = "onboarding_profile_draft"
-SENIORITIES = ["intern", "junior", "mid", "senior", "lead"]
-TONES = ["formal", "friendly", "concise"]
-LENGTHS = ["short", "medium", "long"]
-
-
-def _split(text: str) -> list[str]:
-    """Turn "Berlin, Remote" into ["Berlin", "Remote"]."""
-    return [part.strip() for part in text.split(",") if part.strip()]
 
 
 def _go(step: int) -> None:
@@ -50,47 +42,9 @@ def _step_profile() -> None:
         st.rerun()
 
     p = st.session_state.get(PROFILE_DRAFT_KEY) or get_profile() or Profile(name="")
-    with st.form("profile_form"):
-        name = st.text_input("Your name *", value=p.name)
-        roles = st.text_input(
-            "Target roles (comma-separated)",
-            value=", ".join(p.target_roles),
-            placeholder="Junior AI Engineer, Data Analyst",
-        )
-        seniority = st.selectbox("Seniority", SENIORITIES, index=SENIORITIES.index(p.seniority))
-        locations = st.text_input(
-            "Locations (comma-separated)",
-            value=", ".join(p.locations),
-            placeholder="Berlin, Remote (EU)",
-        )
-        work_auth = st.text_input(
-            "Work authorisation",
-            value=p.work_authorisation,
-            placeholder="EU citizen / Blue Card / needs visa sponsorship",
-        )
-        languages = st.text_input(
-            "Languages with level (comma-separated)",
-            value=", ".join(p.languages),
-            placeholder="English C1, German A2",
-        )
-        salary = st.text_input("Salary expectations (optional)", value=p.salary_expectations or "")
-        submitted = st.form_submit_button("Save and continue →", type="primary")
-
-    if submitted:
-        if not name.strip():
-            st.error("Please enter your name.")
-            return
-        save_profile(
-            Profile(
-                name=name.strip(),
-                target_roles=_split(roles),
-                seniority=seniority,
-                locations=_split(locations),
-                work_authorisation=work_auth.strip(),
-                languages=_split(languages),
-                salary_expectations=salary.strip() or None,
-            )
-        )
+    profile = profile_form(p, "profile_form", "Save and continue →")
+    if profile is not None:
+        save_profile(profile)
         st.session_state.pop(PROFILE_DRAFT_KEY, None)
         _go(2)
 
@@ -135,34 +89,11 @@ def _step_documents() -> None:
 
 def _step_preferences() -> None:
     st.subheader("Step 3 of 3: How should your applications sound?")
-    prefs = get_preferences()
-    with st.form("preferences_form"):
-        tone = st.radio("Tone", TONES, index=TONES.index(prefs.tone), horizontal=True)
-        length = st.radio(
-            "Cover letter length",
-            LENGTHS,
-            index=LENGTHS.index(prefs.letter_length),
-            horizontal=True,
-        )
-        language = st.text_input("Language of letters", value=prefs.letter_language)
-        deal_breakers = st.text_input(
-            "Deal-breakers (comma-separated)",
-            value=", ".join(prefs.deal_breakers),
-            placeholder="No relocation, no unpaid overtime",
-        )
-        submitted = st.form_submit_button("Finish setup ✔", type="primary")
-
+    prefs = preferences_form(get_preferences(), "preferences_form", "Finish setup ✔")
     if st.button("← Back"):
         _go(2)
-    if submitted:
-        save_preferences(
-            Preferences(
-                tone=tone,
-                letter_length=length,
-                letter_language=language.strip() or "Same as the job posting",
-                deal_breakers=_split(deal_breakers),
-            )
-        )
+    if prefs is not None:
+        save_preferences(prefs)
         _go(4)
 
 

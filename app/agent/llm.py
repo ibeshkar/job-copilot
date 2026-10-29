@@ -14,12 +14,18 @@ import openai
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.agent.prompts import structured_retry_message
 from app.config import Settings, get_settings
-from app.utils.errors import ConfigError, LLMServiceError, StructuredOutputError
+from app.utils.errors import (
+    KEY_REJECTED_MESSAGE,
+    ConfigError,
+    LLMServiceError,
+    StructuredOutputError,
+    friendly_message,
+)
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -98,6 +104,15 @@ def get_embeddings(settings: Settings | None = None) -> OpenAIEmbeddings:
     )
 
 
+def _service_error(exc: Exception) -> LLMServiceError:
+    """Wrap a transient error, keeping the right message: "no internet" or "busy"."""
+    return LLMServiceError(str(exc), user_message=friendly_message(exc))
+
+
+def _key_error() -> ConfigError:
+    return ConfigError("OpenRouter rejected the API key", user_message=KEY_REJECTED_MESSAGE)
+
+
 @retry(
     retry=retry_if_exception_type(_TRANSIENT_ERRORS),
     stop=stop_after_attempt(3),
@@ -123,7 +138,7 @@ def invoke_structured(llm: BaseChatModel | None, schema: type[T], messages: list
         The parsed answer.
 
     Raises:
-        LLMServiceError: the service stayed busy or unreachable.
+        LLMServiceError: the service stayed busy or unreachable (the message says which).
         ConfigError: no API key (llm is None), or the key was rejected.
         StructuredOutputError: the answer still didn't match the schema after the retry.
     """
@@ -135,17 +150,18 @@ def invoke_structured(llm: BaseChatModel | None, schema: type[T], messages: list
         try:
             result = _invoke_with_retry(structured, attempt_messages)
         except openai.AuthenticationError as exc:
-            raise ConfigError(
-                "OpenRouter rejected the API key",
-                user_message="OpenRouter rejected the API key. Check OPENROUTER_API_KEY in .env.",
-            ) from exc
+            raise _key_error() from exc
         except _TRANSIENT_ERRORS as exc:
-            raise LLMServiceError(str(exc)) from exc
+            raise _service_error(exc) from exc
         except openai.LengthFinishReasonError as exc:
             # The answer hit max_tokens and was cut off. Asking again gives the same result,
             # so fail with a clear message instead of a stack trace.
             logger.warning("Structured output for %s hit the token limit", schema.__name__)
             raise StructuredOutputError(f"{schema.__name__} answer was cut off") from exc
+        except ValidationError as exc:
+            # OpenAI's client parses strict JSON-schema answers itself and raises here, before
+            # LangChain could report it as `parsing_error`. Treat both the same way (§10).
+            result = {"parsed": None, "parsing_error": exc, "raw": None}
 
         if result.get("parsing_error") is None and result.get("parsed") is not None:
             return result["parsed"]
@@ -179,9 +195,6 @@ def invoke_chat(runnable: Any, messages: list[BaseMessage]) -> AIMessage:
     try:
         return _invoke_with_retry(runnable, messages)
     except openai.AuthenticationError as exc:
-        raise ConfigError(
-            "OpenRouter rejected the API key",
-            user_message="OpenRouter rejected the API key. Check OPENROUTER_API_KEY in .env.",
-        ) from exc
+        raise _key_error() from exc
     except _TRANSIENT_ERRORS as exc:
-        raise LLMServiceError(str(exc)) from exc
+        raise _service_error(exc) from exc

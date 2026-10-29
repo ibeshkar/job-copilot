@@ -623,12 +623,12 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** "Research the company for my newest job and move it to Applied" uses 2 tools and asks for approval before the tracker update.
 
 ### Phase 7: Hardening, usage, observability, dev settings (1.5h)
-- [ ] Input guard (heuristics + topic classifier), length limits, upload limits
-- [ ] Error handling table (section 10) implemented; friendly UI errors with retry
-- [ ] Token and cost tracking + sidebar badge (section 11)
-- [ ] LangSmith env wiring + metadata (`prompt_version`, `action`)
-- [ ] Dev settings page (password): model, temperature, max tokens, prompts viewer
-- [ ] Memory page ("What I know about you") with edit, delete and delete-all
+- [x] Input guard (heuristics + topic classifier), length limits, upload limits
+- [x] Error handling table (section 10) implemented; friendly UI errors with retry
+- [x] Token and cost tracking + sidebar badge (section 11)
+- [x] LangSmith env wiring + metadata (`prompt_version`, `action`)
+- [x] Dev settings page (password): model, temperature, max tokens, prompts viewer
+- [x] Memory page ("What I know about you") with edit, delete and delete-all
 - **Done when:** the injection test string in a job posting doesn't change behaviour, and killing the network shows friendly errors.
 
 ### Phase 8: Interactive extras (1.5h, COULD)

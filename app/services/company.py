@@ -3,6 +3,7 @@
 #       the sources listed, cached per job.
 # Why: the brief helps tailor the letter and prepare for the interview. Caching it in the Store
 #      means a refresh or restart doesn't spend Tavily and LLM credits again.
+#      Its tokens are logged as the "company_research" action.
 # Used by: app/ui/pages/2_job_workspace.py, app/services/applications.py (delete_job).
 
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from app.agent.prompts import company_brief_messages
 from app.agent.state import CompanyBrief
 from app.db import repo
 from app.memory import store
+from app.services.observability import track_run
 from app.tools.company import WebResult, format_results, search_company
 from app.utils.errors import ExternalServiceError, friendly_message
 from app.utils.logging import get_logger, log_exception
@@ -72,7 +74,8 @@ def research_for_job(
 def run_research(job_id: int, focus: str | None = None) -> tuple[CompanyResearch | None, str]:
     """Like `research_for_job`, but never raises: returns (research, "") or (None, message)."""
     try:
-        return research_for_job(job_id, focus or None), ""
+        with track_run("company_research", job_id=job_id):
+            return research_for_job(job_id, focus or None), ""
     except Exception as exc:
         log_exception(logger, "Company research failed", job_id=job_id)
         return None, friendly_message(exc)

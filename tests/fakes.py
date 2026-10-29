@@ -72,13 +72,34 @@ class FakeToolLLM:
     `script` is a list of answers, one per LLM call: an AIMessage (possibly with tool_calls)
     or a function that builds one from the messages. `bound` records which tool names were
     bound for each call, so tests can check the dynamic tool binding.
+
+    The chat's topic guard asks for structured output (TopicCheck). `on_topic` decides the
+    verdict (True, False, or an Exception to simulate a failure); `topic_checks` counts calls.
     """
 
-    def __init__(self, script: list) -> None:
+    def __init__(self, script: list, on_topic: bool | Exception = True) -> None:
         self.script = list(script)
         self.bound: list[list[str]] = []
         self.calls: list[list] = []
         self._tools: list[str] = []
+        self.on_topic = on_topic
+        self.topic_checks = 0
+
+    def with_structured_output(self, schema, include_raw: bool = False):
+        from app.agent.state import TopicCheck
+
+        llm = self
+
+        class _Runnable:
+            def invoke(self, messages):
+                assert schema is TopicCheck, f"unexpected schema {schema.__name__}"
+                llm.topic_checks += 1
+                if isinstance(llm.on_topic, Exception):
+                    raise llm.on_topic
+                verdict = TopicCheck(on_topic=llm.on_topic, reason="fake verdict")
+                return {"raw": "ok", "parsed": verdict, "parsing_error": None}
+
+        return _Runnable()
 
     def bind_tools(self, tools):
         self._tools = [t.name for t in tools]

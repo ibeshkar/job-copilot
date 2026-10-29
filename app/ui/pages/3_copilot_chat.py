@@ -1,6 +1,6 @@
 # What: the Copilot chat page: a chat with the ReAct copilot, its answer streamed live, each
 #       tool call shown in a "🔧 Used: …" expander, an approval card before any tracker change,
-#       starter prompts and a "New chat" button.
+#       starter prompts, a "New chat" button, and "Retry" when an answer broke off.
 # Why: open questions ("What should I apply to next?") don't fit a fixed workflow. The page
 #      only draws; app/services/copilot.py runs the graph. Like the job workspace, the history
 #      is read from the checkpointer on every rerun, so a refresh keeps the conversation.
@@ -10,7 +10,7 @@ from collections.abc import Iterable
 
 import streamlit as st
 
-from app.agent.copilot_graph import MAX_CHAT_CHARS
+from app.guards.input_guard import MAX_CHAT_CHARS
 from app.services import copilot
 from app.services.copilot import ChatEvent, ChatTurn, PendingAction
 from app.tools.registry import TOOL_REGISTRY
@@ -98,6 +98,11 @@ if pending:
     _approval_card(thread_id, pending)
 if error := st.session_state.pop(ERROR_KEY, None):
     st.error(error)
+if not pending and copilot.can_retry(thread_id):
+    # Read from the checkpointer, so the Retry button survives a refresh.
+    st.warning("My last answer didn't finish. Retrying continues where it stopped.", icon="⏳")
+    if st.button("🔁 Retry", type="primary"):
+        _stream_answer(copilot.retry(thread_id))
 
 typed = st.chat_input(
     "Approve or decline the change above first" if pending else "Ask the copilot…",

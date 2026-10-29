@@ -1,12 +1,14 @@
 # What: reusable Streamlit widgets: empty states, status/fit badges, the fit card, claim
-#       badges and the reviewed-claims list, the fact-check warning and draft history.
-# Why: the board and the workspace show the same badges, and keeping the fit card here keeps
-#      the page files short. These functions only draw; they never call the LLM or the graph.
+#       badges and the reviewed-claims list, the fact-check warning, draft history, and the
+#       profile and preferences forms.
+# Why: the board and the workspace show the same badges, and onboarding and the Memory page
+#      share the forms. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
 
 import streamlit as st
 
 from app.agent.state import Claim, FitReport, JobPosting, Requirement, UnsupportedStatement
+from app.memory.store import Preferences, Profile
 
 STATUS_LABELS = {
     "saved": "🔖 Saved",
@@ -17,6 +19,9 @@ STATUS_LABELS = {
 }
 MATCH_ICONS = {"met": "✅", "partial": "⚠️", "missing": "❌"}
 DECISION_ICONS = {"approved": "✅", "edited": "✏️", "removed": "🗑️", "pending": "⏳"}
+SENIORITIES = ["intern", "junior", "mid", "senior", "lead"]
+TONES = ["formal", "friendly", "concise"]
+LENGTHS = ["short", "medium", "long"]
 
 
 def coming_soon(phase: int, what: str) -> None:
@@ -188,4 +193,88 @@ def guard_issues_box(issues: list[UnsupportedStatement]) -> None:
         "**Please check these statements.** The fact-checker couldn't match them to a claim "
         f"you approved. Edit or delete them unless they're true.\n\n{lines}",
         icon="🔎",
+    )
+
+
+# ---------------------------------------------------------------- profile and preferences
+
+
+def split_list(text: str) -> list[str]:
+    """Turn "Berlin, Remote" into ["Berlin", "Remote"]."""
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def profile_form(profile: Profile, key: str, submit_label: str) -> Profile | None:
+    """The profile form. Returns the new Profile when submitted and valid, else None."""
+    with st.form(key):
+        name = st.text_input("Your name *", value=profile.name)
+        roles = st.text_input(
+            "Target roles (comma-separated)",
+            value=", ".join(profile.target_roles),
+            placeholder="Junior AI Engineer, Data Analyst",
+        )
+        seniority = st.selectbox(
+            "Seniority", SENIORITIES, index=SENIORITIES.index(profile.seniority)
+        )
+        locations = st.text_input(
+            "Locations (comma-separated)",
+            value=", ".join(profile.locations),
+            placeholder="Berlin, Remote (EU)",
+        )
+        work_auth = st.text_input(
+            "Work authorisation",
+            value=profile.work_authorisation,
+            placeholder="EU citizen / Blue Card / needs visa sponsorship",
+        )
+        languages = st.text_input(
+            "Languages with level (comma-separated)",
+            value=", ".join(profile.languages),
+            placeholder="English C1, German A2",
+        )
+        salary = st.text_input(
+            "Salary expectations (optional)", value=profile.salary_expectations or ""
+        )
+        submitted = st.form_submit_button(submit_label, type="primary")
+
+    if not submitted:
+        return None
+    if not name.strip():
+        st.error("Please enter your name.")
+        return None
+    return Profile(
+        name=name.strip(),
+        target_roles=split_list(roles),
+        seniority=seniority,
+        locations=split_list(locations),
+        work_authorisation=work_auth.strip(),
+        languages=split_list(languages),
+        salary_expectations=salary.strip() or None,
+    )
+
+
+def preferences_form(prefs: Preferences, key: str, submit_label: str) -> Preferences | None:
+    """The writing-preferences form. Returns the new Preferences when submitted, else None."""
+    with st.form(key):
+        tone = st.radio("Tone", TONES, index=TONES.index(prefs.tone), horizontal=True)
+        length = st.radio(
+            "Cover letter length",
+            LENGTHS,
+            index=LENGTHS.index(prefs.letter_length),
+            horizontal=True,
+        )
+        language = st.text_input("Language of letters", value=prefs.letter_language)
+        deal_breakers = st.text_input(
+            "Deal-breakers (comma-separated)",
+            value=", ".join(prefs.deal_breakers),
+            placeholder="No relocation, no unpaid overtime",
+        )
+        submitted = st.form_submit_button(submit_label, type="primary")
+
+    if not submitted:
+        return None
+    return Preferences(
+        tone=tone,
+        letter_length=length,
+        letter_language=language.strip() or "Same as the job posting",
+        deal_breakers=split_list(deal_breakers),
     )
