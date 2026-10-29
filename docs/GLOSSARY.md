@@ -5,6 +5,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`add_messages`**: the reducer for chat history: new messages are appended instead of replacing the list.
 - **Adzuna**: a job-ad search engine with a free API; our `search_jobs` tool uses it (needs `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`).
 - **Agentic RAG**: RAG where the agent grades its own search results and searches again with new words if nothing relevant was found.
+- **Answer relevancy**: a DeepEval metric: the share of statements in an answer that address the question; checks relevance, not truth.
 - **Approval (write tool)**: the copilot's pause before a tool that changes data (`update_tracker`); you approve or decline.
 - **AppTest**: Streamlit's tool for running an app in a test without a browser.
 - **`avoid_phrases`**: the exact words a style rule bans (e.g. `["passionate"]`); the output guard searches new drafts for them in plain Python.
@@ -26,6 +27,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Context variable (`ContextVar`)**: a Python variable whose value belongs to the current task or thread; LangChain uses one to add our usage counter to every LLM call inside `track_usage`.
 - **Cosine similarity**: a measure of how similar two vectors are, based on the angle between them; we turn it into a 0–1 relevance score.
 - **Cost tracking**: counting each action's input and output tokens and pricing them with `MODEL_PRICING`; saved in the `UsageLog` table.
+- **DeepEval**: an open-source library of LLM evaluation metrics (faithfulness, answer relevancy, G-Eval, …) that use an LLM as the judge.
 - **Delete all my data**: the Memory page button that empties the Store, the knowledge base, the database, all saved runs and chats, and the log.
 - **Delimiters**: tags like `<job_posting>` around outside text, so the LLM can tell data from instructions.
 - **Dependency injection**: giving a function the services it uses (LLM, search) as arguments instead of importing them, so tests can pass fakes.
@@ -43,16 +45,21 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`.env` file**: a local text file with secret settings (like API keys) that is never committed to git.
 - **`.env.example`**: a committed copy of `.env` with empty values, so others know which settings exist without seeing your secrets.
 - **Error boundary**: a last `try/except` around the whole page (`app/main.py`) that turns any crash into a friendly message and a log entry.
+- **Evaluation dataset**: fixed inputs with known good answers (labels) that a part of the app is tested on; ours are in `evals/datasets/`.
 - **Evidence**: our object for one search hit: chunk id, file name, a snippet of up to 300 characters, and a relevance score.
+- **F1 score**: one number that combines precision and recall (their harmonic mean); high only if both are high.
 - **Fail open / fail closed**: when a check itself fails, "open" lets the input through and "closed" blocks it; our topic classifier fails open on unparseable answers.
+- **Faithfulness**: a DeepEval metric: the share of factual statements in an output that the given context backs up; our anti-hallucination score for letters.
 - **Few-shot prompting**: putting a worked example in the prompt so the model copies the pattern.
 - **Fit card**: the Fit tab's view of one analysis: score, red flags, requirements with evidence, tips.
 - **Fit score**: 0–100, computed in Python: must = 3, nice = 1; met = 1, partial = 0.5, missing = 0; capped at 40 by a blocking red flag.
 - **Fixture (pytest)**: setup code that gives a test something it needs, such as an empty database.
 - **Fragment (Streamlit)**: part of a page that can rerun on its own; a dialog is one.
 - **Function calling (tool calling)**: the model answers with "call tool X with these arguments" instead of text; our code runs it and sends back the result.
+- **G-Eval**: a DeepEval metric where the judge scores an output against your own criteria or steps (ours: "tailored to the posting, no generic filler").
 - **Gap question**: a mock interview question about a requirement the fit analysis marked partial or missing, to practise answering honestly.
 - **Grading (RAG)**: an LLM check of whether a retrieved chunk really supports a requirement.
+- **Ground truth (labels)**: the answers a person marked as correct, e.g. the must-have requirements of a posting; the app's output is compared with them.
 - **Grounding**: making the model base its answers only on given evidence, and checking that it cites it.
 - **Help-bot**: the assistant on the Help page; answers questions about the app from `docs/USER_GUIDE.md` only.
 - **Human-in-the-loop (HITL)**: the agent stops and lets a person review or decide before it continues.
@@ -68,6 +75,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Learn from edits**: the step after "Accept & save" that compares the AI's draft with your edited version and saves 0–3 general style rules.
 - **Lint / linter (ruff)**: a tool that checks code for mistakes and style problems without running it.
 - **LLM as a judge**: using a second LLM call to check the output of the first; our output guard is one.
+- **LLM-as-a-judge**: using a (usually stronger) language model to grade another model's output when no exact right answer exists.
 - **Long-term memory**: facts about the user that last across all chats and jobs; stored in the LangGraph Store.
 - **Loop agent (interview loop)**: a graph that repeats the same steps (ask → evaluate) a fixed number of times, with a human turn in every round.
 - **`max_tokens`**: the longest answer the model may give (1,500 here); a longer answer is cut off and fails to parse.
@@ -80,6 +88,8 @@ One line per term, in alphabetical order. Added to after every phase.
 - **ORM (Object-Relational Mapper)**: a library that lets you work with database rows as Python objects instead of writing SQL by hand. We use SQLModel.
 - **Output guard**: the fact-checking step after drafting: lists statements about you that no approved claim backs.
 - **Override attempt**: chat text that tries to change the assistant's rules ("ignore previous instructions", "developer mode"); refused without calling the LLM.
+- **`penalize_ambiguous_claims`**: a DeepEval faithfulness setting: a statement the context neither confirms nor contradicts counts as unfaithful.
+- **Precision**: of the items the app returned, the share that are correct ("how much of the catch is fish").
 - **Prompt injection**: text that tries to give an LLM new instructions, e.g. "ignore all previous instructions" inside a job posting.
 - **Prompt stuffing (context stuffing)**: putting a whole document into the prompt instead of searching it with RAG; fine for small documents like our user guide.
 - **`PROMPT_VERSION`**: a date-based label for the current set of prompts; attached to every trace so runs before and after a prompt change can be compared.
@@ -89,6 +99,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Question plan**: the fixed mix of interview question kinds (behavioural, technical, gap, technical, behavioural), chosen in Python.
 - **RAG (Retrieval-Augmented Generation)**: search the user's documents first, then give the best pieces to the LLM, so it answers from facts.
 - **ReAct agent**: an agent that loops reason → act (call a tool) → observe (read the result) until it can answer.
+- **Recall**: of the correct items, the share the app found ("how many of the fish in the lake were caught").
 - **Recursion limit**: the maximum number of graph steps per run (12 for the chat), so a tool loop can't run forever.
 - **Red flag**: a practical blocker found by comparing the job with the profile: language, visa, seniority, location or deal-breaker.
 - **Reducer**: a rule that says how LangGraph merges a node's update into the state, e.g. append to a list instead of replacing it.
@@ -98,12 +109,14 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Retry (from checkpoint)**: continuing a broken run with `graph.stream(None, config)`, which runs only the steps that hadn't finished.
 - **Run metadata**: labels attached to a trace, here `prompt_version`, `action` and `job_id` / `thread_id`, used to filter traces in LangSmith.
 - **`SecretStr`**: a Pydantic type that hides a secret's value when printed or logged.
+- **Self-preference bias**: a judge model tends to rate text written by itself higher; we use a different model as the judge to reduce it.
 - **Service layer**: plain Python functions between the pages and the agent (`app/services/`); pages call them instead of the graph or LLM.
 - **Session (database)**: one unit of work with the database; changes are saved together on `commit`.
 - **SQL injection**: an attack where user input is run as SQL; the ORM prevents it by sending values separately from the query.
 - **SQLModel**: an ORM that combines Pydantic models and SQLAlchemy tables in one class.
 - **SSRF (Server-Side Request Forgery)**: tricking a server into fetching an internal address; blocked by `url_guard`.
 - **Stage (workflow)**: where a job's run stands: not_started, fit_review, claim_check, draft_review, interrupted, failed or finished; read from the checkpointer.
+- **Standard deviation**: how far values typically are from their average; our fit-score consistency number (0 = the same score every run).
 - **STAR**: a way to structure interview answers: Situation, Task, Action, Result.
 - **State (LangGraph)**: the shared dictionary all nodes read and update; ours is `ApplicationState`.
 - **`st.cache_resource`**: a Streamlit decorator that runs a function once per server process and reuses the result.

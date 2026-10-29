@@ -639,14 +639,14 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** editing a letter to remove "passionate" creates a style rule, and the next letter doesn't use it.
 
 ### Phase 9: Evaluation (1h, COULD/Hard)
-- [ ] `evals/datasets/`: 8–10 labelled job postings (expected must-have requirements), 5 demo drafting cases
-- [ ] DeepEval metrics:
+- [x] `evals/datasets/`: 8–10 labelled job postings (expected must-have requirements), 5 demo drafting cases
+- [x] DeepEval metrics:
   - **Faithfulness** of cover letters vs. approved claims
   - **Answer relevancy** for chat
   - Custom **G-Eval** rubric: "tailored to the posting, no generic filler"
-- [ ] Requirements extraction precision/recall vs. labels (plain Python)
-- [ ] Fit-score consistency: the same job run 3 times → score variance
-- [ ] `docs/EVALUATION.md`: setup, results table, failure analysis, improvements
+- [x] Requirements extraction precision/recall vs. labels (plain Python)
+- [x] Fit-score consistency: the same job run 3 times → score variance
+- [x] `docs/EVALUATION.md`: setup, results table, failure analysis, improvements
 - **Done when:** `python evals/run_evals.py` produces the report.
 
 ### Phase 10: Documentation and review prep (1.5h)

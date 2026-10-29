@@ -1,0 +1,119 @@
+{
+  "_about": "Hand-labelled must-have requirements for 10 job postings. A predicted must-have requirement matches a label if its text contains any of the label's keywords (case-insensitive). Keywords list English and German spellings because the extractor may keep the posting's language.",
+  "postings": [
+    {
+      "id": "good_fit_ai_engineer",
+      "file": "data/samples/jobs/01_good_fit_junior_ai_engineer.md",
+      "must": [
+        {"label": "1+ years of hands-on Python", "keywords": ["python"]},
+        {"label": "Built an LLM or RAG application", "keywords": ["llm", "rag", "retrieval"]},
+        {"label": "Embeddings, chunking and vector search", "keywords": ["embedding", "chunk", "vector"]},
+        {"label": "Clear written English", "keywords": ["english", "communication"]}
+      ]
+    },
+    {
+      "id": "partial_fit_data_engineer",
+      "file": "data/samples/jobs/02_partial_fit_data_engineer.md",
+      "must": [
+        {"label": "3+ years as a data engineer", "keywords": ["data engineer", "3+ years", "3 years", "professional experience"]},
+        {"label": "Strong SQL", "keywords": ["sql"]},
+        {"label": "Strong Python", "keywords": ["python"]},
+        {"label": "Production Apache Spark", "keywords": ["spark"]},
+        {"label": "An orchestrator such as Airflow", "keywords": ["airflow", "orchestrat"]},
+        {"label": "Hands-on AWS", "keywords": ["aws"]},
+        {"label": "English", "keywords": ["english"]}
+      ]
+    },
+    {
+      "id": "poor_fit_senior_ml",
+      "file": "data/samples/jobs/03_poor_fit_senior_ml_engineer.md",
+      "must": [
+        {"label": "6+ years ML, 3+ in computer vision", "keywords": ["6+", "6 years", "computer vision", "machine learning experience"]},
+        {"label": "Expert PyTorch, CNN/transformer architectures", "keywords": ["pytorch", "cnn", "transformer"]},
+        {"label": "CUDA and edge model optimisation", "keywords": ["cuda", "edge", "optimi"]},
+        {"label": "Kubernetes and MLOps in production", "keywords": ["kubernetes", "mlops"]},
+        {"label": "German C1", "keywords": ["german", "deutsch"]},
+        {"label": "Master's or PhD", "keywords": ["master", "phd", "degree"]}
+      ]
+    },
+    {
+      "id": "python_backend",
+      "file": "evals/datasets/postings/04_python_backend_berlin.md",
+      "must": [
+        {"label": "2+ years professional Python", "keywords": ["python"]},
+        {"label": "REST APIs with Django or FastAPI", "keywords": ["rest", "api", "django", "fastapi"]},
+        {"label": "PostgreSQL and SQL performance", "keywords": ["postgres", "sql"]},
+        {"label": "Git and code reviews", "keywords": ["git", "code review"]},
+        {"label": "Fluent English", "keywords": ["english"]}
+      ]
+    },
+    {
+      "id": "german_data_analyst",
+      "file": "evals/datasets/postings/05_german_data_analyst.md",
+      "must": [
+        {"label": "Degree in statistics, business informatics or similar", "keywords": ["studium", "degree", "statisti", "abschluss", "bachelor", "master"]},
+        {"label": "Very good SQL", "keywords": ["sql"]},
+        {"label": "Python or R for analysis", "keywords": ["python", " r ", " r,", "r für", "or r", "oder r"]},
+        {"label": "Power BI or Tableau", "keywords": ["power bi", "tableau"]},
+        {"label": "German C1", "keywords": ["german", "deutsch"]},
+        {"label": "Good English", "keywords": ["english", "englisch"]}
+      ]
+    },
+    {
+      "id": "frontend_react",
+      "file": "evals/datasets/postings/06_frontend_react_remote.md",
+      "must": [
+        {"label": "2+ years frontend development", "keywords": ["frontend", "front-end", "2+ years", "2 years"]},
+        {"label": "Strong TypeScript", "keywords": ["typescript"]},
+        {"label": "Strong React", "keywords": ["react"]},
+        {"label": "HTML and CSS, responsive layouts", "keywords": ["html", "css", "responsive"]},
+        {"label": "Writing tests (Jest, Testing Library, Cypress)", "keywords": ["test", "jest", "cypress"]},
+        {"label": "Written English for async work", "keywords": ["english"]}
+      ]
+    },
+    {
+      "id": "mlops_prose",
+      "file": "evals/datasets/postings/07_mlops_prose.md",
+      "must": [
+        {"label": "Solid Python", "keywords": ["python"]},
+        {"label": "Deploying ML models to production", "keywords": ["deploy", "production", "machine learning model", "ml model"]},
+        {"label": "Docker", "keywords": ["docker"]},
+        {"label": "Kubernetes", "keywords": ["kubernetes"]},
+        {"label": "A cloud platform (GCP or AWS)", "keywords": ["cloud", "gcp", "aws", "google cloud"]},
+        {"label": "English", "keywords": ["english"]}
+      ]
+    },
+    {
+      "id": "ai_product_engineer",
+      "file": "evals/datasets/postings/08_ai_product_engineer_amsterdam.md",
+      "must": [
+        {"label": "Python or TypeScript", "keywords": ["python", "typescript"]},
+        {"label": "LLM APIs and prompt engineering", "keywords": ["llm", "prompt", "openai", "anthropic"]},
+        {"label": "Shipped software real users use", "keywords": ["shipped", "shipping software", "real users", "production"]},
+        {"label": "Clear English", "keywords": ["english", "communication"]}
+      ]
+    },
+    {
+      "id": "data_scientist_injection",
+      "file": "evals/datasets/postings/09_data_scientist_injection.md",
+      "must": [
+        {"label": "Master's degree in a quantitative field", "keywords": ["master", "degree"]},
+        {"label": "Strong Python (pandas, scikit-learn)", "keywords": ["python", "pandas", "scikit"]},
+        {"label": "Statistics, experiment design, A/B testing", "keywords": ["statistic", "a/b", "experiment"]},
+        {"label": "Advanced SQL", "keywords": ["sql"]},
+        {"label": "English C1", "keywords": ["english"]}
+      ]
+    },
+    {
+      "id": "junior_devops",
+      "file": "evals/datasets/postings/10_junior_devops_vienna.md",
+      "must": [
+        {"label": "Linux administration", "keywords": ["linux"]},
+        {"label": "Bash or Python scripting", "keywords": ["bash", "python", "script"]},
+        {"label": "CI/CD pipelines", "keywords": ["ci/cd", "ci ", "pipeline", "gitlab", "github actions", "jenkins"]},
+        {"label": "Docker basics", "keywords": ["docker"]},
+        {"label": "German B2", "keywords": ["german", "deutsch"]}
+      ]
+    }
+  ]
+}

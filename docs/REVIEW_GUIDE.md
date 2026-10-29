@@ -439,6 +439,65 @@ Yes: Developer settings → Model. The choice is saved in `data/runtime/dev_sett
 applied over `.env`; the cached settings and both graphs are rebuilt, so the next action uses
 it (D54).
 
+### Evaluation
+**How do you evaluate the app?**
+`uv run python evals/run_evals.py` runs the real app code on fixed datasets and writes
+`docs/EVALUATION.md`. Four parts: requirements extraction on 10 hand-labelled postings
+(precision/recall, plain Python); 5 drafting cases scored by DeepEval faithfulness and a G-Eval
+"tailored, no filler" rubric, plus a check that no removed claim appears; 5 chat questions
+scored by answer relevancy; and the 3 sample jobs analysed 3 times each to measure how much the
+fit score moves. Latest run: extraction precision/recall 1.00/1.00, faithfulness 0.89, tailoring 0.84, 0 removed claims leaked, chat relevancy 0.86, fit-score std dev up to 6.5 points (target ≤ 5, missed). About 6 cents per run.
+
+**Why an LLM judge? Can you trust it?**
+Some qualities have no exact answer ("is this letter tailored?"), so a second model grades
+them. We reduce the risks: a different, stronger model (`gpt-4.1-mini` judges `gpt-4o-mini`,
+against self-preference bias), temperature 0, our own fixed rubric steps, and we read the
+judge's verdicts, not only its score. That paid off: in one run the judge's summary said a letter
+claimed "3+ years as a data engineer". The verdicts showed the flagged sentence was actually "I'm
+transitioning into data engineering". Where an exact answer exists we use plain Python instead.
+
+**What does faithfulness measure, and why did you change DeepEval's default?**
+The share of facts the letter states about the candidate that are backed by what the writer
+was allowed to use (approved claims, profile, gap notes, posting). With the default prompt every
+sentence counted as a claim, so "I'm excited to apply" was "not in the context" and honest
+letters scored ~0.5. Our `CANDIDATE_CLAIMS_PROMPT` extracts only facts about the candidate; we
+kept `penalize_ambiguous_claims=True`, so an invented skill still fails (D71).
+
+**How do you know the requirement extractor works?**
+I labelled the must-haves of 10 postings by hand (including a German posting, one written as
+prose and one with an injection line) with match keywords. Precision = share of the app's
+must-haves that are real; recall = share of real ones it found. Latest: precision 1.00, recall 1.00 (0.98 in the run before). The
+numbers hide one weakness: "Python **or** TypeScript" is split into two must-haves, which the
+metric counts as correct but which unfairly lowers the fit score of someone with only one.
+
+**Is the fit score reproducible?**
+Mostly. Each sample job was analysed 3 times in new threads. Good fit: 94, 91, 91. Poor fit:
+14, 5, 14. But the partial fit scored 36, 52 and 45 (std dev 6.5; our target is ≤ 5). The formula is plain
+Python, so all variation comes from the LLM steps before it. Partial fits have many borderline
+requirements that flip between met and partial, and one must-have flip moves the score 6–12
+points. The ranking held in all 18 runs. Fix idea: classify at temperature 0 and show the score
+as a band ("about 45, partial fit").
+
+**What did the evaluation find that you didn't know?**
+(1) The partial-fit score is not stable enough (above). (2) The copilot half-refuses skill-planning questions ("I only help with job searches…") and
+answers generically instead of searching the user's documents; it suggested learning SQL to
+someone with 4 years of it (run 1). Relevancy didn't catch it, because it checks relevance, not truth.
+(3) "X or Y" requirements are split into two must-haves. (4) The writer makes small
+exaggerations ("advanced machine learning techniques", "fluent" for C1), but never invented experience. (5) Two flaws in my own
+evaluation: the first G-Eval rubric punished honest letters for not claiming missing skills, and
+the faithfulness context was missing the gap notes. Both are fixed (EVALUATION.md §7).
+
+**How is evaluation different from your unit tests?**
+Unit tests (`pytest`, 300+, offline, free) check that the code does what we wrote, with a
+scripted fake LLM. Evaluations check how good the real model's answers are; they cost money and
+the scores move a little between runs, so they run before and after prompt changes, not on every
+commit. The evaluation code itself has offline unit tests (`tests/test_evals.py`).
+
+**How would you improve the evaluation?**
+More cases (50+ postings, several personas), a second labeller, groundedness for chat answers
+(faithfulness against the tool results), running it automatically when `PROMPT_VERSION` changes,
+and storing results per prompt version (or as LangSmith datasets) to compare versions.
+
 ## 7. Cheat sheet (so far)
 | Fact | Value |
 |---|---|
@@ -446,7 +505,7 @@ it (D54).
 | LLM provider | OpenRouter (OpenAI-compatible API) |
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
-| Tests | 281 offline + 14 live (`uv run pytest`, `uv run pytest -m live`) |
+| Tests | 302 offline + 14 live (+ 4 live evals in `evals/`) (`uv run pytest`, `uv run pytest -m live`) |
 | Pages working | All 7: Get started, Board, Job workspace (Fit, Claim check, Documents, Company, Interview prep, Notes tabs), Copilot chat, What I know about you, Help, Developer settings |
 | Workflow stages shown in UI | not_started, fit_review, claim_check, draft_review, interrupted, failed, finished |
 | Graph nodes | 15: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, plan_claims, claim_check, remember_confirmed_facts, draft_materials, output_guard, draft_review, learn_from_edits, save_to_tracker |
@@ -459,7 +518,7 @@ it (D54).
 | Claims and drafts | max 10 claims; letter ≤ 280 words (medium); 3–6 bullets; max 2 draft attempts per round |
 | Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement, grading in batches of 20 pairs |
 | Fit score | must 3 / nice 1; met 1 / partial 0.5 / missing 0; half-up; cap 40 if blocking |
-| Sample scores (one run) | good 84, partial 43, poor 0 (German C1 blocking) |
+| Sample scores | one Phase 3 run: good 84, partial 43, poor 0; Phase 9 eval runs: good 88–94, partial 36–52, poor 5–14 (German C1 blocking) |
 | LLM calls per analysis | 5–8, about $0.003 with `openai/gpt-4o-mini` |
 | Prompt version | 2026-10-29.9 (18 prompts + 6 tool descriptions) |
 | Cost tracking | `track_run(action)` → `UsageLog`; sidebar badge per session; budget 200,000 tokens, warning at 80% |
@@ -473,3 +532,5 @@ it (D54).
 | Long-term memory | LangGraph `SqliteStore`, `data/runtime/memory.db` |
 | Demo knowledge base | 4 documents, 21 chunks |
 | Sample jobs | 3: good, partial and poor fit (German C1) |
+| Evaluation (latest run) | extraction P/R 1.00/1.00 · faithfulness 0.89 · tailoring 0.84 · removed claims leaked 0/5 · chat relevancy 0.86 · fit std dev ≤ 6.5 (partial fit 36–52) |
+| Evaluation setup | 10 labelled postings, 5 drafting cases, 5 chat questions, 3 jobs × 3 runs; judge `openai/gpt-4.1-mini`; ~$0.06 and ~12 min per run |

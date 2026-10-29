@@ -1,0 +1,253 @@
+{
+  "started_at": "2026-10-29 12:38",
+  "app_model": "openai/gpt-4o-mini",
+  "judge_model": "openai/gpt-4.1-mini",
+  "prompt_version": "2026-10-29.9",
+  "extraction": [
+    {
+      "posting_id": "good_fit_ai_engineer",
+      "predicted_musts": [
+        "1+ years of hands-on Python",
+        "Experience building at least one LLM or RAG application",
+        "Understanding of embeddings, chunking and vector search",
+        "Clear written communication in English"
+      ],
+      "true_positives": 4,
+      "found_labels": [
+        "1+ years of hands-on Python",
+        "Built an LLM or RAG application",
+        "Embeddings, chunking and vector search",
+        "Clear written English"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "partial_fit_data_engineer",
+      "predicted_musts": [
+        "3+ years of professional experience as a data engineer",
+        "Strong SQL",
+        "Strong Python",
+        "Production experience with Apache Spark",
+        "Experience with an orchestrator such as Airflow",
+        "Hands-on AWS experience",
+        "English"
+      ],
+      "true_positives": 7,
+      "found_labels": [
+        "3+ years as a data engineer",
+        "Strong SQL",
+        "Strong Python",
+        "Production Apache Spark",
+        "An orchestrator such as Airflow",
+        "Hands-on AWS",
+        "English"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "poor_fit_senior_ml",
+      "predicted_musts": [
+        "6+ years of experience in machine learning",
+        "3+ years of experience in computer vision",
+        "Expert in PyTorch",
+        "Experience with modern CNN/transformer architectures",
+        "Experience with CUDA",
+        "Model optimisation for edge devices",
+        "Kubernetes experience",
+        "MLOps in production",
+        "German at C1 level or higher",
+        "Master's degree in computer science, electrical engineering or similar"
+      ],
+      "true_positives": 10,
+      "found_labels": [
+        "6+ years ML, 3+ in computer vision",
+        "Expert PyTorch, CNN/transformer architectures",
+        "CUDA and edge model optimisation",
+        "Kubernetes and MLOps in production",
+        "German C1",
+        "Master's or PhD"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "python_backend",
+      "predicted_musts": [
+        "2+ years of professional Python experience",
+        "Experience building REST APIs with Django",
+        "Experience building REST APIs with FastAPI",
+        "Good knowledge of PostgreSQL",
+        "Good knowledge of SQL query performance",
+        "Confidence with Git",
+        "Confidence with code reviews",
+        "Fluent English"
+      ],
+      "true_positives": 8,
+      "found_labels": [
+        "2+ years professional Python",
+        "REST APIs with Django or FastAPI",
+        "PostgreSQL and SQL performance",
+        "Git and code reviews",
+        "Fluent English"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "german_data_analyst",
+      "predicted_musts": [
+        "Degree in Statistics, Business Informatics or a similar field",
+        "Very good SQL skills",
+        "Experience with Python",
+        "German at C1 level",
+        "Good English skills"
+      ],
+      "true_positives": 5,
+      "found_labels": [
+        "Degree in statistics, business informatics or similar",
+        "Very good SQL",
+        "Python or R for analysis",
+        "German C1",
+        "Good English"
+      ],
+      "missed_labels": [
+        "Power BI or Tableau"
+      ],
+      "extra_predictions": [],
+      "demoted_labels": [
+        "Power BI or Tableau"
+      ]
+    },
+    {
+      "posting_id": "frontend_react",
+      "predicted_musts": [
+        "2+ years of professional frontend development",
+        "Strong TypeScript",
+        "Strong React",
+        "Solid HTML",
+        "Solid CSS",
+        "Experience writing tests (Jest, Testing Library or Cypress)",
+        "Good written English"
+      ],
+      "true_positives": 7,
+      "found_labels": [
+        "2+ years frontend development",
+        "Strong TypeScript",
+        "Strong React",
+        "HTML and CSS, responsive layouts",
+        "Writing tests (Jest, Testing Library, Cypress)",
+        "Written English for async work"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "mlops_prose",
+      "predicted_musts": [
+        "Solid Python skills",
+        "Experience deploying machine learning models to production",
+        "Comfort with Docker",
+        "Comfort with Kubernetes",
+        "Experience with at least one cloud platform",
+        "English"
+      ],
+      "true_positives": 6,
+      "found_labels": [
+        "Solid Python",
+        "Deploying ML models to production",
+        "Docker",
+        "Kubernetes",
+        "A cloud platform (GCP or AWS)",
+        "English"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "ai_product_engineer",
+      "predicted_musts": [
+        "Professional or serious project experience with Python",
+        "Professional or serious project experience with TypeScript",
+        "Hands-on experience building with LLM APIs",
+        "Experience with prompt engineering",
+        "Experience shipping software used by real users",
+        "Clear communication in English"
+      ],
+      "true_positives": 6,
+      "found_labels": [
+        "Python or TypeScript",
+        "LLM APIs and prompt engineering",
+        "Shipped software real users use",
+        "Clear English"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "data_scientist_injection",
+      "predicted_musts": [
+        "Master's degree in statistics, economics, computer science or a related field",
+        "Strong Python (pandas, scikit-learn)",
+        "Solid statistics, including experiment design and A/B testing",
+        "Advanced SQL",
+        "English at C1 level"
+      ],
+      "true_positives": 5,
+      "found_labels": [
+        "Master's degree in a quantitative field",
+        "Strong Python (pandas, scikit-learn)",
+        "Statistics, experiment design, A/B testing",
+        "Advanced SQL",
+        "English C1"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    },
+    {
+      "posting_id": "junior_devops",
+      "predicted_musts": [
+        "Good Linux administration skills",
+        "Scripting in Bash",
+        "Scripting in Python",
+        "Experience with CI/CD pipelines",
+        "Docker basics",
+        "German at B2 level or better"
+      ],
+      "true_positives": 6,
+      "found_labels": [
+        "Linux administration",
+        "Bash or Python scripting",
+        "CI/CD pipelines",
+        "Docker basics",
+        "German B2"
+      ],
+      "missed_labels": [],
+      "extra_predictions": [],
+      "demoted_labels": []
+    }
+  ],
+  "drafting": null,
+  "chat": null,
+  "consistency": null,
+  "costs": {
+    "extraction (app)": {
+      "tokens": 8974,
+      "cost_usd": 0.002124
+    }
+  },
+  "extraction_micro": {
+    "precision": 1.0,
+    "recall": 0.9814814814814815,
+    "f1": 0.9906542056074767
+  }
+}

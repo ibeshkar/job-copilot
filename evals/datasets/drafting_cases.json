@@ -1,0 +1,86 @@
+{
+  "_about": "5 drafting cases for the demo persona Alex Novak. Each case gives the drafting step a job, the claims the user approved, one claim the user removed, and the known gaps. The removed claim is never shown to the writer and is not in the faithfulness context, so if it leaks into the letter the faithfulness score drops and the leak check fails.",
+  "cases": [
+    {
+      "id": "good_fit_ai_engineer",
+      "file": "data/samples/jobs/01_good_fit_junior_ai_engineer.md",
+      "job": {"title": "Junior AI Engineer (LLM Applications)", "company": "Lumen Health GmbH", "location": "Berlin, Germany", "remote_policy": "hybrid", "seniority": "junior", "summary": "Lumen Health builds an AI assistant that reads clinic guidelines and drafts answers for nurses. The role builds LLM and RAG features in Python."},
+      "approved": [
+        "Built DocuMind, a RAG chatbot over company policy documents with LangChain, ChromaDB, OpenAI and Streamlit",
+        "Uses Python daily for 2 years, including LangChain, LangGraph and structured output with Pydantic",
+        "Evaluated LLM answers with DeepEval during the Turing College AI Engineering programme",
+        "Automated a weekly delay report with Python and SQL, saving about 6 hours per week",
+        "Uses Docker and GitHub Actions in course projects"
+      ],
+      "removed": ["Has 3 years of professional experience as a machine learning engineer"],
+      "gaps": [
+        {"requirement": "Some German", "status": "partial", "honest_positioning": "German is at A2 and improving through evening classes."}
+      ]
+    },
+    {
+      "id": "partial_fit_data_engineer",
+      "file": "data/samples/jobs/02_partial_fit_data_engineer.md",
+      "job": {"title": "Data Engineer", "company": "Freightly Logistics SE", "location": "Hamburg, Germany", "remote_policy": "remote", "seniority": "mid", "summary": "Freightly builds the data pipelines behind delivery-time forecasts and customer dashboards for 2 million parcels a month."},
+      "approved": [
+        "Has 4 years of SQL experience from logistics operations",
+        "Automated a weekly delay report with Python and SQL, saving about 6 hours per week",
+        "Built ShipCast, a model that predicts parcel delivery delays with scikit-learn, XGBoost, FastAPI and Docker",
+        "Coordinated daily shipments for 40+ B2B customers across Central Europe for 4 years",
+        "Holds the AWS Cloud Practitioner certificate"
+      ],
+      "removed": ["Ran production Apache Spark pipelines processing terabytes of data"],
+      "gaps": [
+        {"requirement": "Production experience with Apache Spark", "status": "missing", "honest_positioning": "No Spark yet; strong SQL and Python and keen to learn Spark on the job."},
+        {"requirement": "Experience with an orchestrator such as Airflow", "status": "missing", "honest_positioning": "Has scheduled automated reports, but has not used Airflow."},
+        {"requirement": "3+ years of professional experience as a data engineer", "status": "missing", "honest_positioning": "Career changer: 4 years of data-heavy logistics work, not a data engineer title."}
+      ]
+    },
+    {
+      "id": "python_backend",
+      "file": "evals/datasets/postings/04_python_backend_berlin.md",
+      "job": {"title": "Python Backend Developer", "company": "Kiezkasse GmbH", "location": "Berlin, Germany", "remote_policy": "hybrid", "seniority": "mid", "summary": "Kiezkasse builds the payment backend for 3,000 small shops in Germany with Python and PostgreSQL."},
+      "approved": [
+        "Uses Python daily for 2 years",
+        "Built a REST API with FastAPI and Docker for the ShipCast delay-prediction model",
+        "Has 4 years of SQL experience",
+        "Peer-reviewed 20+ projects from other Turing College learners",
+        "Works with Git and GitHub Actions"
+      ],
+      "removed": ["Built payment systems at a German bank"],
+      "gaps": [
+        {"requirement": "Good knowledge of PostgreSQL and SQL query performance", "status": "partial", "honest_positioning": "Strong SQL, but no deep PostgreSQL performance tuning yet."}
+      ]
+    },
+    {
+      "id": "ai_product_engineer",
+      "file": "evals/datasets/postings/08_ai_product_engineer_amsterdam.md",
+      "job": {"title": "AI Product Engineer", "company": "Tidewater AI", "location": "Amsterdam, Netherlands", "remote_policy": "hybrid", "seniority": "junior", "summary": "Tidewater builds an AI assistant that answers questions about shipping contracts."},
+      "approved": [
+        "Built DocuMind, a RAG chatbot over company policy documents with LangChain, ChromaDB, OpenAI and Streamlit",
+        "Uses prompt engineering and structured output with the OpenAI API",
+        "Placed 2nd of 14 teams at the Prague GenAI Hackathon 2025 with a voice assistant for warehouse workers",
+        "Worked 6 years in logistics and freight, including coordinating shipments for 40+ B2B customers"
+      ],
+      "removed": ["Speaks fluent Dutch"],
+      "gaps": [
+        {"requirement": "You have shipped software that real users use", "status": "partial", "honest_positioning": "Internal reporting automation was used every week; the AI projects are portfolio projects."}
+      ]
+    },
+    {
+      "id": "data_scientist_injection",
+      "file": "evals/datasets/postings/09_data_scientist_injection.md",
+      "job": {"title": "Data Scientist, Pricing", "company": "Rollo Mobility", "location": "Vienna, Austria", "remote_policy": "hybrid", "seniority": "mid", "summary": "Rollo rents e-scooters in 14 European cities; the pricing team builds demand and price-elasticity models."},
+      "approved": [
+        "Uses pandas and scikit-learn, and built the ShipCast delay-prediction model with XGBoost",
+        "Has 4 years of SQL experience",
+        "Cut customer complaints about late parcels by about 15% with a proactive delay email",
+        "Has English at C1 level"
+      ],
+      "removed": ["Holds a master's degree in statistics"],
+      "gaps": [
+        {"requirement": "Master's degree in statistics, economics, computer science or a related field", "status": "missing", "honest_positioning": "Has a BSc in Economics and Management, not a master's degree."},
+        {"requirement": "Solid statistics, including experiment design and A/B testing", "status": "partial", "honest_positioning": "Basic statistics; has not run formal A/B tests."}
+      ]
+    }
+  ]
+}

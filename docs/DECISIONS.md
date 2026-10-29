@@ -562,3 +562,65 @@ considered. Newest entries at the bottom.
   documents (the user's knowledge base), not for one short guide.
 - **Trade-off:** each question costs ~3k input tokens (~$0.0005 with `gpt-4o-mini`). If the guide
   grows past ~20k tokens, switch to RAG.
+
+## D69. The evaluation runs the real app code, in a throwaway folder (Phase 9)
+- **What:** `evals/runners.py` calls the production pieces: the `extract_requirements` and
+  `draft_materials` nodes, the copilot graph and the application graph. `run_evals.py` points
+  `RUNTIME_DIR` at a new temp folder and loads the demo persona there.
+- **Why:** an evaluation of a copied prompt measures the copy, not the app. Running in a temp
+  folder means the user's real profile, documents and jobs are never read or changed, and every
+  run starts from the same state.
+- **Alternative:** DeepEval's `evaluate()` with datasets and its test runner. We call
+  `metric.measure()` directly: fewer moving parts, no DeepEval login or cloud dashboard, and
+  our own Markdown report.
+
+## D70. The DeepEval judge goes through our OpenRouter factory, with a different model (Phase 9)
+- **What:** `evals/judge.py` → `OpenRouterJudge` implements DeepEval's model interface
+  (`generate`, `a_generate`, `get_model_name`) on top of `get_llm()`. Default judge:
+  `openai/gpt-4.1-mini` at temperature 0; the app model stays `openai/gpt-4o-mini`.
+- **Why:** DeepEval calls OpenAI directly by default and we only have an OpenRouter key (D7).
+  The wrapper also means judge calls are counted by our own token tracking. A different,
+  stronger judge avoids a model grading its own writing ("self-preference bias").
+- **Alternative:** DeepEval's built-in `OpenAIModel` with `base_url`. It validates model names
+  against OpenAI's list, which doesn't know OpenRouter's `provider/model` ids.
+- **Trade-off:** the judge costs about 5× more per token than the app model; a full run still
+  costs about 6 cents.
+
+## D71. Faithfulness only checks facts about the candidate (Phase 9)
+- **What:** the faithfulness metric uses our own claim-extraction prompt
+  (`CANDIDATE_CLAIMS_PROMPT`, plugged in as a DeepEval `evaluation_template` subclass). It
+  extracts facts about the candidate (experience, skills, numbers, education, languages) and
+  skips opinions, motivation, statements about the company and greetings.
+  `penalize_ambiguous_claims=True` stays on.
+- **Why:** with DeepEval's default prompt, every sentence is a claim. In strict mode,
+  "I'm excited to apply" isn't in the context, so honest letters scored about 0.5. Without
+  strict mode, an invented skill that contradicts nothing would count as faithful. Neither
+  measures what we care about: invented experience.
+- **How we know:** the first runs (see EVALUATION.md §7) went from 0.48 to 0.58 (fixing the
+  context) to 0.88 (this prompt). The remaining flags were real small exaggerations.
+- **Trade-off:** our prompt is one more thing to maintain, and it relies on DeepEval's
+  template-override hook. `tests/test_evals.py` checks that the hook still uses our prompt.
+
+## D72. Requirement labels are matched by keywords (Phase 9)
+- **What:** each labelled must-have lists keywords (English and German). A predicted must-have
+  that contains one of them matches. Splits ("SQL and Python" → two items) are all correct.
+- **Why:** exact string matching fails on every rewording; an LLM matcher would be one more
+  judge to trust and pay for. Keywords are free, repeatable and easy to read in the dataset.
+- **Trade-off:** too loose keywords inflate the score. The first draft of the labels had "ship"
+  for "shipped software", which matched "a background in shipping". Each keyword must be
+  specific to its requirement within that posting.
+
+## D73. The fit-score check uses the production temperature (Phase 9)
+- **What:** `run_fit_consistency` runs the real graph with the app's settings (temperature 0.2),
+  3 times per sample job, each in a new thread. We report standard deviation and range, and
+  check that every good-fit run beats every partial-fit run, and so on.
+- **Why:** the question is "will the user see the same score twice?", so we test what the user
+  gets. Temperature 0 would hide variation that users would see.
+- **Alternative:** more runs (`--runs 5`) give a better estimate, at about 1 cent per extra run.
+
+## D74. The report is generated into EVALUATION.md between markers (Phase 9)
+- **What:** `evals/report.py` → `write_report()` replaces only the text between
+  `<!-- EVAL-RESULTS:START -->` and `<!-- EVAL-RESULTS:END -->`. The raw results, including
+  every letter and chat answer, go to `evals/results/latest.json` (committed).
+- **Why:** the plan asks for one command that produces the report. The analysis around the
+  numbers must be written by a person, so it lives outside the markers and survives re-runs.

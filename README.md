@@ -25,6 +25,8 @@ uv run python scripts/analyse_sample_jobs.py   # fit analysis on the 3 sample jo
 uv run ruff check .              # lint
 uv run pytest                    # unit tests (no network)
 uv run pytest -m live            # end-to-end tests with the real LLM (costs a few cents)
+uv run python evals/run_evals.py # evaluation report → docs/EVALUATION.md (~$0.06, ~12 min)
+uv run pytest evals -m live      # the evaluation as pass/fail tests
 ```
 
 ## Privacy

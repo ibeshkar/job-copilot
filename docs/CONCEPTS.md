@@ -735,3 +735,54 @@ agent or workflow).
 **Where it is in our code:** `app/agent/prompts.py` (`TONE_GUIDE`, `HELP_BOT_SYSTEM`),
 `app/rag/retriever.py`, `app/agent/application_graph.py`, `app/agent/copilot_graph.py`,
 `app/agent/interview_graph.py`.
+
+---
+
+## Evaluation: plain checks and LLM-as-a-judge (Phase 9)
+
+**One sentence:** evaluation means running parts of the app on fixed test inputs and scoring
+the outputs, so "it seems to work" becomes a number you can compare after every change.
+
+**Analogy:** a driving test. Some checks have exact answers (did you stop at the red light?),
+and some need an examiner's judgement (was that a safe distance?). We use plain Python for the
+first kind and a second, stronger LLM as the examiner for the second kind.
+
+**Two kinds of checks in our app:**
+
+| Kind | When to use it | Our examples |
+|---|---|---|
+| Plain Python against labels | a right answer exists | must-have requirements (precision/recall), fit-score spread, "removed claim appears in the letter?" |
+| LLM-as-a-judge (DeepEval) | "good" is a judgement | is the letter faithful to the approved claims? tailored? does the chat answer the question? |
+
+**The DeepEval metrics we use:**
+- **Faithfulness:** the judge lists the facts the letter states about the candidate, then
+  checks each one against the context (approved claims, profile, gap notes, posting).
+  Score = backed facts / all facts.
+- **Answer relevancy:** the judge splits the chat answer into statements and asks for each
+  one: "does this help answer the question?"
+- **G-Eval:** the judge follows our own steps ("does the letter refer to this posting's
+  specific needs? penalise filler like 'hard-working team player'…") and gives a score 0–1.
+
+**Where it is in our code:** `evals/runners.py` runs the real nodes and graphs;
+`evals/judge.py` → `make_metrics()` builds the metrics:
+
+```python
+"faithfulness": FaithfulnessMetric(
+    threshold=FAITHFULNESS_THRESHOLD,           # 0.9
+    model=judge,                                # OpenRouterJudge: our get_llm(), another model
+    async_mode=False,
+    penalize_ambiguous_claims=True,             # "not in the context" counts as unfaithful
+    evaluation_template=CandidateFactsTemplate, # only facts about the candidate, not opinions
+),
+```
+
+**The judge needs checking too.** The first faithfulness score (0.48) was mostly wrong. It
+counted "I'm excited to apply" as an unbacked claim, and we had forgotten to give the judge the
+gap notes the writer was allowed to use. Reading the judge's reasons, not just the score, found
+both problems. See `docs/EVALUATION.md` §7.
+
+**Evaluation vs. tests vs. observability:**
+- **Unit tests** check that code does what we wrote (offline, exact, on every change).
+- **Evaluations** check how good the AI's answers are (real API, scored, run before and after
+  prompt changes).
+- **Observability** (LangSmith) shows what happened in one real run, after the fact.

@@ -1,0 +1,10 @@
+{
+  "_about": "Questions for the copilot chat, used for DeepEval's answer relevancy metric. They only need read-only tools, so no approval pause is expected.",
+  "questions": [
+    "Which of my projects shows that I can build RAG applications?",
+    "What are my strongest skills for a junior AI engineer role?",
+    "Do I have any experience with Docker? Where does it show?",
+    "How should I explain my career change from logistics in an interview?",
+    "Which skills should I learn next to apply for data engineering jobs?"
+  ]
+}
