@@ -1,7 +1,7 @@
 # What: everything the Board and Job workspace pages do with jobs: add a job and run the fit
-#       analysis (with progress messages), read where a job's workflow stands, resume the three
-#       reviews (fit, claim check, drafts), draft versions, ratings and export, change a job's
-#       board column, delete a job.
+#       analysis (with progress messages), read where a job's workflow stands (including style
+#       rules learned at acceptance), resume the three reviews (fit, claim check, drafts), draft
+#       versions, ratings and export, change a job's board column, delete a job.
 # Why: it implements the Streamlit + LangGraph interrupt pattern (PROJECT_PLAN.md §7) in one
 #      testable place. Pages only draw widgets and call these functions; they never touch the
 #      graph or the LLM directly. Every run is wrapped in `track_run(action)` for cost tracking
@@ -20,6 +20,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from app.agent.application_graph import get_application_graph, thread_config
+from app.agent.interview_graph import interview_thread_id
 from app.agent.state import (
     Claim,
     ClaimReviewDecision,
@@ -86,6 +87,7 @@ class WorkflowView:
     drafts: Drafts | None = None
     user_edits: Drafts | None = None
     guard_issues: list[UnsupportedStatement] = field(default_factory=list)
+    learned_rules: list[dict] = field(default_factory=list)  # [{"key", "rule"}] at acceptance
 
 
 @dataclass
@@ -160,6 +162,8 @@ def _progress_message(node: str, update: dict | None) -> str | None:
         if not issues:
             return "Fact check passed: every statement is backed by an approved claim"
         return f"Fact check found {len(issues)} unsupported statement(s)"
+    if node == "learn_from_edits" and update.get("learned_rules"):
+        return f"Learned {len(update['learned_rules'])} style rule(s) from your edits"
     if node == "save_to_tracker":
         return "Saved to your board"
     return None
@@ -234,6 +238,7 @@ def get_workflow_view(job_id: int) -> WorkflowView:
         drafts=values.get("drafts"),
         user_edits=values.get("user_edits"),
         guard_issues=values.get("guard_issues", []),
+        learned_rules=values.get("learned_rules", []),
     )
 
 
@@ -552,13 +557,16 @@ def save_notes(
 
 
 def delete_job(job_id: int) -> None:
-    """Delete a job, its drafts, its saved workflow state and its company research."""
+    """Delete a job, its drafts, its saved workflow state and mock interview, and its company
+    research."""
     with repo.session_scope() as session:
         thread_id = repo.get_job(session, job_id).thread_id
         repo.delete_job(session, job_id)
+    # Job runs and interviews share one checkpoint file, so one checkpointer deletes both.
     checkpointer = get_graph().checkpointer
     if checkpointer is not None and thread_id:
         checkpointer.delete_thread(thread_id)
+        checkpointer.delete_thread(interview_thread_id(job_id))
     forget_research(job_id)
 
 

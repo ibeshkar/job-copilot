@@ -19,6 +19,7 @@ CHAT_PARAM = "chat"
 CHAT_KEY = "chat_thread_id"
 TOOL_KEY_PREFIX = "tool_"
 SESSION_START_KEY = "session_started_at"
+TONE_KEY = "sidebar_tone"
 _CHAT_ID_RE = re.compile(r"^chat-[0-9a-f]{12}$")
 WORKSPACE_PAGE = "ui/pages/2_job_workspace.py"  # relative to app/main.py
 BOARD_PAGE = "ui/pages/1_board.py"

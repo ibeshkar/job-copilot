@@ -2,7 +2,7 @@
 #       input_guard → ingest_job → extract_requirements → retrieve_evidence ⇄ rewrite_queries
 #       → assess_fit → fit_review (pause) → plan_claims → claim_check (pause)
 #       → remember_confirmed_facts → draft_materials ⇄ output_guard → draft_review (pause)
-#       → save_to_tracker → END.
+#       → learn_from_edits → save_to_tracker → END.
 # Why: applying is high-stakes, so the steps run in a fixed, auditable order (a workflow, not a
 #      free agent). The SQLite checkpointer saves the state after every step, which is what lets
 #      the graph pause for the user and resume later.
@@ -25,6 +25,7 @@ from app.agent.nodes.drafting import draft_materials, draft_review, needs_redraf
 from app.agent.nodes.evidence import needs_rewrite, retrieve_evidence, rewrite_queries
 from app.agent.nodes.fit import assess_fit
 from app.agent.nodes.ingest import ingest_job, input_guard
+from app.agent.nodes.learning import learn_from_edits
 from app.agent.nodes.requirements import extract_requirements
 from app.agent.nodes.review import fit_review, save_to_tracker
 from app.agent.state import CHECKPOINT_TYPES, ApplicationState
@@ -60,7 +61,7 @@ def _after_guard(state: ApplicationState) -> str:
 
 
 def _after_draft_review(state: ApplicationState) -> str:
-    return "draft_materials" if state.get("regenerate") else "save_to_tracker"
+    return "draft_materials" if state.get("regenerate") else "learn_from_edits"
 
 
 def build_application_graph(
@@ -92,6 +93,7 @@ def build_application_graph(
     graph.add_node("draft_materials", partial(draft_materials, deps=deps))
     graph.add_node("output_guard", partial(output_guard, deps=deps))
     graph.add_node("draft_review", draft_review)
+    graph.add_node("learn_from_edits", partial(learn_from_edits, deps=deps))
     graph.add_node("save_to_tracker", partial(save_to_tracker, deps=deps))
 
     graph.add_edge(START, "input_guard")
@@ -116,8 +118,9 @@ def build_application_graph(
     graph.add_edge("draft_materials", "output_guard")
     graph.add_conditional_edges("output_guard", _after_guard, ["draft_materials", "draft_review"])
     graph.add_conditional_edges(
-        "draft_review", _after_draft_review, ["draft_materials", "save_to_tracker"]
+        "draft_review", _after_draft_review, ["draft_materials", "learn_from_edits"]
     )
+    graph.add_edge("learn_from_edits", "save_to_tracker")
     graph.add_edge("save_to_tracker", END)
 
     return graph.compile(checkpointer=checkpointer)

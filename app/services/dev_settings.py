@@ -32,8 +32,9 @@ def _reload() -> None:
     """Forget the cached settings and graphs, so the next run builds them with the new model."""
     from app.agent.application_graph import get_application_graph
     from app.agent.copilot_graph import get_copilot_graph
+    from app.agent.interview_graph import get_interview_graph
 
-    for cached in (get_settings, get_application_graph, get_copilot_graph):
+    for cached in (get_settings, get_application_graph, get_copilot_graph, get_interview_graph):
         cached.cache_clear()
 
 

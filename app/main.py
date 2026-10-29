@@ -1,7 +1,8 @@
 # What: the Streamlit entry point. Run it with `streamlit run app/main.py`.
 # Why: it sets up the things every page needs (logging, database tables, LangSmith tracing,
-#      the sidebar with the usage badge and the copilot's tool toggles, a banner if the API key
-#      is missing or rejected) and then hands control to the page the user picked. A last
+#      the sidebar with the usage badge, the tone selector and the copilot's tool toggles, a
+#      banner if the API key is missing or rejected) and then hands control to the page the
+#      user picked. A last
 #      safety net turns any unexpected error into a friendly message (no stack traces, §10).
 # Used by: Streamlit only. Pages live in app/ui/pages/ and are registered below.
 
@@ -9,11 +10,12 @@ import streamlit as st
 
 from app.config import get_settings
 from app.db.repo import init_db
-from app.memory.store import get_profile
-from app.services import usage
+from app.memory.store import get_preferences, get_profile
+from app.services import my_data, usage
 from app.services.observability import KeyStatus, check_llm_key, configure_tracing
 from app.tools.registry import TOOL_REGISTRY, default_toggles, missing_keys
-from app.ui.state import session_started_at, tool_toggle_key
+from app.ui.components import TONE_LABELS, TONES
+from app.ui.state import TONE_KEY, session_started_at, tool_toggle_key
 from app.utils.errors import friendly_message
 from app.utils.logging import configure_logging, get_logger, log_exception
 
@@ -64,6 +66,19 @@ with st.sidebar:
     if profile:
         st.markdown(f"👤 **{profile.name}**")
     st.caption(f"Model: `{settings.default_model}`")
+
+    # Tone selector (C5). The saved preference is copied into the widget on every run, so a
+    # change on the Memory page shows here too; a change here is saved by the callback.
+    st.session_state[TONE_KEY] = get_preferences().tone
+    st.selectbox(
+        "🎭 Tone",
+        TONES,
+        key=TONE_KEY,
+        format_func=TONE_LABELS.get,
+        on_change=lambda: my_data.set_tone(st.session_state[TONE_KEY]),
+        help="How the app writes for you: cover letters, chat answers, interview feedback "
+        "and the help-bot.",
+    )
 
     # Usage badge (§11). Filled in after the page has run, so it includes this run's actions.
     usage_box = st.container()

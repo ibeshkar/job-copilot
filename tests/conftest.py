@@ -27,6 +27,7 @@ def clear_app_caches() -> None:
     opens them again from the current RUNTIME_DIR."""
     from app.agent.application_graph import get_application_graph
     from app.agent.copilot_graph import get_copilot_graph
+    from app.agent.interview_graph import get_interview_graph
     from app.config import get_settings
     from app.db.repo import get_engine
     from app.memory.store import get_store
@@ -39,6 +40,7 @@ def clear_app_caches() -> None:
         get_vectorstore,
         get_application_graph,
         get_copilot_graph,
+        get_interview_graph,
     ):
         cached.cache_clear()
 
@@ -76,21 +78,35 @@ def app_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def fake_app(app_db, monkeypatch):
-    """The app wired to an offline fake graph (scripted LLM, tiny search) in a temp folder.
+    """The app wired to offline fake graphs (scripted LLM, tiny search) in a temp folder:
+    the application workflow and the mock interview, sharing one checkpoint file.
 
     Returns the GraphDeps, so a test can swap the LLM (e.g. to simulate an outage).
     """
     from app.agent.application_graph import build_application_graph, make_checkpointer
-    from app.services import applications
-    from tests.graph_fakes import make_deps
+    from app.agent.interview_graph import build_interview_graph, default_interview_deps
+    from app.memory import store
+    from app.services import applications, interview, learning
+    from tests.graph_fakes import fake_search, make_deps
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")  # the service checks a key exists
     clear_app_caches()
     deps = make_deps()
     deps.save_job = applications.save_analysis_to_job  # write results to the temp database
     deps.save_draft = applications.save_draft_version
+    deps.list_style_rules = lambda: list(store.list_style_rules().values())  # the real Store
+    deps.add_style_rule = store.add_style_rule
     graph = build_application_graph(deps, make_checkpointer(app_db / "checkpoints.db"))
     monkeypatch.setattr(applications, "get_graph", lambda: graph)
+
+    interview_deps = default_interview_deps()  # real database and Store, fake LLM and search
+    interview_deps.llm = deps.llm
+    interview_deps.search = fake_search
+    interview_graph = build_interview_graph(
+        interview_deps, make_checkpointer(app_db / "checkpoints.db")
+    )
+    monkeypatch.setattr(interview, "get_graph", lambda: interview_graph)
+    monkeypatch.setattr(learning, "get_model", lambda: deps.llm)
     return deps
 
 

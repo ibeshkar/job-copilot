@@ -358,3 +358,13 @@ def add_interview_session(
     session.commit()
     session.refresh(row)
     return row
+
+
+def list_interview_sessions(session: Session, job_id: int) -> list[InterviewSession]:
+    """Return a job's finished mock interviews, newest first."""
+    query = (
+        select(InterviewSession)
+        .where(InterviewSession.job_id == job_id)
+        .order_by(InterviewSession.created_at.desc(), InterviewSession.id.desc())
+    )
+    return list(session.exec(query).all())

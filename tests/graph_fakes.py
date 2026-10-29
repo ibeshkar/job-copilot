@@ -2,7 +2,8 @@
 #       search, a fake long-term memory, and helpers that build GraphDeps around them.
 # Why: the graph tests, service tests and UI tests all need the same offline "world" in which
 #      a sample job scores exactly 86 and pauses at the fit review, then proposes 3 claims
-#      (2 backed by documents, 1 not) and writes drafts from the approved ones.
+#      (2 backed by documents, 1 not), writes drafts from the approved ones, and learns a
+#      "don't use this word" rule from every long word the user deletes.
 # Used by: tests/test_application_graph.py, tests/test_applications_service.py,
 #          tests/test_ui_pages.py.
 
@@ -13,6 +14,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from app.agent.application_graph import build_application_graph, thread_config
 from app.agent.deps import GraphDeps
 from app.agent.state import (
+    AnswerFeedback,
     ChunkGrade,
     ClaimPlan,
     Drafts,
@@ -21,12 +23,17 @@ from app.agent.state import (
     FitAssessment,
     GradeList,
     GuardReport,
+    InterviewQuestion,
+    InterviewSummary,
     JobPostingExtraction,
     MatchClassification,
     PlannedClaim,
+    ProposedStyleRule,
     RequirementList,
     SearchQueries,
     SearchQuery,
+    StyleRule,
+    StyleRuleProposal,
     UnsupportedStatement,
 )
 from app.memory.store import Preferences, Profile
@@ -117,6 +124,7 @@ def _tag(messages, tag: str) -> str:
 
 
 UNSUPPORTED_CLAIM = "Led a team of five engineers."
+PASSIONATE = "I am passionate about building AI products."
 GREETING, CLOSING = "Dear Lumen Health team,", "Best regards, Alex"
 
 
@@ -144,6 +152,17 @@ def answer_drafts(messages) -> Drafts:
     )
 
 
+def passionate_writer(messages) -> Drafts:
+    """A writer that says "passionate" unless a style rule in its prompt bans it (like a real
+    model following its instructions)."""
+    drafts = answer_drafts(messages)
+    if "'passionate'" not in messages[0].content:
+        drafts.cover_letter = drafts.cover_letter.replace(
+            "Best regards", f"{PASSIONATE}\nBest regards"
+        )
+    return drafts
+
+
 def answer_guard(messages) -> GuardReport:
     """A "fact-checker": every draft line must be an approved claim (or the greeting/closing)."""
     allowed = set(approved_claims(messages).values()) | {GREETING, CLOSING}
@@ -155,6 +174,54 @@ def answer_guard(messages) -> GuardReport:
             if line and not line.endswith(":") and line not in allowed
         ]
     )
+
+
+def answer_style_rules(messages) -> StyleRuleProposal:
+    """A "style learner": every longer word the user deleted (and didn't add back) is banned."""
+    diff = _tag(messages, "edit_diff")
+    removed = _words(" ".join(x for x in diff.splitlines() if x.startswith("- ")))
+    added = _words(" ".join(x for x in diff.splitlines() if x.startswith("+ ")))
+    return StyleRuleProposal(
+        rules=[
+            ProposedStyleRule(rule=f"Avoid the word '{word}'", avoid_phrases=[word])
+            for word in sorted(removed - added)
+            if len(word) >= 8
+        ]
+    )
+
+
+def answer_question(messages) -> InterviewQuestion:
+    """An "interviewer" that numbers its questions and always tests R1."""
+    previous = _tag(messages, "previous_questions")
+    n = 1 if previous == "(none)" else len(previous.splitlines()) + 1
+    return InterviewQuestion(
+        question=f"Question {n}: tell me about your Python work.",
+        kind="technical",  # the graph overrides it with the planned kind
+        requirement_id="R1",
+        why="Checks Python depth.",
+    )
+
+
+def answer_feedback(messages) -> AnswerFeedback:
+    """A "coach": long answers score 4, short ones 2; cites every evidence id it was given."""
+    answer = _tag(messages, "candidate_answer")
+    ids = re.findall(r"^\[([^\]]+)\]", _tag(messages, "candidate_evidence"), re.M)
+    return AnswerFeedback(
+        star_parts=["result", "situation"],
+        relevance="Answers the question.",
+        specificity="Some detail.",
+        score=4 if len(answer) > 40 else 2,
+        improvement="Add a number.",
+        improved_answer="I built a RAG chatbot with LangChain and ChromaDB.",
+        evidence_ids_used=[*ids, "invented#9"],
+    )
+
+
+INTERVIEW_SUMMARY = InterviewSummary(
+    strongest_areas=["Python"],
+    weakest_areas=["Kubernetes"],
+    next_steps=["Prepare a Kubernetes learning story."],
+)
 
 
 EXTRACTION = JobPostingExtraction(
@@ -188,6 +255,10 @@ def make_llm(overrides: dict | None = None) -> FakeStructuredLLM:
         ClaimPlan: answer_claims,
         Drafts: answer_drafts,
         GuardReport: answer_guard,
+        StyleRuleProposal: answer_style_rules,
+        InterviewQuestion: answer_question,
+        AnswerFeedback: answer_feedback,
+        InterviewSummary: INTERVIEW_SUMMARY,
     }
     responders.update(overrides or {})
     return FakeStructuredLLM(responders)
@@ -206,11 +277,15 @@ class FakeMemory:
 
     def __init__(self, facts: list[str] | None = None, rules: list[str] | None = None) -> None:
         self.facts = list(facts or [])
-        self.rules = list(rules or [])
+        self.rules = [StyleRule(rule=r, source="explicit") for r in rules or []]
         self.drafts: list[tuple[int, Drafts, bool]] = []
 
     def remember_fact(self, text: str, job_id: int | None) -> None:
         self.facts.append(text)
+
+    def add_style_rule(self, rule: StyleRule) -> str:
+        self.rules.append(rule)
+        return f"rule-{len(self.rules)}"
 
     def save_draft(self, job_id: int, drafts: Drafts, is_user_edited: bool) -> None:
         self.drafts.append((job_id, drafts, is_user_edited))
@@ -231,6 +306,7 @@ def make_deps(
         list_facts=lambda: list(memory.facts),
         remember_fact=memory.remember_fact,
         list_style_rules=lambda: list(memory.rules),
+        add_style_rule=memory.add_style_rule,
         save_draft=memory.save_draft,
     )
 

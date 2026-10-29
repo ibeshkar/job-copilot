@@ -1,27 +1,32 @@
 # What: the Job workspace: one job's details in tabs. The Fit, Claim check and Documents tabs
 #       render whatever the paused workflow is waiting for (fit review, claim check, draft
-#       review) and send the user's decision back. Company shows web research about the
-#       employer. Notes keeps notes, next action and versions.
+#       review) and send the user's decision back; Documents also shows the style rules learned
+#       from the user's edits and 👎 comments (with Undo). Company shows web research about the
+#       employer. Interview prep runs the mock interview. Notes keeps notes, next action and
+#       versions.
 # Why: this is the interrupt-rendering pattern from PROJECT_PLAN.md §7. On every rerun the page
 #      reads the saved graph state, so refreshing the browser or restarting the app shows the
 #      same step again.
-# Used by: app/main.py (st.navigation). Work is done by app/services/applications.py.
+# Used by: app/main.py (st.navigation). Work is done by app/services/applications.py,
+#          company.py, interview.py and learning.py.
 
 import re
 
 import streamlit as st
 
-from app.agent.state import Drafts
+from app.agent.state import Drafts, InterviewTurn
 from app.config import get_settings
 from app.db.models import JobStatus
-from app.services import applications, company
+from app.guards.input_guard import MAX_ANSWER_CHARS
+from app.services import applications, company, interview, learning
 from app.services.applications import RunResult, WorkflowView
 from app.services.export import drafts_to_text
+from app.services.interview import InterviewView
+from app.services.learning import LearnedRule
 from app.ui.components import (
     STATUS_LABELS,
     claim_badge,
     claim_evidence,
-    coming_soon,
     fit_card,
     guard_issues_box,
     reviewed_claims,
@@ -32,6 +37,10 @@ STATUSES = [s.value for s in JobStatus]
 TABS = ["🎯 Fit", "✅ Claim check", "📝 Documents", "🏢 Company", "🎤 Interview prep", "🗒️ Notes"]
 # Open the tab that needs the user's attention, e.g. "Claim check" while claims wait for review.
 TAB_FOR_STAGE = {"claim_check": TABS[1], "draft_review": TABS[2]}
+TARGET_NAMES = {"letter": "cover letter", "bullets": "CV bullets"}
+KIND_LABELS = {"behavioural": "Behavioural", "technical": "Technical", "gap": "About a gap"}
+STAR = ["situation", "task", "action", "result"]
+TOASTED_KEY = "learned_rules_toasted"  # rule keys already announced with a toast
 
 
 def _run_with_status(label: str, action) -> RunResult:
@@ -221,11 +230,68 @@ def _draft_editors(drafts: Drafts, prefix: str) -> None:
     st.text_area("Cover letter", value=drafts.cover_letter, height=380, key=f"letter_{prefix}")
 
 
+def _session_learned_key(job_id: int) -> str:
+    return f"learned_{job_id}"
+
+
+def _remember_learned(job_id: int, rules: list[LearnedRule]) -> None:
+    """Keep rules learned outside the graph (Save changes, 👎 comments) for the Undo box."""
+    saved = st.session_state.setdefault(_session_learned_key(job_id), [])
+    saved += [{"key": r.key, "rule": r.rule} for r in rules]
+
+
+def _learned_rules_box(view: WorkflowView) -> None:
+    """Announce newly learned style rules (toast) and offer ↩️ Undo for each (§6.5)."""
+    learned = view.learned_rules + st.session_state.get(_session_learned_key(view.job_id), [])
+    rules = learning.still_saved(learned)
+    if not rules:
+        return
+    toasted = st.session_state.setdefault(TOASTED_KEY, set())
+    for rule in rules:
+        if rule.key not in toasted:
+            st.toast(f"🧠 I learned: *{rule.rule}*")
+            toasted.add(rule.key)
+    with st.container(border=True):
+        st.markdown("🧠 **I learned from your feedback.** New letters will follow:")
+        for rule in rules:
+            text_col, undo_col = st.columns([6, 1], vertical_alignment="center")
+            text_col.markdown(f"- {rule.rule}")
+            if undo_col.button("↩️ Undo", key=f"undo_rule_{rule.key}"):
+                learning.undo(rule.key)
+                st.toast("Okay, I forgot that rule.")
+                st.rerun()
+
+
+def _why_key(key: str) -> str:
+    return f"why_{key}"
+
+
 def _rate(job_id: int, target: str, key: str) -> None:
+    """👍 is saved at once; 👎 first asks what was wrong (the comment can become a rule)."""
     value = st.session_state.get(key)
-    if value is not None:
-        applications.rate_drafts(job_id, target, 1 if value == 1 else -1)
+    if value == 1:
+        applications.rate_drafts(job_id, target, 1)
+        st.session_state[_why_key(key)] = False
         st.toast("Thanks, I saved your rating.")
+    elif value == 0:
+        st.session_state[_why_key(key)] = True
+
+
+def _thumbs_down_form(job_id: int, target: str, key: str) -> None:
+    with st.form(f"why_form_{key}"):
+        comment = st.text_input(
+            f"👎 What should be different about the {TARGET_NAMES[target]}? (optional)",
+            placeholder="e.g. too long, too formal, don't start with 'I am writing to…'",
+            max_chars=300,
+        )
+        if not st.form_submit_button("Send rating"):
+            return
+    applications.rate_drafts(job_id, target, -1, comment.strip())
+    st.session_state[_why_key(key)] = False
+    learned = learning.learn_from_ratings(target) if comment.strip() else []
+    _remember_learned(job_id, learned)
+    st.toast("Thanks, I saved your rating.")
+    st.rerun()
 
 
 def _export_copy_rate(job_id: int, drafts: Drafts, prefix: str) -> None:
@@ -243,6 +309,10 @@ def _export_copy_rate(job_id: int, drafts: Drafts, prefix: str) -> None:
         col.caption(f"Rate the {target}")
         key = f"rate_{target}_{prefix}"
         col.feedback("thumbs", key=key, on_change=_rate, args=(job_id, target, key))
+    for target in ("letter", "bullets"):
+        key = f"rate_{target}_{prefix}"
+        if st.session_state.get(_why_key(key)):
+            _thumbs_down_form(job_id, target, key)
     with st.expander("📋 Copy as text"):
         st.caption("Use the copy icon in the top-right corner of the box.")
         st.code(drafts_to_text(drafts, card.title, card.company), language=None, wrap_lines=True)
@@ -251,6 +321,7 @@ def _export_copy_rate(job_id: int, drafts: Drafts, prefix: str) -> None:
 def _draft_review(view: WorkflowView) -> None:
     versions = applications.list_draft_versions(view.job_id)
     prefix = f"{view.job_id}_{versions[0].version if versions else 0}"
+    _learned_rules_box(view)
     guard_issues_box(view.guard_issues)
     _draft_editors(view.drafts, prefix)
     edited = _drafts_from_inputs(prefix, view.drafts.used_claim_ids)
@@ -301,12 +372,17 @@ def _accepted_drafts(view: WorkflowView) -> None:
     latest = versions[0]
     prefix = f"{view.job_id}_{latest.version}"
     st.success("You accepted these drafts. You can still edit them; each save is a new version.")
+    _learned_rules_box(view)
     _draft_editors(latest.drafts, prefix)
     edited = _drafts_from_inputs(prefix, [])
     if st.button("💾 Save changes"):
         saved = applications.save_edited_drafts(view.job_id, edited)
         st.toast("Saved as a new version." if saved else "Nothing changed.")
         if saved:
+            with st.spinner("Learning from your edits…"):
+                _remember_learned(
+                    view.job_id, learning.learn_from_edit(view.job_id, latest.drafts, edited)
+                )
             st.rerun()
     _export_copy_rate(view.job_id, edited, prefix)
 
@@ -388,6 +464,158 @@ def _company_tab(job_id: int) -> None:
         f"Researched {research.researched_at:%d %b %Y %H:%M} UTC from web search results. "
         "Web content can be wrong or out of date; check the sources."
     )
+
+
+# ---------------------------------------------------------------- interview prep tab
+
+
+def _answer_feedback(turn: InterviewTurn) -> None:
+    fb = turn.feedback
+    star = " · ".join(("✅ " if p in fb.star_parts else "▫️ ") + p.capitalize() for p in STAR)
+    st.markdown(f"**Score: {fb.score}/5** &nbsp; {star}")
+    st.markdown(f"- **Relevance:** {fb.relevance}\n- **Specificity:** {fb.specificity}")
+    st.info(f"**Try this:** {fb.improvement}", icon="💡")
+    with st.expander("✨ Improved example answer"):
+        st.write(fb.improved_answer)
+        sources = sorted({e.doc_name for e in turn.evidence if e.chunk_id in fb.evidence_ids_used})
+        st.caption(
+            "Built from your answer and: " + ", ".join(sources)
+            if sources
+            else "Built from your answer only."
+        )
+
+
+def _interview_transcript(view: InterviewView) -> None:
+    for n, turn in enumerate(view.turns, start=1):
+        with st.chat_message("assistant", avatar="🎤"):
+            st.markdown(f"**Q{n} · {KIND_LABELS[turn.question.kind]}**  \n{turn.question.question}")
+        st.chat_message("user").write(turn.answer)
+        if turn.feedback is not None:
+            with st.chat_message("assistant", avatar="🧑‍🏫"):
+                _answer_feedback(turn)
+
+
+def _interview_question(view: InterviewView) -> None:
+    question = view.current
+    with st.chat_message("assistant", avatar="🎤"):
+        st.markdown(
+            f"**Q{view.number} of {view.total} · {KIND_LABELS[question.kind]}**  \n"
+            f"{question.question}"
+        )
+        st.caption(f"Why they ask: {question.why}")
+    with st.form(f"answer_{view.job_id}_{view.number}"):
+        text = st.text_area(
+            "Your answer",
+            height=180,
+            max_chars=MAX_ANSWER_CHARS,
+            placeholder="Answer as you would in the interview. Tip: Situation → Task → Action "
+            "→ Result, with one number if you have it.",
+        )
+        send_col, stop_col = st.columns(2)
+        send = send_col.form_submit_button(
+            "Send answer ▶", type="primary", use_container_width=True
+        )
+        stop = stop_col.form_submit_button("End interview now", use_container_width=True)
+    if send:
+        _after(
+            _run_with_status(
+                "Scoring your answer…",
+                lambda p: interview.answer(view.job_id, text, on_progress=p),
+            )
+        )
+    if stop:
+        _after(
+            _run_with_status(
+                "Summarising…", lambda p: interview.end_early(view.job_id, on_progress=p)
+            )
+        )
+
+
+def _rate_interview(job_id: int, key: str) -> None:
+    value = st.session_state.get(key)
+    if value is not None:  # None = the user took their thumb back
+        interview.rate(job_id, 1 if value == 1 else -1)
+        st.toast("Thanks, I saved your rating.")
+
+
+def _interview_summary(view: InterviewView) -> None:
+    if view.summary is None:
+        st.info("You ended the interview before answering a question.", icon="🎤")
+        return
+    score_col, rate_col = st.columns([3, 1])
+    score_col.metric("Average score", f"{view.overall_score}/5")
+    rate_col.caption("Was the feedback useful?")
+    key = f"rate_interview_{view.job_id}_{len(interview.past_interviews(view.job_id))}"
+    rate_col.feedback("thumbs", key=key, on_change=_rate_interview, args=(view.job_id, key))
+    strong, weak, steps = st.columns(3)
+    for col, title, items in (
+        (strong, "💪 Strongest", view.summary.strongest_areas),
+        (weak, "🎯 Practise most", view.summary.weakest_areas),
+        (steps, "📋 Next steps", view.summary.next_steps),
+    ):
+        col.markdown(f"**{title}**")
+        col.markdown("\n".join(f"- {item}" for item in items))
+
+
+def _past_interviews(job_id: int) -> None:
+    past = interview.past_interviews(job_id)
+    if past:
+        st.markdown("##### Past interviews")
+        for p in past:
+            score = f"{p.overall_score}/5" if p.overall_score is not None else "no score"
+            st.caption(f"{p.created_at:%d %b %Y %H:%M} · {p.answered} answers · {score}")
+
+
+def _start_interview(job_id: int, label: str, primary: bool = True) -> None:
+    if st.button(label, type="primary" if primary else "secondary", key=f"start_iv_{job_id}"):
+        _after(
+            _run_with_status(
+                "Preparing your first question…",
+                lambda p: interview.start(job_id, on_progress=p),
+            )
+        )
+
+
+def _interview_tab(job_id: int) -> None:
+    view = interview.get_view(job_id)
+    if view.stage == "unavailable":
+        st.info(interview.NEEDS_ANALYSIS, icon="🎤")
+        return
+    if view.stage == "not_started":
+        st.markdown(
+            f"Practise with **{view.total} questions** built from this job: behavioural, "
+            "technical, and one about a gap from your fit analysis. After each answer you get a "
+            "score from 1 to 5, a STAR check, one improvement and a better example answer made "
+            "from your own documents."
+        )
+        _start_interview(job_id, "🎤 Start mock interview")
+        _past_interviews(job_id)
+        return
+
+    if view.stage == "interrupted":
+        st.warning(
+            "The last step didn't finish (maybe the AI service was busy or the internet dropped). "
+            "Your answers are saved.",
+            icon="⏳",
+        )
+        if st.button("🔁 Retry", key=f"retry_iv_{job_id}"):
+            _after(
+                _run_with_status("Continuing…", lambda p: interview.retry(job_id, on_progress=p))
+            )
+
+    if view.stage == "finished":
+        _interview_summary(view)
+        _start_interview(job_id, "🔁 Start again", primary=False)
+        with st.expander(f"Your answers and feedback ({len(view.turns)})"):
+            _interview_transcript(view)
+        _past_interviews(job_id)
+        return
+
+    answered = len(view.turns)
+    st.progress(answered / view.total, text=f"{answered} of {view.total} answered")
+    _interview_transcript(view)
+    if view.stage == "question" and view.current is not None:
+        _interview_question(view)
 
 
 # ---------------------------------------------------------------- notes tab
@@ -475,6 +703,6 @@ with docs_tab:
 with company_tab:
     _company_tab(job_id)
 with interview_tab:
-    coming_soon(8, "A mock interview built from this job's requirements and your gaps.")
+    _interview_tab(job_id)
 with notes_tab:
     _notes_tab(job_id)

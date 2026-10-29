@@ -131,11 +131,16 @@ class Drafts(BaseModel):
 
 
 class StyleRule(BaseModel):
-    """A writing preference the app learned or the user stated, e.g. "Avoid 'passionate'"."""
+    """A writing preference the app learned or the user stated, e.g. "Avoid 'passionate'".
+
+    `avoid_phrases` are exact words the rule bans. The output guard checks them in Python, so
+    a banned word in a new draft is caught even if the writer ignores the rule.
+    """
 
     rule: str
     source: Literal["edit_diff", "explicit", "rating"]
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    avoid_phrases: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------- LLM output models
@@ -238,6 +243,63 @@ class TopicCheck(BaseModel):
     reason: str = Field(description="One short sentence.")
 
 
+class ProposedStyleRule(BaseModel):
+    rule: str = Field(
+        description="A general writing rule in the imperative, max 15 words, e.g. "
+        "\"Avoid the word 'passionate'\" or 'Keep sentences under 20 words'"
+    )
+    avoid_phrases: list[str] = Field(
+        description="Exact words or short phrases the rule bans, e.g. ['passionate']. "
+        "Empty if the rule is not about specific words."
+    )
+
+
+class StyleRuleProposal(BaseModel):
+    rules: list[ProposedStyleRule] = Field(description="0-3 rules. Empty if nothing general.")
+
+
+class InterviewQuestion(BaseModel):
+    """One mock interview question (structured output of the question writer)."""
+
+    question: str = Field(description="The question, as an interviewer would ask it")
+    kind: Literal["behavioural", "technical", "gap"]
+    requirement_id: str = Field(description="The requirement it tests, e.g. 'R2'. '' if none.")
+    why: str = Field(description="One sentence: what the interviewer wants to find out")
+
+
+class AnswerFeedback(BaseModel):
+    """The coach's feedback on one answer (structured output of the evaluator)."""
+
+    star_parts: list[Literal["situation", "task", "action", "result"]] = Field(
+        description="The STAR parts the answer clearly contains"
+    )
+    relevance: str = Field(description="One sentence: does it answer the question asked?")
+    specificity: str = Field(description="One sentence: concrete examples, tools, numbers?")
+    score: int = Field(ge=1, le=5, description="1 = poor, 3 = okay, 5 = excellent")
+    improvement: str = Field(description="The one most useful concrete improvement")
+    improved_answer: str = Field(
+        description="A better answer in the first person, max 150 words, using only facts "
+        "from the candidate's answer and <candidate_evidence>"
+    )
+    evidence_ids_used: list[str] = Field(description="Ids of the evidence items it used")
+
+
+class InterviewSummary(BaseModel):
+    """The end-of-interview summary (structured output). The score is averaged in Python."""
+
+    strongest_areas: list[str] = Field(description="1-3 things the candidate did well")
+    weakest_areas: list[str] = Field(description="1-3 areas to practise, most important first")
+    next_steps: list[str] = Field(description="2-3 concrete things to prepare before the interview")
+
+
+class HelpAnswer(BaseModel):
+    """The help-bot's answer, based only on the user guide."""
+
+    answer: str = Field(description="A short answer in plain English (max ~120 words)")
+    covered_by_guide: bool = Field(description="False if the guide doesn't answer the question")
+    sections: list[str] = Field(description="Headings of the guide sections used")
+
+
 # ---------------------------------------------------------------- human-in-the-loop answers
 
 
@@ -292,6 +354,7 @@ class ApplicationState(TypedDict, total=False):
     drafts: Drafts | None  # the latest AI-written drafts
     user_edits: Drafts | None  # the drafts as the user accepted them (with their edits)
     new_facts: list[str]  # claims the user vouched for, saved to memory at this claim check
+    learned_rules: list[dict]  # [{"key": ..., "rule": ...}] style rules learned at acceptance
     guard_issues: list[UnsupportedStatement]  # statements the output guard couldn't back up
     draft_attempts: int  # drafts written since the last claim check or regenerate request
     regenerate: dict | None  # {"section": ..., "instruction": ...} while regenerating
@@ -302,6 +365,46 @@ class ApplicationState(TypedDict, total=False):
     # the list instead of replacing it, so warnings from different nodes are all kept.
     warnings: Annotated[list[str], operator.add]  # shown to the user, e.g. "possible injection"
     errors: Annotated[list[str], operator.add]  # non-empty means the workflow stopped early
+
+
+class InterviewSetup(BaseModel):
+    """What the mock interview is built from (prepared by app/services/interview.py)."""
+
+    job_title: str
+    company: str
+    job_summary: str
+    requirements: list[Requirement]
+    gaps: list[str]  # "Kubernetes (missing). Honest note: …"
+    company_notes: str = ""  # from the Company tab's web research (untrusted)
+
+
+class InterviewTurn(BaseModel):
+    """One question, the user's answer and the coach's feedback."""
+
+    question: InterviewQuestion
+    answer: str
+    feedback: AnswerFeedback | None = None
+    evidence: list[Evidence] = Field(default_factory=list)  # what the improved answer could use
+
+
+class InterviewAnswer(BaseModel):
+    """The resume value of the interview pause: an answer, or "end the interview now"."""
+
+    action: Literal["answer", "stop"]
+    text: str | None = None
+
+
+class InterviewState(TypedDict, total=False):
+    """One mock interview (one thread, `interview-<job id>`)."""
+
+    job_id: int
+    setup: InterviewSetup
+    num_questions: int
+    current: InterviewQuestion | None  # the question waiting for an answer
+    turns: list[InterviewTurn]
+    ended_early: bool
+    summary: InterviewSummary | None
+    overall_score: float | None  # mean of the 1-5 scores, computed in Python
 
 
 # Types the checkpointer may turn back into Python objects when it loads a saved state.
@@ -317,4 +420,9 @@ CHECKPOINT_TYPES: list[type] = [
     Claim,
     Drafts,
     UnsupportedStatement,
+    InterviewSetup,
+    InterviewQuestion,
+    AnswerFeedback,
+    InterviewTurn,
+    InterviewSummary,
 ]

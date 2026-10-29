@@ -22,13 +22,24 @@ def _done(message: str) -> None:
     st.rerun()
 
 
-def _editable_list(kind: str, items: dict[str, str], on_save, on_delete) -> None:
-    """One row per item: an editable text, 💾 save and 🗑️ delete."""
+RULE_SOURCES = {
+    "edit_diff": "learned from your edits",
+    "rating": "learned from your 👎 comments",
+    "explicit": "added by you",
+}
+
+
+def _editable_list(
+    kind: str, items: dict[str, str], on_save, on_delete, captions: dict[str, str] | None = None
+) -> None:
+    """One row per item: an editable text, 💾 save and 🗑️ delete, and an optional caption."""
     for key, text in items.items():
         text_col, save_col, delete_col = st.columns([8, 1, 1], vertical_alignment="bottom")
         new_text = text_col.text_input(
             kind, value=text, key=f"{kind}_{key}", label_visibility="collapsed"
         )
+        if captions and captions.get(key):
+            text_col.caption(captions[key])
         if save_col.button("💾", key=f"save_{kind}_{key}", help="Save the new wording"):
             on_save(key, new_text)
             _done(f"{kind.capitalize()} updated.")
@@ -102,17 +113,33 @@ with facts_tab:
 
 with rules_tab:
     st.caption(
-        "Writing rules for your drafts, e.g. \"Avoid the word 'passionate'\". They are learned "
-        "from your edits (Phase 8) and applied to every new letter."
+        "Writing rules for your drafts, e.g. \"Avoid the word 'passionate'\". I learn them when "
+        "you edit a draft or explain a 👎, and follow them in every new letter. Banned words are "
+        "also checked in Python, so a draft that uses one is rewritten once, then highlighted."
     )
     if not data.style_rules:
-        st.info("No style rules yet.", icon="📏")
+        st.info(
+            "No style rules yet. Edit a cover letter and click **Accept & save**, or add one "
+            "below.",
+            icon="📏",
+        )
     _editable_list(
         "style rule",
         {key: rule.rule for key, rule in data.style_rules.items()},
         my_data.update_style_rule,
         my_data.delete_style_rule,
+        captions={
+            key: RULE_SOURCES[rule.source]
+            + (f" · checks for: {', '.join(rule.avoid_phrases)}" if rule.avoid_phrases else "")
+            for key, rule in data.style_rules.items()
+        },
     )
+    with st.form("add_style_rule", clear_on_submit=True):
+        new_rule = st.text_input(
+            "Add a rule", placeholder="e.g. Keep the cover letter under 200 words", max_chars=200
+        )
+        if st.form_submit_button("➕ Add rule") and my_data.add_style_rule(new_rule):
+            _done("Style rule added.")
 
 with docs_tab:
     st.caption("The files fit analysis searches for evidence. Add more on the Get started page.")

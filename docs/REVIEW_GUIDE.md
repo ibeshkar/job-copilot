@@ -40,6 +40,19 @@ So the loop is explicit: `agent → tools → agent`, plus an `approve` pause be
 a guard in front. We still use the prebuilt `ToolNode` to run the tools, because it handles
 parallel calls, argument validation and errors. See D38.
 
+**What kinds of agents does the app have, and why three?**
+The application flow is a **workflow** (code fixes the order, three human pauses). The copilot
+chat is a **ReAct agent** (the LLM picks tools). The mock interview is a **loop** (Phase 8):
+`generate_question → ask (pause) → evaluate_answer`, five times, then `summarise`. Each shape
+fits its job: applying must be auditable, chat is open-ended, practice repeats the same round.
+Code: `app/agent/interview_graph.py`; table in CONCEPTS.md, "A loop agent".
+
+**Why does Python, not the LLM, choose the kind of interview question?**
+So every interview is balanced: behavioural, technical, gap, technical, behavioural
+(`KIND_PLAN`). The LLM writes the question text; the graph overwrites the `kind` it returns. The
+average score is also computed in Python, like the fit score. Same principle everywhere: the
+LLM does language, code does structure and arithmetic (D61).
+
 ### Function calling
 **How does function calling work in your app, step by step?**
 `bind_tools()` sends each enabled tool's name, description and JSON schema (built from a
@@ -138,6 +151,13 @@ mention the remote setup"), export a DOCX, copy the text, and rate each part �
 save** finishes the run. The AI version and, if changed, the edited version are saved in the
 `Draft` table, and the Notes tab lists every version.
 
+**How does the mock interview wait for your answer?**
+The `ask` node calls `interrupt({"type": "interview_question", "number": 2, "total": 5, ...})`.
+The Interview prep tab reads the paused state on every rerun and shows the question; "Send
+answer" resumes with `Command(resume={"action": "answer", "text": ...})`, and "End interview
+now" with `{"action": "stop"}`. The thread is `interview-<job id>` in the same checkpoint file,
+so a refresh shows the same question. Code: `app/services/interview.py` → `get_view()`.
+
 ### UI
 **How does `interrupt()` work with Streamlit, which reruns the whole script on every click?**
 Nothing important lives in Streamlit's memory. The graph's state is saved in SQLite under
@@ -185,6 +205,17 @@ and documents. Each fact or rule can be reworded (💾) or deleted (🗑️); a 
 removed from the knowledge base. "Delete all my data" needs the word DELETE typed first
 (`app/ui/pages/4_memory.py`, `app/services/my_data.py`).
 
+**What does the tone selector change, and where is it stored?**
+The sidebar select box (formal, friendly, concise) saves `Preferences.tone` in the Store through
+`my_data.set_tone()`. Drafting, the copilot, the interview coach and the help-bot read it when
+they run and inject the matching `TONE_GUIDE` line into their prompt. One source of truth: the
+Memory page shows the same value (D67).
+
+**What is on the Help page?**
+How it works in 4 steps, a FAQ, the privacy note, and a help-bot that answers from
+`docs/USER_GUIDE.md`. It shows which guide sections it used and says so when the guide doesn't
+cover a question. Code: `app/ui/pages/5_help.py`, `app/services/help.py`.
+
 ### Code organisation
 **How is the code organised?**
 In layers: `app/ui/` (Streamlit pages only), `app/agent/` (LLM and graphs), `app/db/` (tables
@@ -211,6 +242,28 @@ preferences each have one item (key `"main"`). Facts and style rules have one it
 (random key), so each can be deleted on its own. "Delete all my data" removes everything under
 `("local",)`.
 
+**How does the app learn from your edits?**
+When you accept edited drafts, the `learn_from_edits` node computes a sentence diff in Python
+(`edit_diff()`), and the LLM proposes 0–3 *general* style rules, e.g. "Avoid the word
+'passionate'" with `avoid_phrases=["passionate"]`. They go to the Store (`("local",
+"style_rules")`), a toast says "🧠 I learned: …", and **↩️ Undo** deletes them. Edits after
+acceptance and repeated 👎 comments are learned from too (`app/services/learning.py`).
+
+**How do you make sure a learned rule is really followed?**
+Two layers. The rule is in the drafting prompt's style block, which the model usually follows.
+And `output_guard` searches the new draft for every banned phrase in plain Python
+(`find_avoided_phrases()`, whole words, any case). A hit triggers one rewrite, then it's
+highlighted. A live test checks the Phase 8 "done when": after removing "passionate", the next
+letter doesn't contain it (`tests/test_live_extras.py`).
+
+**How do you stop wrong or duplicate rules?**
+The prompt says: general style only, never job facts; return nothing if the edit only fixes
+content. Python only keeps a banned word that was really deleted (in a `-` line, not in a `+`
+line) and drops a rule whose banned words were all never deleted; `is_duplicate()` rejects a
+rule whose words are already banned or whose wording is 85% similar to a known rule. A live
+check found the model turning an *added* word into an "avoid" rule; that's why the second check
+exists. The user sees and can undo or edit every rule (D63, D65).
+
 ### RAG
 **How do documents get into the knowledge base?**
 `app/rag/ingest.py` → `ingest_file()`: extract the text (pypdf, python-docx or plain text),
@@ -227,6 +280,12 @@ and id, so we can show the user exactly which sentence proves a requirement.
 `tests/test_rag.py` ingests the demo persona and checks that "RAG chatbot" finds
 `project_documind_readme.md`. Offline, it uses fake keyword embeddings. The live test uses the
 real model and checks that the README is the top hit. Phase 9 adds a proper evaluation.
+
+**Why doesn't the help-bot use RAG?**
+The user guide is one document of about 2,500 tokens. Putting it in the prompt whole ("prompt
+stuffing") is simpler and more reliable: no chunking, no embeddings, and the model sees the
+whole context. RAG pays off for the user's knowledge base, which has many documents that grow.
+If the guide grows past ~20k tokens, we'd switch (D68).
 
 ### Security
 **How are secrets handled?**
@@ -294,6 +353,13 @@ log file. A test fills all five and checks they're empty afterwards.
 Only if tracing is on (it's off by default) and `LANGSMITH_HIDE_INPUTS` is false. With
 `LANGSMITH_HIDE_INPUTS=true`, traces keep their structure, timing and token counts, but not the
 texts.
+
+**Can an interview answer or a help question trick the AI?**
+Both go through the same Python rules as the chat first (`check_interview_answer()`,
+`check_chat_message()`): empty, too long (4,000 characters) and override phrases like "ignore
+all previous instructions" are refused before any LLM call. Inside the prompts, the answer is
+wrapped in `<candidate_answer>` and the guide in `<user_guide>`, with the "data, not
+instructions" rule.
 
 ### Error handling
 **What if the AI service is busy or returns broken output?**
@@ -380,11 +446,14 @@ it (D54).
 | LLM provider | OpenRouter (OpenAI-compatible API) |
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
-| Tests | 238 offline + 11 live (`uv run pytest`, `uv run pytest -m live`) |
-| Pages working | Get started, Board, Job workspace (Fit, Claim check, Documents, Company, Notes tabs), Copilot chat, What I know about you, Developer settings |
+| Tests | 281 offline + 14 live (`uv run pytest`, `uv run pytest -m live`) |
+| Pages working | All 7: Get started, Board, Job workspace (Fit, Claim check, Documents, Company, Interview prep, Notes tabs), Copilot chat, What I know about you, Help, Developer settings |
 | Workflow stages shown in UI | not_started, fit_review, claim_check, draft_review, interrupted, failed, finished |
-| Graph nodes | 14: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, plan_claims, claim_check, remember_confirmed_facts, draft_materials, output_guard, draft_review, save_to_tracker |
-| Human-in-the-loop pauses | 3 in the application graph (fit_review, claim_check, draft_review) + 1 in the chat (tool_approval) |
+| Graph nodes | 15: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, plan_claims, claim_check, remember_confirmed_facts, draft_materials, output_guard, draft_review, learn_from_edits, save_to_tracker |
+| Human-in-the-loop pauses | 3 in the application graph (fit_review, claim_check, draft_review) + 1 in the chat (tool_approval) + 1 per round in the interview (interview_question) |
+| Mock interview | 5 questions (behavioural, technical, gap, technical, behavioural); score 1–5 per answer, average in Python; improved answer from your answer + 4 chunks |
+| Learning from feedback | 0–3 rules per edit, 1 per repeated 👎 complaint; duplicates ≥ 85% similar dropped; banned words checked in Python |
+| Help-bot | whole `docs/USER_GUIDE.md` (~2.5k tokens) in the prompt, last 3 Q&As, ~$0.0005 per question |
 | Copilot tools | 5 toggles / 6 tools: fetch_job_posting, search_my_experience, research_company (Tavily), search_jobs (Adzuna), get_applications + update_tracker (needs approval) |
 | Copilot graph | input_guard (rules + topic classifier) → agent ⇄ tools, approve before write tools; max 12 steps, 4,000 chars per message, last 30 messages sent |
 | Claims and drafts | max 10 claims; letter ≤ 280 words (medium); 3–6 bullets; max 2 draft attempts per round |
@@ -392,7 +461,7 @@ it (D54).
 | Fit score | must 3 / nice 1; met 1 / partial 0.5 / missing 0; half-up; cap 40 if blocking |
 | Sample scores (one run) | good 84, partial 43, poor 0 (German C1 blocking) |
 | LLM calls per analysis | 5–8, about $0.003 with `openai/gpt-4o-mini` |
-| Prompt version | 2026-10-29.7 (12 prompts + 6 tool descriptions) |
+| Prompt version | 2026-10-29.9 (18 prompts + 6 tool descriptions) |
 | Cost tracking | `track_run(action)` → `UsageLog`; sidebar badge per session; budget 200,000 tokens, warning at 80% |
 | Topic check per chat message | ~350 tokens, ~$0.0001 with `openai/gpt-4o-mini` |
 | Limits | job text 200–30,000 chars; chat 4,000 chars; uploads PDF/DOCX/TXT/MD, 5 MB, 10 files |

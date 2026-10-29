@@ -466,3 +466,99 @@ considered. Newest entries at the bottom.
 - **Why:** found in a live run. With strict JSON-schema output, OpenAI's client parses the answer
   itself and raises, before LangChain can report the error. The analysis crashed instead of
   retrying.
+
+## D60. The mock interview is its own small graph, one thread per job (Phase 8)
+- **What:** `app/agent/interview_graph.py` is a loop: `generate_question → ask (interrupt) →
+  evaluate_answer → …` five times, then `summarise`. Its thread is `interview-<job id>`, in the
+  same `checkpoints.db` as the job runs and chats. "Start again" deletes the thread and reuses
+  the id; finished interviews are kept in the `InterviewSession` table.
+- **Why:** it's a third agent shape for the review (workflow, ReAct, loop with a human turn per
+  round), and a separate graph keeps the application graph readable. One thread per job means
+  the page can always find the open interview from the job id, with nothing extra in the URL.
+  Sharing the checkpoint file means "Delete all my data" and deleting a job remove interviews
+  without new code paths.
+- **Alternatives:** a subgraph inside the application graph (would tie the interview to the
+  application's stage; you may want to practise before applying); a plain Python loop with
+  `st.session_state` (lost on refresh, no checkpoint).
+
+## D61. Python decides the kind of question and the overall score (Phase 8)
+- **What:** `KIND_PLAN = behavioural, technical, gap, technical, behavioural` (a gap question
+  becomes technical when the fit analysis found no gaps). The LLM writes the question; the
+  graph overwrites the `kind` it returned. The overall score is the mean of the 1–5 scores.
+- **Why:** the same idea as the fit score (D19): the LLM does language, code does structure and
+  arithmetic, so every interview is balanced and the score is reproducible.
+- **Trade-off:** a fixed mix can feel repetitive; a later version could adapt the plan to the
+  weakest answers.
+
+## D62. The improved answer may only use the user's own answer and documents (Phase 8)
+- **What:** `evaluate_answer` searches the knowledge base with the question and the answer (k=4)
+  and passes the chunks as `<candidate_evidence>`. The prompt forbids inventing employers,
+  numbers, tools or results. `evidence_ids_used` is filtered in Python to ids that were really
+  given, and the UI shows the file names as "Built from your answer and: …".
+- **Why:** an "improved answer" with made-up achievements would teach the user to lie in the
+  interview, the opposite of the claim check.
+- **Alternative:** an output guard like the drafts' (a second LLM call per answer). Not added:
+  the user reads the example and isn't sending it anywhere; cost would double.
+
+## D63. Learned rules carry `avoid_phrases`, checked in Python (Phase 8)
+- **What:** the style learner returns `ProposedStyleRule(rule, avoid_phrases)`. `StyleRule` got an
+  `avoid_phrases` field (default empty, so old rules still load). `output_guard` adds
+  `find_avoided_phrases()`: a whole-word, case-insensitive search for every banned phrase in the
+  new draft. A hit counts as a guard issue: one rewrite with "don't use these words", then it's
+  highlighted.
+- **Why:** the "done when" says the next letter must not use the word. A rule in the prompt is
+  usually followed, but "usually" isn't a guarantee; a regex over the draft is. Structured output
+  keeps the human-readable rule and the machine-checkable words apart, so we never parse the
+  rule text with regex (rule 4).
+- **Safety:** Python only keeps a banned phrase if it appears in the deleted lines of the diff
+  and not in the added ones, so the model can't ban words the user never removed. If *none* of a
+  rule's banned phrases pass, the whole rule is dropped: it's about a word the user didn't
+  delete. (Found live: after the user *added* a "passionate" sentence, the model proposed "Avoid
+  'passionate'". The prompt's example also used "passionate", which primed it; the example now
+  uses "leverage", and the prompt says additions are never things to avoid.) Rewording a rule on
+  the Memory page drops banned words the new wording doesn't mention.
+
+## D64. The edit diff is computed in Python, sentence by sentence (Phase 8)
+- **What:** `edit_diff()` splits the letter into sentences (and the bullets into lines) and uses
+  `difflib.SequenceMatcher` to list `- old` / `+ new` lines. No change → no LLM call.
+- **Why:** a sentence diff gives the model the context of each change in a few tokens; a
+  character diff would be unreadable, and sending both full versions costs more and makes the
+  model guess what changed.
+
+## D65. Duplicate rules are caught in Python, and learning never blocks acceptance (Phase 8)
+- **What:** the prompt lists the existing rules and says "don't repeat them"; `is_duplicate()`
+  then rejects a rule whose banned words are already banned, or whose wording is ≥ 85% similar
+  (`SequenceMatcher` on normalised text). Max 3 rules per edit, 1 per batch of ratings. If the
+  learning call fails, the node logs it and returns no rules; the drafts are still saved.
+- **Why:** §6.5 suggests embedding similarity or an LLM. String similarity is free, offline and
+  testable, and the LLM instruction already handles paraphrases most of the time.
+- **Trade-off:** "Never say passionate" vs. "Avoid 'passionate'" is caught (same banned word),
+  but two differently worded length rules might both be kept. The user can delete one.
+
+## D66. Ratings become a rule only when a 👎 complaint repeats (Phase 8)
+- **What:** 👍 is saved at once. 👎 opens a small form ("What should be different?"). When at
+  least two 👎 comments exist for the same target (letter or bullets), the newest five go to the
+  feedback learner, which may return one rule (`source="rating"`).
+- **Why:** §6.5 says "repeated negative feedback becomes a rule". One comment can be about one
+  job ("wrong company name"); a repeat is a preference. Without a comment there is nothing to
+  learn from, so a bare 👎 is just saved.
+
+## D67. The tone selector writes the saved preference (Phase 8)
+- **What:** a sidebar select box (🎩 Formal / 😊 Friendly / ✂️ Concise). Its value is copied from
+  the Store on every run and saved by `on_change` through `my_data.set_tone()`, which changes
+  only the tone. Drafting, the copilot, the interview coach and the help-bot read the tone when
+  they run, so the next action uses it.
+- **Why:** one source of truth. A session-only setting would disagree with the Memory page and
+  be forgotten on refresh.
+
+## D68. The help-bot puts the whole user guide in the prompt (Phase 8)
+- **What:** `app/services/help.py` sends `docs/USER_GUIDE.md` (about 2,500 tokens) inside
+  `<user_guide>` with the question and the last three Q&As. The answer is structured
+  (`HelpAnswer`: answer, covered_by_guide, sections); Python keeps only section names that
+  really exist in the guide. Chat-style Python guard first; no topic classifier.
+- **Why:** for one small document, "stuffing" is simpler and more reliable than RAG: no
+  chunking, no embedding cost, and the model always sees the whole guide. It also makes a good
+  review answer for "when prompt engineering, when RAG?": RAG pays off for many or large
+  documents (the user's knowledge base), not for one short guide.
+- **Trade-off:** each question costs ~3k input tokens (~$0.0005 with `gpt-4o-mini`). If the guide
+  grows past ~20k tokens, switch to RAG.

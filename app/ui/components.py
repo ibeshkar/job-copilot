@@ -1,4 +1,4 @@
-# What: reusable Streamlit widgets: empty states, status/fit badges, the fit card, claim
+# What: reusable Streamlit widgets: status/fit badges, the fit card, claim
 #       badges and the reviewed-claims list, the fact-check warning, draft history, and the
 #       profile and preferences forms.
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
@@ -21,17 +21,8 @@ MATCH_ICONS = {"met": "✅", "partial": "⚠️", "missing": "❌"}
 DECISION_ICONS = {"approved": "✅", "edited": "✏️", "removed": "🗑️", "pending": "⏳"}
 SENIORITIES = ["intern", "junior", "mid", "senior", "lead"]
 TONES = ["formal", "friendly", "concise"]
+TONE_LABELS = {"formal": "🎩 Formal", "friendly": "😊 Friendly", "concise": "✂️ Concise"}
 LENGTHS = ["short", "medium", "long"]
-
-
-def coming_soon(phase: int, what: str) -> None:
-    """Show an empty state for a feature that is planned but not built yet.
-
-    Args:
-        phase: the implementation phase (PROJECT_PLAN.md §12) that builds it.
-        what: one sentence describing what it will do.
-    """
-    st.info(f"{what}\n\nThis is built in **Phase {phase}**.", icon="🚧")
 
 
 def fit_badge(score: int | None) -> str:
@@ -190,8 +181,8 @@ def guard_issues_box(issues: list[UnsupportedStatement]) -> None:
         return
     lines = "\n".join(f'- "{i.quote}": {i.reason}' for i in issues)
     st.warning(
-        "**Please check these statements.** The fact-checker couldn't match them to a claim "
-        f"you approved. Edit or delete them unless they're true.\n\n{lines}",
+        "**Please check these.** The fact-checker couldn't match them to a claim you approved, "
+        f"or your style rules ban them. Edit or delete them unless they're fine.\n\n{lines}",
         icon="🔎",
     )
 

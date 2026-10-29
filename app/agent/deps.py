@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from langchain_core.language_models import BaseChatModel
 
-from app.agent.state import Drafts, Evidence, FitReport, JobPosting
+from app.agent.state import Drafts, Evidence, FitReport, JobPosting, StyleRule
 from app.memory.store import Preferences, Profile
 
 
@@ -26,7 +26,8 @@ class GraphDeps:
     save_job: Callable[[int, JobPosting, FitReport | None], None]  # write results to the board
     list_facts: Callable[[], list[str]]  # facts the user confirmed in earlier claim checks
     remember_fact: Callable[[str, int | None], None]  # (text, job_id) → long-term memory
-    list_style_rules: Callable[[], list[str]]  # learned writing rules, e.g. "Avoid 'passionate'"
+    list_style_rules: Callable[[], list[StyleRule]]  # writing rules, e.g. "Avoid 'passionate'"
+    add_style_rule: Callable[[StyleRule], str]  # remember a learned rule → its key (for undo)
     save_draft: Callable[[int, Drafts, bool], None]  # (job_id, drafts, is_user_edited) → Draft
 
 
@@ -55,6 +56,7 @@ def default_deps() -> GraphDeps:
         save_job=save_analysis_to_job,
         list_facts=lambda: [fact.text for fact in store.list_facts().values()],
         remember_fact=lambda text, job_id: store.add_fact(Fact(text=text, job_id=job_id)),
-        list_style_rules=lambda: [rule.rule for rule in store.list_style_rules().values()],
+        list_style_rules=lambda: list(store.list_style_rules().values()),
+        add_style_rule=store.add_style_rule,
         save_draft=save_draft_version,
     )

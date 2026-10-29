@@ -1,6 +1,7 @@
 # What: the writing steps. `draft_materials` writes CV bullets and a cover letter from the
 #       approved claims only; `output_guard` has a second LLM call list any statement about the
-#       candidate that no approved claim backs; `draft_review` pauses so the user can edit,
+#       candidate that no approved claim backs, and checks in Python that no removed claim and
+#       no word banned by a style rule appears; `draft_review` pauses so the user can edit,
 #       regenerate one section, or accept.
 # Why: the drafting prompt never sees removed or unapproved claims, and the guard catches what
 #      the writer adds on its own. If the guard still finds problems after one rewrite, they are
@@ -20,6 +21,7 @@ from app.agent.state import (
     DraftReviewDecision,
     Drafts,
     GuardReport,
+    StyleRule,
     UnsupportedStatement,
 )
 from app.memory.store import Profile
@@ -108,7 +110,7 @@ def draft_materials(state: ApplicationState, deps: GraphDeps) -> dict:
             tone=preferences.tone,
             letter_length=preferences.letter_length,
             language=language,
-            style_rules=deps.list_style_rules(),
+            style_rules=[rule.rule for rule in deps.list_style_rules()],
             fix_issues=[f'"{i.quote}" ({i.reason})' for i in issues] or None,
             regenerate=regenerate,
             current_drafts=drafts_as_text(current) if current else None,
@@ -140,6 +142,22 @@ def find_rejected_claims(text: str, claims: list[Claim]) -> list[UnsupportedStat
     ]
 
 
+def find_avoided_phrases(text: str, rules: list[StyleRule]) -> list[UnsupportedStatement]:
+    """Plain-Python check: words the user's style rules ban (e.g. "passionate") must not appear.
+
+    Whole words only, ignoring case, so banning "passion" doesn't flag "compassionate".
+    """
+    issues = []
+    for rule in rules:
+        for phrase in rule.avoid_phrases:
+            pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, phrase.split())) + r"(?!\w)"
+            if phrase.strip() and re.search(pattern, text, re.IGNORECASE):
+                issues.append(
+                    UnsupportedStatement(quote=phrase, reason=f"Your style rule says: {rule.rule}")
+                )
+    return issues
+
+
 def output_guard(state: ApplicationState, deps: GraphDeps) -> dict:
     """List statements about the candidate in the new draft that no approved claim backs.
 
@@ -162,7 +180,9 @@ def output_guard(state: ApplicationState, deps: GraphDeps) -> dict:
             text, claims_block(claims), basics_block(deps.get_profile()), rejected
         ),
     )
-    issues = find_rejected_claims(text, claims)
+    issues = find_rejected_claims(text, claims) + find_avoided_phrases(
+        text, deps.list_style_rules()
+    )
     seen = {i.quote.lower() for i in issues}
     for item in report.unsupported:
         if item.quote.strip() and item.quote.lower() not in seen:

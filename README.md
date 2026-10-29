@@ -4,8 +4,10 @@ An AI agent that helps job seekers find out whether they really fit a role, prov
 evidence from their own documents, write honest tailored applications, and track every
 application in one place.
 
-> 🚧 Work in progress. Phases 1–6 are done: onboarding, knowledge base, fit analysis, board,
-> claim check, drafts with fact check, DOCX export, copilot chat with 5 tools, company research.
+> 🚧 Work in progress. Phases 1–8 are done: onboarding, knowledge base, fit analysis, board,
+> claim check, drafts with fact check, DOCX export, copilot chat with 5 tools, company research,
+> guards, cost tracking, LangSmith, memory and developer pages, mock interview, learning your
+> writing style, tone selector, and the Help page. How to use it: `docs/USER_GUIDE.md`.
 > See `PROJECT_PLAN.md` for the full plan and
 > `docs/phase-notes/` for what each phase added.
 

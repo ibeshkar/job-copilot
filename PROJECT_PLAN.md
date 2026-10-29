@@ -632,10 +632,10 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** the injection test string in a job posting doesn't change behaviour, and killing the network shows friendly errors.
 
 ### Phase 8: Interactive extras (1.5h, COULD)
-- [ ] Mock interview subgraph + tab
-- [ ] Learn-from-edits node + toast + rules shown on the Memory page
-- [ ] Tone / personality selector wired into the prompts
-- [ ] Help page + help-bot over the user guide
+- [x] Mock interview subgraph + tab
+- [x] Learn-from-edits node + toast + rules shown on the Memory page
+- [x] Tone / personality selector wired into the prompts
+- [x] Help page + help-bot over the user guide
 - **Done when:** editing a letter to remove "passionate" creates a style rule, and the next letter doesn't use it.
 
 ### Phase 9: Evaluation (1h, COULD/Hard)

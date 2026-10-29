@@ -1,13 +1,13 @@
 # What: checks user input before any LLM call. Job text: not empty, not too short or too long,
-#       and a scan for common prompt-injection phrases. Chat messages: not empty, not too long,
-#       and no attempts to change the copilot's instructions.
+#       and a scan for common prompt-injection phrases. Chat messages and mock interview
+#       answers: not empty, not too long, and no attempts to change the AI's instructions.
 # Why: cheap checks in Python stop obvious bad input early (saves money) and give a clear message.
 #      In a job posting, injection phrases are only flagged: the prompts treat the posting as
 #      data (delimiters), so a posting that mentions "system prompt" can still be analysed. In
 #      the chat, the text IS the instruction, so an injection attempt is refused instead.
 #      The second chat layer, the LLM topic classifier, lives in app/agent/copilot_graph.py.
 # Used by: app/agent/nodes/ingest.py (input_guard node), app/agent/copilot_graph.py,
-#          app/tools/job_posting.py.
+#          app/tools/job_posting.py, app/services/interview.py, app/services/help.py.
 
 import re
 from dataclasses import dataclass, field
@@ -122,4 +122,25 @@ def check_chat_message(text: str) -> GuardResult:
         return GuardResult(False, TOO_LONG_CHAT)
     if find_injection_phrases(stripped, overrides_only=True):
         return GuardResult(False, INJECTION_CHAT)
+    return GuardResult(True)
+
+
+MAX_ANSWER_CHARS = 4_000  # a 3-minute spoken answer is about 2,500 characters
+EMPTY_ANSWER = "Please type your answer first, or end the interview."
+TOO_LONG_ANSWER = (
+    f"That answer is too long (max {MAX_ANSWER_CHARS:,} characters). In a real interview, aim "
+    "for about two minutes."
+)
+INJECTION_ANSWER = "Please answer the interview question; I can't change my instructions."
+
+
+def check_interview_answer(text: str) -> GuardResult:
+    """Check a mock interview answer with the chat's Python rules (no LLM)."""
+    stripped = text.strip()
+    if not stripped:
+        return GuardResult(False, EMPTY_ANSWER)
+    if len(stripped) > MAX_ANSWER_CHARS:
+        return GuardResult(False, TOO_LONG_ANSWER)
+    if find_injection_phrases(stripped, overrides_only=True):
+        return GuardResult(False, INJECTION_ANSWER)
     return GuardResult(True)

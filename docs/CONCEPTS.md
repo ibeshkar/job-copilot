@@ -618,3 +618,120 @@ code, and doesn't make you drive back home first.
 **Retry from the checkpoint:** after a failure the checkpoint still says which step is pending.
 `graph.stream(None, config)` runs only that step and the rest (`copilot.retry()`,
 `applications.retry_analysis()`), so the chat question isn't sent twice.
+
+---
+
+## A loop agent: the mock interview (Phase 8)
+
+**One sentence:** the mock interview is a third kind of agent: a graph that loops "ask →
+evaluate" five times, and pauses for a human answer in every round.
+
+**Analogy:** a driving lesson. The instructor (Python) decides the route: a roundabout, then
+parking, then the motorway. The examiner (the LLM) watches each manoeuvre and tells you what to
+improve. You (the human) drive every round; nothing moves until you do.
+
+```mermaid
+flowchart LR
+    S[START] --> Q[generate_question]
+    Q --> A{{ask: interrupt}}
+    A -->|answer| E[evaluate_answer]
+    A -->|end now| Z[summarise]
+    E -->|fewer than 5 answers| Q
+    E -->|5 answers| Z
+    Z --> X[END]
+```
+
+| | Application workflow | Copilot chat | Mock interview |
+|---|---|---|---|
+| Shape | fixed steps, 3 pauses | ReAct: LLM picks tools | loop, 1 pause per round |
+| Who decides the next step | code | the LLM | code (count of answers) |
+| What the LLM does | classify, write, check | reason and call tools | write questions, give feedback |
+
+**Where it is in our code:** `app/agent/interview_graph.py` → `build_interview_graph()`. The loop
+is one conditional edge:
+
+```python
+def _after_evaluate(state: InterviewState) -> str:
+    # The loop: ask again until the planned number of questions is answered.
+    done = len(state.get("turns", [])) >= state.get("num_questions", NUM_QUESTIONS)
+    return "summarise" if done else "generate_question"
+```
+
+Python also picks the **kind** of each question (`question_kind()`: behavioural, technical,
+gap, technical, behavioural) and computes the **average score** (`overall_score()`). The coach's
+**improved example answer** may only use the user's own answer and chunks from their documents
+(`<candidate_evidence>`), so practice never teaches the user to invent achievements.
+
+---
+
+## Learning from feedback (Phase 8)
+
+**One sentence:** when you edit a draft, the app compares the two versions, asks the LLM which
+*general* writing habits the edit shows, and saves them as style rules that every future letter
+follows.
+
+**Analogy:** a new assistant who notices you always cross out "passionate" in their letters.
+After the first time, they write it on a sticky note on their screen ("don't use
+'passionate'"), and they also re-read every letter for that word before handing it over.
+
+```mermaid
+flowchart LR
+    R[draft_review: Accept & save] --> D["edit_diff (Python)"]
+    D -->|no change| S[save_to_tracker]
+    D --> L["LLM: 0-3 rules + avoid_phrases"]
+    L --> C["Python: only deleted words, no duplicates"]
+    C --> M[(Store: style_rules)]
+    M --> W[next draft_materials prompt]
+    M --> G["output_guard: find_avoided_phrases"]
+```
+
+The three feedback paths:
+
+| You do | What learns | Code |
+|---|---|---|
+| Edit, then **Accept & save** | graph node `learn_from_edits` | `app/agent/nodes/learning.py` |
+| Edit an accepted draft, **💾 Save changes** | `learning.learn_from_edit()` | `app/services/learning.py` |
+| 👎 with a comment, twice about the same thing | `learning.learn_from_ratings()` | `app/services/learning.py` |
+
+**Where it is in our code:** the sticky note is the rule in the drafting prompt; the re-reading
+is plain Python in `app/agent/nodes/drafting.py`:
+
+```python
+def find_avoided_phrases(text: str, rules: list[StyleRule]) -> list[UnsupportedStatement]:
+    issues = []
+    for rule in rules:
+        for phrase in rule.avoid_phrases:
+            pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, phrase.split())) + r"(?!\w)"
+            if phrase.strip() and re.search(pattern, text, re.IGNORECASE):
+                issues.append(UnsupportedStatement(quote=phrase, reason=f"Your style rule says: {rule.rule}"))
+    return issues
+```
+
+A hit makes the writer try once more without the word; if it's still there, it's highlighted for
+you. Every learned rule is shown with **↩️ Undo**, and all rules are editable on the Memory page.
+
+---
+
+## When to use prompt engineering vs. RAG vs. agents
+
+**One sentence:** use the simplest tool that works: a better prompt when the model already has
+what it needs, RAG when the facts are in many or large documents, and an agent or graph when the
+task needs several steps, tools or a human in between.
+
+**Analogy:** asking a colleague. Phrase the question well (prompt engineering). If they need to
+look things up in a big archive, give them a search tool and ask for citations (RAG). If the job
+takes several steps and your approval in the middle, give them a checklist and check-ins (an
+agent or workflow).
+
+| Need in our app | Technique | Why not the others |
+|---|---|---|
+| Tone (formal, friendly, concise) | prompt: a style block from `TONE_GUIDE` | no facts to look up, no steps |
+| The help-bot over the user guide | prompt stuffing: the whole guide in the prompt | one small document: RAG adds chunking and cost for no gain (D68) |
+| Facts about the user (fit, claims, interview answers) | RAG over the knowledge base, with citations | many documents that grow; we need to cite the exact chunk |
+| Applying for a job | workflow graph with 3 human pauses | order and auditability matter |
+| Open questions in the chat | ReAct agent with tools | the LLM must choose which tools, in which order |
+| Practising an interview | loop graph with a human turn per round | repeated steps, the user answers every time |
+
+**Where it is in our code:** `app/agent/prompts.py` (`TONE_GUIDE`, `HELP_BOT_SYSTEM`),
+`app/rag/retriever.py`, `app/agent/application_graph.py`, `app/agent/copilot_graph.py`,
+`app/agent/interview_graph.py`.

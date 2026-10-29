@@ -177,12 +177,18 @@ def list_style_rules(
 def update_style_rule(
     key: str, text: str, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
 ) -> None:
-    """Change the wording of a style rule. Raises KeyError if it's gone."""
+    """Change the wording of a style rule. Raises KeyError if it's gone.
+
+    Banned words the new wording no longer mentions are dropped, so rewording "Avoid
+    'passionate'" into "Keep sentences short" stops the guard from checking "passionate".
+    """
     store = store or get_store()
     item = store.get(_ns("style_rules", user_id), key)
     if item is None:
         raise KeyError(key)
-    rule = StyleRule.model_validate(item.value).model_copy(update={"rule": text})
+    rule = StyleRule.model_validate(item.value)
+    kept = [p for p in rule.avoid_phrases if p.lower() in text.lower()]
+    rule = rule.model_copy(update={"rule": text, "avoid_phrases": kept})
     store.put(_ns("style_rules", user_id), key, rule.model_dump(mode="json"))
 
 

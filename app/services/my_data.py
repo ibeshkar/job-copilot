@@ -79,6 +79,16 @@ def reset_preferences() -> None:
     store.delete_preferences()
 
 
+def set_tone(tone: str) -> None:
+    """Change only the tone (the sidebar selector); the other preferences stay as they are.
+
+    Raises:
+        pydantic.ValidationError: `tone` is not formal, friendly or concise.
+    """
+    current = store.get_preferences()
+    store.save_preferences(Preferences.model_validate({**current.model_dump(), "tone": tone}))
+
+
 def update_fact(key: str, text: str) -> None:
     """Reword a fact. Empty text deletes it."""
     if text.strip():
@@ -101,6 +111,13 @@ def update_style_rule(key: str, text: str) -> None:
 
 def delete_style_rule(key: str) -> None:
     store.delete_style_rule(key)
+
+
+def add_style_rule(text: str) -> str | None:
+    """Add a rule the user typed on the Memory page. Returns its key, or None if empty."""
+    if not text.strip():
+        return None
+    return store.add_style_rule(StyleRule(rule=text.strip(), source="explicit"))
 
 
 def delete_document(filename: str) -> int:

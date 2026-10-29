@@ -368,3 +368,115 @@ def test_page_crash_shows_a_friendly_error(fake_app, monkeypatch) -> None:
 
     assert any("ran into a problem" in e.value for e in at.error)
     assert all("/secret/path" not in e.value for e in at.error)
+
+
+# ---------------------------------------------------------------- Phase 8
+
+
+def test_sidebar_tone_selector_saves_the_preference(fake_app) -> None:
+    from app.memory.store import get_preferences
+
+    save_profile(Profile(name="Alex"))
+    at = _app().run()
+    assert at.sidebar.selectbox(key="sidebar_tone").value == "friendly"
+
+    at.sidebar.selectbox(key="sidebar_tone").select("concise").run()
+
+    assert not at.exception
+    assert get_preferences().tone == "concise"
+    assert at.sidebar.selectbox(key="sidebar_tone").value == "concise"
+
+
+def test_help_page_explains_and_answers_from_the_guide(fake_app, monkeypatch) -> None:
+    from app.agent.state import HelpAnswer
+    from app.services import help as help_bot
+    from tests.fakes import FakeStructuredLLM
+
+    answer = HelpAnswer(
+        answer="Paste the job text on the Board.",
+        covered_by_guide=True,
+        sections=['Use case 1: "Is this job a fit for me?"'],
+    )
+    monkeypatch.setattr(help_bot, "get_llm", lambda: FakeStructuredLLM({HelpAnswer: answer}))
+    save_profile(Profile(name="Alex"))
+    at = _open(_app(), "5_help.py")
+    assert not at.exception
+    assert any("Will the app invent experience" in e.label for e in at.expander)
+
+    at.chat_input[0].set_value("How do I add a job?").run()
+
+    assert not at.exception
+    assert any("Paste the job text on the Board." in m.value for m in at.markdown)
+    assert any("From the guide" in c.value for c in at.caption)
+
+
+def test_interview_tab_start_answer_and_feedback(fake_app) -> None:
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+    at = _open_workspace(_app(job_id))
+    assert not at.exception
+
+    _button(at, "🎤 Start mock interview").click().run()
+    assert not at.exception
+    assert any("Q1 of 5" in m.value for m in at.markdown)
+
+    next(t for t in at.text_area if t.label == "Your answer").input(
+        "I built a RAG chatbot with LangChain and ChromaDB that 40 classmates used."
+    )
+    _button(at, "Send answer ▶").click().run()
+
+    assert not at.exception
+    assert any("Score: 4/5" in m.value for m in at.markdown)
+    assert any("Q2 of 5" in m.value for m in at.markdown)
+
+    _button(at, "End interview now").click().run()
+    assert not at.exception
+    assert at.metric[-1].value == "4.0/5"
+
+
+def test_documents_tab_shows_a_learned_rule_with_undo(fake_app) -> None:
+    from app.agent.state import Drafts
+    from app.memory import store
+    from tests.graph_fakes import PASSIONATE, passionate_writer
+
+    fake_app.llm.responders[Drafts] = passionate_writer
+    job_id = _at_claim_check()
+    applications.submit_claim_review(
+        job_id, [{"id": "C1", "action": "approve"}, {"id": "C2", "action": "approve"}]
+    )
+    at = _open_workspace(_app(job_id))
+    letter = at.text_area(key=f"letter_{job_id}_1")
+    assert PASSIONATE in letter.value
+
+    letter.input(letter.value.replace(PASSIONATE, "I enjoy building AI products.")).run()
+    _button(at, "✅ Accept & save").click().run()
+
+    assert not at.exception
+    [key] = store.list_style_rules()
+    assert any("Avoid the word 'passionate'" in m.value for m in at.markdown)
+    at.button(key=f"undo_rule_{key}").click().run()
+    assert store.list_style_rules() == {}
+    assert not any("I learned from your feedback" in m.value for m in at.markdown)
+
+
+def test_memory_page_shows_rule_sources_and_adds_a_rule(fake_app) -> None:
+    from app.agent.state import StyleRule
+    from app.memory import store
+
+    save_profile(Profile(name="Alex"))
+    store.add_style_rule(
+        StyleRule(
+            rule="Avoid the word 'passionate'", source="edit_diff", avoid_phrases=["passionate"]
+        )
+    )
+    at = _open(_app(), "4_memory.py")
+    assert any("learned from your edits · checks for: passionate" in c.value for c in at.caption)
+
+    next(t for t in at.text_input if t.label == "Add a rule").input("Keep it under 200 words")
+    _button(at, "➕ Add rule").click().run()
+
+    assert not at.exception
+    assert sorted(r.rule for r in store.list_style_rules().values()) == [
+        "Avoid the word 'passionate'",
+        "Keep it under 200 words",
+    ]
