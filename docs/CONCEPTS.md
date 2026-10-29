@@ -1,7 +1,68 @@
 # Concepts
 
 The course concepts, each explained in three layers: one sentence, an analogy, and where it is
-in our code. Sections are added as the phases build them.
+in our code. Start with "What is an AI agent?" and "Agent types"; the rest follow the order in
+which the app was built. Diagrams of the whole system are in `ARCHITECTURE.md`.
+
+---
+
+## What is an AI agent? Agent vs. chain vs. workflow
+
+**One sentence:** an agent is an LLM in a loop that can take actions (call tools), look at the
+results, and decide by itself what to do next, until the task is done.
+
+**Analogy:** a chain is a vending machine (press a button, get the same sequence every time). A
+workflow is a factory line with a few switches (the route is planned, but a sensor can send a
+part back for rework). An agent is a mechanic: they look at the car, choose a tool, check the
+result, and choose the next tool.
+
+| | Chain | Workflow | Agent |
+|---|---|---|---|
+| Who decides the next step | Nobody: fixed sequence | Our code (edges, conditions) | The LLM (tool calls) |
+| Loops | No | Yes, where we allow them | Yes, until it answers or hits a limit |
+| Predictable / auditable | Very | Very | Less |
+| Our example | The help-bot (one call over the user guide) | The application graph | The copilot chat |
+
+**Where it is in our code:**
+- Chain: `app/services/help.py` → one structured call with the whole user guide.
+- Workflow: `app/agent/application_graph.py` → `build_application_graph()`: 15 nodes, the order
+  fixed by edges, one agentic decision (`_after_retrieval`: search again?).
+- Agent: `app/agent/copilot_graph.py`. The loop is two edges:
+
+```python
+graph.add_conditional_edges("agent", partial(_after_agent, deps=deps), ["tools", "approve", END])
+graph.add_edge("tools", "agent")  # observe the results, then reason again
+
+def _after_agent(state, deps):
+    calls = getattr(state["messages"][-1], "tool_calls", None)
+    if not calls:
+        return END  # a normal answer: the turn is over
+    if any(c["name"] in deps.approval_tools for c in calls):
+        return "approve"
+    return "tools"
+```
+
+---
+
+## Agent types: ReAct, plan-and-execute, workflow, multi-agent
+
+**One sentence:** agent types differ in *who plans* and *how many* agents there are; we picked a
+different one for each job.
+
+**Analogy:** cooking dinner. ReAct is tasting as you go. Plan-and-execute is writing the whole
+recipe first, then following it. A workflow is a restaurant's fixed procedure. Multi-agent is a
+kitchen brigade: a sous-chef, a pastry chef and a grill chef passing plates.
+
+| Type | How it works | Used here? | Why / why not |
+|---|---|---|---|
+| **ReAct** | Reason → act (tool call) → observe → repeat | ✅ Copilot chat | Open questions need any mix of tools in any order |
+| **Workflow / state machine** | Fixed nodes and edges; LLM calls inside nodes | ✅ Application graph | High stakes: the claim check may never be skipped; easy to audit and test |
+| **Loop** (a small workflow that repeats) | The same round N times | ✅ Mock interview | 5 rounds of ask → answer → evaluate |
+| **Plan-and-execute** | An LLM writes a plan of steps, then runs them | ❌ | Our application steps are known in advance; a planner would only add a way to get the order wrong |
+| **Multi-agent** | Several specialised agents hand work to each other | ❌ | One copilot with 5 tools is simpler to test; worth it only with many more tools or very different skills |
+
+**Where it is in our code:** `ARCHITECTURE.md` §3 compares the three graphs side by side
+(`application_graph.py`, `copilot_graph.py`, `interview_graph.py`).
 
 ---
 

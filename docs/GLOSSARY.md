@@ -15,18 +15,21 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Board (Kanban)**: the tracker page: one column per application status, one card per job.
 - **Budget (token budget)**: the number of tokens a browser session may use before the sidebar warns (`SESSION_TOKEN_BUDGET`, 200,000; warning at 80%).
 - **CEFR level**: the European scale for language skill: A1, A2 (basic), B1, B2 (independent), C1, C2 (proficient).
+- **Chain**: a fixed sequence of LLM calls with no decisions; our help-bot is a one-step chain.
 - **Checkpointer**: LangGraph's short-term memory; saves the graph state after every step under a `thread_id`, so a run can pause and resume.
 - **Chroma**: a vector database that runs inside our app and saves to `data/runtime/chroma/`; no server needed.
 - **Chunk**: a small piece of a document (about 500 characters here) that is embedded and searched on its own.
 - **Chunk overlap**: characters shared by neighbouring chunks (80 here) so a sentence on the border isn't cut in half.
-- **Claim check**: the second human-in-the-loop pause: you approve, edit or remove each claim before anything is written.
 - **Claim**: one statement the application makes about you, e.g. "Built a RAG chatbot with LangChain"; drafts may only use claims you approved.
+- **Claim check**: the second human-in-the-loop pause: you approve, edit or remove each claim before anything is written.
+- **Code tour**: `docs/CODE_TOUR.md`: two real requests followed file by file, with the state after each step.
 - **`Command(resume=...)`**: how we continue a paused graph and hand it the user's answer.
 - **Conditional edge**: a graph edge that picks the next node with a function, e.g. "rewrite queries or assess fit?".
 - **Confirmed fact**: a claim you kept although no document shows it; saved to long-term memory and used as evidence next time.
 - **Context variable (`ContextVar`)**: a Python variable whose value belongs to the current task or thread; LangChain uses one to add our usage counter to every LLM call inside `track_usage`.
 - **Cosine similarity**: a measure of how similar two vectors are, based on the angle between them; we turn it into a 0–1 relevance score.
 - **Cost tracking**: counting each action's input and output tokens and pricing them with `MODEL_PRICING`; saved in the `UsageLog` table.
+- **Data exfiltration**: getting private data out of a system; for an agent, e.g. a prompt injection that makes it put your profile into a URL it fetches.
 - **DeepEval**: an open-source library of LLM evaluation metrics (faithfulness, answer relevancy, G-Eval, …) that use an LLM as the judge.
 - **Delete all my data**: the Memory page button that empties the Store, the knowledge base, the database, all saved runs and chats, and the log.
 - **Delimiters**: tags like `<job_posting>` around outside text, so the LLM can tell data from instructions.
@@ -34,6 +37,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Developer settings**: the password-protected page for model, temperature, max tokens, costs, prompts and raw graph state.
 - **Dialog (`st.dialog`)**: a pop-up window in Streamlit; ours holds the "Add job" form.
 - **Diff (edit diff)**: the list of what changed between two texts; ours lists changed sentences as `- old` / `+ new` lines (`difflib`).
+- **DNS rebinding**: an attack where a hostname resolves to a public IP when checked and to a private IP when used; a known gap in our URL guard.
 - **DOCX**: the Word file format; `app/services/export.py` builds one with `python-docx` (falls back to `.txt`).
 - **Draft review**: the third pause: you edit the drafts, regenerate a section, or accept.
 - **Draft version**: one saved copy of a job's CV bullets and cover letter in the `Draft` table (AI draft or your edit).
@@ -56,11 +60,12 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Fixture (pytest)**: setup code that gives a test something it needs, such as an empty database.
 - **Fragment (Streamlit)**: part of a page that can rerun on its own; a dialog is one.
 - **Function calling (tool calling)**: the model answers with "call tool X with these arguments" instead of text; our code runs it and sends back the result.
-- **G-Eval**: a DeepEval metric where the judge scores an output against your own criteria or steps (ours: "tailored to the posting, no generic filler").
 - **Gap question**: a mock interview question about a requirement the fit analysis marked partial or missing, to practise answering honestly.
+- **G-Eval**: a DeepEval metric where the judge scores an output against your own criteria or steps (ours: "tailored to the posting, no generic filler").
 - **Grading (RAG)**: an LLM check of whether a retrieved chunk really supports a requirement.
 - **Ground truth (labels)**: the answers a person marked as correct, e.g. the must-have requirements of a posting; the app's output is compared with them.
 - **Grounding**: making the model base its answers only on given evidence, and checking that it cites it.
+- **Headless browser**: a browser without a window, driven by code; used once to take the screenshots in `docs/assets/`.
 - **Help-bot**: the assistant on the Help page; answers questions about the app from `docs/USER_GUIDE.md` only.
 - **Human-in-the-loop (HITL)**: the agent stops and lets a person review or decide before it continues.
 - **Improved example answer**: the interview coach's rewrite of your answer, built only from your answer and your own documents.
@@ -73,6 +78,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **LangGraph**: a library for building LLM apps as graphs of steps with shared state, loops and pauses.
 - **LangSmith**: LangChain's tracing service; it shows each run as a tree of steps with inputs, outputs, tokens and timing.
 - **Learn from edits**: the step after "Accept & save" that compares the AI's draft with your edited version and saves 0–3 general style rules.
+- **Lethal trifecta**: private data + untrusted content + a way to send data out, in one agent; the combination that makes prompt injection dangerous.
 - **Lint / linter (ruff)**: a tool that checks code for mistakes and style problems without running it.
 - **LLM as a judge**: using a second LLM call to check the output of the first; our output guard is one.
 - **LLM-as-a-judge**: using a (usually stronger) language model to grade another model's output when no exact right answer exists.
@@ -81,6 +87,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`max_tokens`**: the longest answer the model may give (1,500 here); a longer answer is cut off and fails to parse.
 - **Metadata**: extra labels saved with each chunk (`doc_name`, `doc_type`, `chunk_id`), used for citations and filters.
 - **Mock interview**: a 5-question practice interview for one job, with a 1–5 score, a STAR check and an improvement per answer.
+- **Multi-agent system**: several specialised agents that hand work to each other; not used here (one copilot with 5 tools is enough).
 - **Namespace**: a folder-like path in the Store, e.g. `("local", "profile")`: user id, then kind of memory.
 - **Node**: one step in a LangGraph graph: a function that reads the state and returns updates.
 - **Onboarding wizard**: the 3-step first-run setup: profile, documents, preferences.
@@ -89,6 +96,8 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Output guard**: the fact-checking step after drafting: lists statements about you that no approved claim backs.
 - **Override attempt**: chat text that tries to change the assistant's rules ("ignore previous instructions", "developer mode"); refused without calling the LLM.
 - **`penalize_ambiguous_claims`**: a DeepEval faithfulness setting: a statement the context neither confirms nor contradicts counts as unfaithful.
+- **Plan-and-execute agent**: an agent that first writes a plan of all steps, then runs them; not used here because our workflow's steps are known in advance.
+- **PostgresSaver / PostgresStore**: the Postgres versions of LangGraph's checkpointer and Store; the path to a multi-user deployment.
 - **Precision**: of the items the app returned, the share that are correct ("how much of the catch is fish").
 - **Prompt injection**: text that tries to give an LLM new instructions, e.g. "ignore all previous instructions" inside a job posting.
 - **Prompt stuffing (context stuffing)**: putting a whole document into the prompt instead of searching it with RAG; fine for small documents like our user guide.
@@ -133,6 +142,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **tenacity**: a Python library for retrying a call with growing waits (we use it for busy servers).
 - **Text splitter**: code that cuts text into chunks, trying paragraph breaks first, then sentences, then words (`RecursiveCharacterTextSplitter`).
 - **thread_id**: the name of one saved conversation or workflow run in LangGraph; each job gets `job-<id>`.
+- **Threat model**: the list of what can go wrong, who could cause it and what stops it; ours is `docs/SECURITY.md`.
 - **Token**: a piece of text (about ¾ of a word in English) that models read and write; usage and prices are counted in tokens.
 - **Tone selector**: the sidebar choice of formal, friendly or concise; it changes the tone of letters, chat answers, interview feedback and the help-bot.
 - **Tool**: a function the LLM may call, described by a name, a description and an argument schema.

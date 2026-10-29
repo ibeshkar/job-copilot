@@ -5,7 +5,7 @@ evidence from your own documents, write an honest application, practise the inte
 keep track of every application. This guide is also what the help-bot on the **❓ Help** page
 answers from.
 
-> Screenshots are added in Phase 10.
+> Screenshots show the fictional demo persona, Alex Novak. They live in `docs/assets/`.
 
 ## Getting started
 
@@ -20,6 +20,8 @@ answers from.
    - **Preferences**: tone (formal, friendly or concise), cover letter length, the language
      of your letters, and deal-breakers (for example "no relocation").
 3. When it says "Your knowledge base: … chunks from … documents ✔", you're ready.
+
+![Step 1 of the Get started wizard, filled in with the demo persona](assets/onboarding.png)
 
 You need an OpenRouter API key in the `.env` file (`OPENROUTER_API_KEY`). Without it you can
 browse saved data, but AI features don't run, and a banner explains what to do.
@@ -42,6 +44,13 @@ browse saved data, but AI features don't run, and a banner explains what to do.
      (for example "I used Airflow at my last job"),
    - **🚫 Not a fit** to stop. The job stays on the board.
 
+![The fit card of a good-fit job: score 88, every requirement met or partial](assets/fit_good.png)
+
+A poor fit looks like this: a **blocking** red flag (German C1 required, the profile says A2) keeps
+the score low, and the deal-breaker and seniority warnings are listed too.
+
+![The fit card of a poor-fit job: score 18 with a blocking German C1 red flag](assets/fit_poor.png)
+
 **How is the score calculated?** Must-have requirements weigh 3, nice-to-haves 1. Met counts
 fully, partial half, missing zero. The AI only decides met / partial / missing; the arithmetic
 is plain Python, so the same assessment always gives the same score.
@@ -54,6 +63,8 @@ is plain Python, so the same assessment always gives the same score.
    tick one only if it's true; the app then remembers it as a fact you confirmed.
 3. Edit any wording, untick what you don't want to say, and click **Confirm claims and write
    drafts ▶**. The writer only ever sees the claims you kept.
+
+![The claim check: each claim with a Keep box, editable text, a badge and its evidence](assets/claim_check.png)
 4. The **📝 Documents** tab shows your **CV bullets** and **cover letter**. A fact-checker
    marks any statement it couldn't match to an approved claim.
 5. Edit the texts directly, or use **🔄 Regenerate a section** with an instruction like
@@ -61,6 +72,8 @@ is plain Python, so the same assessment always gives the same score.
 6. Click **✅ Accept & save**. Every version is saved; see them in the **🗒️ Notes** tab.
 7. **⬇️ Export DOCX** downloads a Word file. **📋 Copy as text** shows plain text to copy.
 8. Rate the letter and the bullets with 👍 or 👎. After a 👎 you can say what was wrong.
+
+![The Documents tab: fact check passed, editable CV bullets and cover letter, Accept & save](assets/documents.png)
 
 ## Learning your writing style
 
@@ -106,6 +119,10 @@ A refresh or restart keeps your place: you return to the same question.
   it asks for your approval. Click **New chat** to start over.
 - Switch the copilot's tools on or off under **🔧 Copilot tools** in the sidebar.
 
+![The board: one column per status, each card with its fit score and next step](assets/board.png)
+
+![The copilot asks for approval before moving a job to Applied](assets/chat_approval.png)
+
 ## Tone
 
 The **🎭 Tone** selector in the sidebar sets how the app writes for you:
@@ -121,6 +138,8 @@ help-bot. You can also change it on the Memory page under **✍️ Preferences**
 
 - **🧠 What I know about you** shows your profile, preferences, confirmed facts, style rules
   and documents. Edit or delete any of them.
+
+![What I know about you: profile, preferences, facts, style rules and documents](assets/memory.png)
 - **Delete all my data** (type DELETE to confirm) removes everything: profile, memories,
   documents, jobs, drafts, chats, interviews, usage history and the log.
 - All data is stored only on your computer, in `data/runtime/`. Texts are sent to OpenRouter

@@ -1,7 +1,12 @@
 # Review guide
 
-The main document to study before the live review. It grows after each phase and is finished
-in Phase 10 (see PROJECT_PLAN.md §17.2 for the final structure).
+The main document to study before the live review. Read §1–§4 and §7 the evening before; use
+§5 to practise answers out loud. Related: `ARCHITECTURE.md` (diagrams), `CODE_TOUR.md` (two
+requests through the code), `CONCEPTS.md` (course concepts), `DEMO_SCRIPT.md` (what to click),
+`SECURITY.md`, `DECISIONS.md`, `EVALUATION.md`, `GLOSSARY.md`.
+
+**Contents:** 1. 30 seconds · 2. 3 minutes · 3. Evaluation criteria · 4. Top 8 decisions ·
+5. Questions and answers · 6. Weak spots · 7. Cheat sheet
 
 ## 1. The project in 30 seconds
 Job seekers waste time on generic applications and can't easily tell whether they fit a role.
@@ -9,6 +14,73 @@ Job Application Copilot checks fit requirement by requirement, using evidence fr
 documents. It writes tailored CV bullets and cover letters only from claims the user approved, and
 it tracks every application on a board. Everything runs locally; only text sent to the AI leaves
 the computer.
+
+## 2. The project in 3 minutes
+
+The main user journey, as Alex Novak (the demo persona, a logistics coordinator moving into AI
+engineering):
+
+```mermaid
+flowchart LR
+    O[1. Onboarding<br/>profile + documents] --> A[2. Add a job<br/>paste text or URL]
+    A --> F[3. Fit card<br/>score + evidence]
+    F -->|continue| C[4. Claim check<br/>approve / edit / remove]
+    C --> D[5. Drafts<br/>fact-checked, editable]
+    D --> S[6. Accept & export<br/>style rules learned]
+    S --> B[7. Board + chat<br/>track, research, practise]
+```
+
+1. **Onboarding** (`0_onboarding.py`): name, target roles, seniority, locations, work
+   authorisation, languages with a level. Upload a CV, READMEs, a brag doc. The documents are
+   chunked, embedded and stored in Chroma; the profile goes to long-term memory (the Store).
+2. **Add a job** (Board → ➕ Add job): paste the posting or its link. A status box shows each
+   step of the **workflow graph**: guard → read posting → extract requirements → search my
+   documents (agentic RAG) → assess.
+3. **Fit card** (Fit tab): a 0–100 score computed in Python, red flags (language, visa,
+   seniority, location, deal-breakers), and ✅/⚠️/❌ per requirement with the quoted evidence. The
+   graph is now **paused** with `interrupt()`. The user continues, adds context, or stops.
+4. **Claim check** (second pause): the agent lists what the application would say about the
+   user. Unsupported claims start unticked. Only kept claims reach the writer.
+5. **Drafts** (third pause): CV bullets and a cover letter, checked by an **output guard** that
+   flags anything no approved claim backs. Edit, regenerate one section, rate 👍/👎.
+6. **Accept & save**: versions go to SQLite, edits become **style rules** ("Avoid the word
+   'passionate'"), DOCX export.
+7. **Around it**: a Kanban **board**, a **ReAct copilot chat** with 5 tools (asks before
+   changing the tracker), company research, a 5-question **mock interview**, the Memory page,
+   and a cost badge.
+
+Everything is saved after every step, so a refresh or restart continues where the user left.
+
+## 3. How it maps to the evaluation criteria
+
+| Criterion | Where it is shown |
+|---|---|
+| Well-defined problem | README "Problem and target users"; §1 and §2 here; onboarding text |
+| How agents work / agent types | Three shapes: workflow, ReAct, loop. `ARCHITECTURE.md` §3; `CONCEPTS.md` "What is an AI agent?" |
+| Function calling | `copilot_graph.py` → `agent()` (`bind_tools`), `run_tools()` (`ToolNode`); `CODE_TOUR.md` request 2; `CONCEPTS.md` "Function calling: the full loop" |
+| Code organisation | Layers UI / services / agent / tools / rag / memory / db / guards (`ARCHITECTURE.md` §1) |
+| Error scenarios and edge cases | `utils/errors.py`, `llm.py` → `invoke_structured()`, Retry from checkpoint; Q&A "Error handling"; tests `test_errors.py`, `test_llm_structured.py` |
+| Front-end knowledge | Streamlit multipage (`st.navigation`), `st.dialog`, `st.form`, `st.status`, streaming chat, the interrupt-resume pattern (`ARCHITECTURE.md` §4) |
+| Relevant knowledge base | The user's own documents in Chroma with citations; agentic RAG in `nodes/evidence.py` |
+| Security | `SECURITY.md`; `guards/`; `tests/test_injection.py`; the Phase 10 critique (D77) |
+| Reflection and improvement | §6 here; `DECISIONS.md` (78 entries); `EVALUATION.md` §7–8; README "Limitations" |
+| Prompt engineering vs. RAG vs. agents | Tone = prompt; user facts = RAG; multi-step job workflow = agent/graph (`CONCEPTS.md` "When to use…") |
+| Bonus (≥ 2 medium + 1 hard) | Medium: cost tracking, long-term memory, 5 tools + toggles, security guard + dev settings, feedback loop. Hard: agentic RAG, LangSmith, DeepEval report, learning from feedback |
+
+## 4. Key technical decisions (top 8)
+
+| # | What | Why | Alternative | Trade-off |
+|---|---|---|---|---|
+| 1 | **Workflow graph** for applications, **ReAct agent** for chat | Applying is high-stakes and must never skip the claim check; chat is open-ended | One ReAct agent for everything | Two graphs to maintain; but each is simple and testable |
+| 2 | **Fit score in Python**, the LLM only classifies | Reproducible and explainable ("must = 3, met = 1…"); a fooled LLM can't set it | Ask the LLM for a number | Classification still varies (partial fit 36–52 across runs, EVALUATION §7.1) |
+| 3 | **Claim check + output guard** before and after writing | Prompts are not guarantees; the user decides what's true; a second call checks | Trust the writer prompt | 2–3 extra LLM calls (~$0.001) and one more click |
+| 4 | **Agentic RAG** with grading and max 2 rewrites (two graph nodes, D17) | Vector similarity ≠ evidence; rewriting finds "containerisation" for "Docker" | Plain top-k search | More LLM calls; batched grading keeps it to 5–8 per analysis |
+| 5 | **SQLite checkpointer** + `interrupt()` for all pauses | Streamlit reruns the script; state must live outside it; survives restarts | Keep state in `st.session_state` | Checkpoint file grows; needs an allowlist serializer (D21) |
+| 6 | **Store** for long-term memory, namespaced by user id | Profile, facts, style rules cross all runs; ready for multi-user | Put it in the app database | A third SQLite file; but the API matches LangGraph's |
+| 7 | **Structured output** (Pydantic) for every data-returning call, one schema retry | No regex parsing; validation errors are explicit | Parse free text / JSON mode | Some models handle schemas worse; a cut-off answer fails cleanly (D36) |
+| 8 | **OpenRouter** via the OpenAI-compatible client | One key, any model; same `ChatOpenAI` code | OpenAI directly | One more provider in the data path (named in the privacy notes) |
+
+More: `DECISIONS.md` D1–D78.
 
 ## 5. Questions and answers
 
@@ -19,7 +91,36 @@ international applicants in the EU, for whom visa and language requirements matt
 persona, Alex Novak (`data/samples/persona/`), is a logistics coordinator who moved into AI
 engineering.
 
+**What problem does it solve that ChatGPT doesn't?**
+ChatGPT writes from whatever you paste and can invent experience. This app checks fit per
+requirement with **quotes from your own documents**, makes you approve every claim before
+writing, checks the draft against those claims, remembers your profile and writing style across
+jobs, and tracks all applications in one place. The value table is in the README.
+
+**Why is the problem worth solving?**
+Tailoring one application takes 30–60 minutes, so people send generic ones. Career changers
+especially can't judge their fit objectively, and they're tempted to overstate. The app makes
+the honest version faster than the dishonest one.
+
+**What is out of scope, and why?**
+Auto-applying, emailing recruiters, scraping LinkedIn (its terms forbid it) and multi-user
+hosting. The app prepares; the human sends. That keeps the human responsible for anything that
+leaves their computer.
+
 ### Agent concepts
+**What is an agent, in your own words?**
+An LLM in a loop that can take actions (call tools) and decides itself what to do next based on
+what it observes. A chain is a fixed sequence of LLM calls; a workflow is a fixed graph of steps
+that may contain LLM calls and a few decisions. Our copilot is an agent; our application flow is
+a workflow with one agentic decision (search again?). See `CONCEPTS.md` "What is an AI agent?".
+
+**Which agent types exist, and why didn't you use plan-and-execute or multi-agent?**
+ReAct (reason → act → observe), plan-and-execute (plan all steps first, then run them),
+workflow / state machine, and multi-agent (several specialised agents talking). Our tasks don't
+need them: the application steps are known in advance, so a planner would only add a way to get
+the order wrong; and one copilot with 5 tools is easier to test than agents handing work to each
+other. If the copilot grew to 20+ tools, splitting it into specialists would be worth it.
+
 **Why is the application flow a workflow graph and not a free agent?**
 Applying for a job is high-stakes and must be auditable. The steps always run in the same order
 (guard → read posting → requirements → evidence → assess → human review), and the user always
@@ -88,6 +189,7 @@ error: I couldn't read that page. Please paste the job text instead.". The model
 explain it or try something else. Missing keys, timeouts and empty results all become our
 `AppError` messages; the user never sees a stack trace.
 
+### Fit analysis and agentic RAG
 **Why is the fit score calculated in Python instead of by the LLM?**
 LLM numbers are not reproducible, and you can't explain where "73" came from. The LLM only
 classifies each requirement (met / partial / missing). `compute_fit_score()` in
@@ -218,10 +320,11 @@ cover a question. Code: `app/ui/pages/5_help.py`, `app/services/help.py`.
 
 ### Code organisation
 **How is the code organised?**
-In layers: `app/ui/` (Streamlit pages only), `app/agent/` (LLM and graphs), `app/db/` (tables
-and the repo), `app/utils/` (errors and logging), and later `tools/`, `rag/`, `memory/`,
-`guards/` and `services/`. UI code never talks to the LLM or the database directly. It calls
-functions in lower layers. This keeps logic testable without a browser.
+In layers: `app/ui/` (Streamlit pages only), `app/services/` (one function per user action),
+`app/agent/` (graphs, nodes, prompts, the LLM factory), `app/tools/`, `app/rag/`,
+`app/memory/`, `app/guards/`, `app/db/` and `app/utils/`. UI code never talks to the LLM or the
+database directly; it calls services. This keeps logic testable without a browser
+(`ARCHITECTURE.md` §1).
 
 **Why is all database access in `app/db/repo.py`?**
 There's one place to test and change it. Every function takes a `Session`, so tests pass an
@@ -234,7 +337,9 @@ and invalid statuses.
 The checkpointer saves the state of one graph run (one `thread_id`), like a save game, so a
 job's workflow can pause for the user and continue later. The Store is long-term memory about
 the user across all runs: profile, preferences, confirmed facts and style rules. Ours is a
-`SqliteStore` in `app/memory/store.py`; the checkpointer comes in Phase 3.
+`SqliteStore` in `app/memory/store.py`; the checkpointer is a `SqliteSaver` in
+`application_graph.py` → `make_checkpointer()`. Analogy: the checkpointer is the save game; the
+Store is your player profile that carries across all save games.
 
 **How is long-term memory organised?**
 In namespaces: tuples like `("local", "profile")`, with the user id first. The profile and
@@ -279,7 +384,7 @@ and id, so we can show the user exactly which sentence proves a requirement.
 **How do you know retrieval works?**
 `tests/test_rag.py` ingests the demo persona and checks that "RAG chatbot" finds
 `project_documind_readme.md`. Offline, it uses fake keyword embeddings. The live test uses the
-real model and checks that the README is the top hit. Phase 9 adds a proper evaluation.
+real model and checks that the README is the top hit. The Phase 9 evaluation measures the steps that use retrieval.
 
 **Why doesn't the help-bot use RAG?**
 The user guide is one document of about 2,500 tokens. Putting it in the prompt whole ("prompt
@@ -498,7 +603,61 @@ More cases (50+ postings, several personas), a second labeller, groundedness for
 (faithfulness against the tool results), running it automatically when `PROMPT_VERSION` changes,
 and storing results per prompt version (or as LangSmith datasets) to compare versions.
 
-## 7. Cheat sheet (so far)
+### Reflection and improvements
+**How would you make this multi-user or deploy it?**
+(1) Authentication (for example an OAuth login in front of Streamlit, or move to FastAPI + a
+web frontend). (2) Swap the SQLite checkpointer and Store for the **Postgres** versions
+(`PostgresSaver`, `PostgresStore`); the namespaces already start with the user id, so only
+`user_id="local"` changes. (3) One Chroma collection per user (or a `user_id` metadata filter),
+or a hosted vector DB. (4) The app database to Postgres; every query already goes through
+`repo.py`. (5) Long LLM runs in a background queue (Celery/RQ) so a page doesn't block, with the
+checkpointer as the shared state. (6) Secrets in a secret manager, per-user rate limits and
+budgets.
+
+**What are the biggest limitations?**
+LLM extraction and classification errors (a "6+ years of ML" requirement was once marked met for
+a junior, §6); the partial-fit score moves between runs; many job sites block reading, so
+pasting text is the reliable path; Streamlit is single-process and reruns the script, so it's
+not built for many users; and quality depends on the uploaded documents. Full list in §6.
+
+**What would you do differently if you started again?**
+Write the evaluation datasets in week one, not at the end: the evaluation found issues
+(score instability, "X or Y" splitting) that would have shaped the prompts earlier. And design
+the threat model around data flows (what can leave the computer, through which tool), not only
+around write actions; the critique found a read-tool exfiltration path I had missed (D77).
+
+**Did you ask an AI to critique the project? What did it find?**
+Yes: a separate Claude agent reviewed usability, security and prompts with read-only access
+(D77). The most important findings: Streamlit listened on all network interfaces (fixed: now
+`localhost`); a web page could steer the copilot to send data out through `fetch_job_posting`;
+some tool outputs weren't wrapped as untrusted; and a few-shot example that taught the wrong
+banned-word form. I checked every finding against the code; I disagreed with one (hiding the
+developer page) and partly disagreed with two.
+
+**What did you learn?**
+The LLM should do language and judgement; Python should do structure, arithmetic and checks.
+Every time I let the model do arithmetic or trust its citations, a test or evaluation found a
+problem. And human-in-the-loop isn't a UI feature; it's a graph feature (`interrupt()` + a
+checkpointer), which is why it survives refreshes.
+
+## 6. Weak spots and how I'd improve them
+
+Honest list, most important first.
+
+| # | Weak spot | Evidence | How I'd improve it |
+|---|---|---|---|
+| 1 | **The assessor can mis-read evidence.** Python checks that a cited chunk id is real, not that it proves the requirement. | While taking the screenshots, the poor-fit job marked "6+ years of experience in machine learning" as ✅ met, citing a CV chunk about a 2025–26 course. The score stayed low (18, capped by German C1), but the card was wrong. | A second, cheap "does this snippet prove this requirement?" check for every "met" on a must-have, or require the quoted words; add the case to the evaluation set. |
+| 2 | **The partial-fit score isn't stable enough.** | 36, 52, 45 across 3 runs (std dev 6.5, target ≤ 5), EVALUATION §7.1. | Classify at temperature 0; show a band ("about 45, partial fit"); majority vote over 3 cheap classifications for borderline requirements. |
+| 3 | **"X or Y" requirements become two must-haves.** | EVALUATION §7.2. | Allow `alternatives` in `Requirement`; met if any alternative is met; add a few-shot example. |
+| 4 | **Read tools can be an outbound channel** (prompt injection → `fetch_job_posting` with data in the URL). | Critique S2 (D77). | Only fetch URLs that appear in the user's own message, otherwise ask for approval. |
+| 5 | **Some untrusted text isn't wrapped; `wrap()` is case-sensitive.** | Critique S3, P3. | Wrap all tool outputs that contain posting text; escape `<`/`>` in untrusted text. |
+| 6 | **The copilot half-refuses skill planning** and doesn't check the user's documents first. | EVALUATION §7.4. | Prompt: "for questions about the user, call `search_my_experience` first"; a `get_job_requirements` tool (critique U1). |
+| 7 | **Writer exaggerates a little** ("advanced techniques", "fluent" for C1). | EVALUATION §7.3; faithfulness 0.89. | Add these patterns to the guard prompt; a word list check in Python like `avoid_phrases`. |
+| 8 | **No login; single process.** | By design (local app); now bound to `localhost`. | See "How would you make this multi-user" above. |
+| 9 | **Small evaluation set** (10 postings, 5 drafting cases, 1 persona, 1 labeller). | EVALUATION §9. | 50+ postings, several personas, a second labeller, run on every `PROMPT_VERSION` change. |
+| 10 | **Uploads capped by bytes only**; deleted SQLite rows not vacuumed. | Critique S5, S6. | Cap characters and chunks per file; `VACUUM` after delete-all. |
+
+## 7. Cheat sheet
 | Fact | Value |
 |---|---|
 | Python | 3.14 (supports ≥ 3.11) |
@@ -506,6 +665,8 @@ and storing results per prompt version (or as LangSmith datasets) to compare ver
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
 | Tests | 302 offline + 14 live (+ 4 live evals in `evals/`) (`uv run pytest`, `uv run pytest -m live`) |
+| Docs | README + 11 docs in `docs/` + 10 phase notes; 78 decisions; 8 screenshots in `docs/assets/` |
+| Network | Streamlit bound to `localhost` (`.streamlit/config.toml`) |
 | Pages working | All 7: Get started, Board, Job workspace (Fit, Claim check, Documents, Company, Interview prep, Notes tabs), Copilot chat, What I know about you, Help, Developer settings |
 | Workflow stages shown in UI | not_started, fit_review, claim_check, draft_review, interrupted, failed, finished |
 | Graph nodes | 15: input_guard, ingest_job, extract_requirements, retrieve_evidence, rewrite_queries, assess_fit, fit_review, plan_claims, claim_check, remember_confirmed_facts, draft_materials, output_guard, draft_review, learn_from_edits, save_to_tracker |
@@ -518,8 +679,9 @@ and storing results per prompt version (or as LangSmith datasets) to compare ver
 | Claims and drafts | max 10 claims; letter ≤ 280 words (medium); 3–6 bullets; max 2 draft attempts per round |
 | Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement, grading in batches of 20 pairs |
 | Fit score | must 3 / nice 1; met 1 / partial 0.5 / missing 0; half-up; cap 40 if blocking |
-| Sample scores | one Phase 3 run: good 84, partial 43, poor 0; Phase 9 eval runs: good 88–94, partial 36–52, poor 5–14 (German C1 blocking) |
-| LLM calls per analysis | 5–8, about $0.003 with `openai/gpt-4o-mini` |
+| Sample scores | one Phase 3 run: good 84, partial 43, poor 0; Phase 9 eval runs: good 88–94, partial 36–52, poor 5–14 (German C1 blocking); Phase 10 screenshot run: 88 / 45 / 18 |
+| LLM calls per analysis | 5–8, about $0.003–0.005 with `openai/gpt-4o-mini` (~15–20k tokens) |
+| Cost per application | about **$0.006** (~25k tokens): analysis $0.004 + claims $0.0003 + drafts with guard $0.0013 (demo run, Phase 10) |
 | Prompt version | 2026-10-29.9 (18 prompts + 6 tool descriptions) |
 | Cost tracking | `track_run(action)` → `UsageLog`; sidebar badge per session; budget 200,000 tokens, warning at 80% |
 | Topic check per chat message | ~350 tokens, ~$0.0001 with `openai/gpt-4o-mini` |

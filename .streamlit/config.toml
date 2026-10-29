@@ -2,6 +2,9 @@
 # project root). Security hardening from PROJECT_PLAN.md §9 and §10.
 
 [server]
+# Listen on this computer only. Streamlit's default listens on every network interface, and
+# the app has no login, so anyone on the same Wi-Fi could open it (Phase 10 critique, D77).
+address = "localhost"
 # Uploads are capped at 5 MB per file (the knowledge base rejects bigger files too).
 maxUploadSize = 5
 

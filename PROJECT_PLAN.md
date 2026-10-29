@@ -650,14 +650,14 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - **Done when:** `python evals/run_evals.py` produces the report.
 
 ### Phase 10: Documentation and review prep (1.5h)
-- [ ] Finalise `docs/REVIEW_GUIDE.md`, `docs/CONCEPTS.md`, `docs/CODE_TOUR.md`, `docs/GLOSSARY.md`, `docs/DEMO_SCRIPT.md` (section 17)
-- [ ] Check every review question in section 15 has a written answer in `REVIEW_GUIDE.md` that points to real files and functions
-- [ ] `README.md` (outline in section 13)
-- [ ] `docs/ARCHITECTURE.md` with the mermaid diagrams from section 6
-- [ ] `docs/DECISIONS.md` (at least 8 decisions with alternatives considered)
-- [ ] `docs/USER_GUIDE.md` with 4 use cases and screenshots
-- [ ] Ask ChatGPT/Claude to critique usability, security and prompts → write the findings and responses into `docs/DECISIONS.md` (easy task 1)
-- [ ] Record a 3-minute demo GIF/video (optional)
+- [x] Finalise `docs/REVIEW_GUIDE.md`, `docs/CONCEPTS.md`, `docs/CODE_TOUR.md`, `docs/GLOSSARY.md`, `docs/DEMO_SCRIPT.md` (section 17)
+- [x] Check every review question in section 15 has a written answer in `REVIEW_GUIDE.md` that points to real files and functions
+- [x] `README.md` (outline in section 13)
+- [x] `docs/ARCHITECTURE.md` with the mermaid diagrams from section 6
+- [x] `docs/DECISIONS.md` (at least 8 decisions with alternatives considered)
+- [x] `docs/USER_GUIDE.md` with 4 use cases and screenshots
+- [x] Ask ChatGPT/Claude to critique usability, security and prompts → write the findings and responses into `docs/DECISIONS.md` (easy task 1)
+- [ ] Record a 3-minute demo GIF/video (optional; skipped, screenshots in `docs/assets/` instead)
 
 ---
 
