@@ -96,3 +96,21 @@ prove the requirement; a second "does this prove it?" check would fix it. REVIEW
 
 **How would you deploy it for many users?** Login, Postgres checkpointer and Store (namespaces
 already start with the user id), per-user Chroma collections, a background queue.
+
+## Change after Phase 10: job search moved from Adzuna to Arbeitnow
+- **What:** `app/tools/job_search.py` now uses the free Arbeitnow API (no key). New signature:
+  `search_jobs(keywords, location=None, remote_only=False, visa_sponsorship=False, limit=10)`
+  returns a list of `JobAd` (title, company, location, remote, url, short description, tags,
+  posted date); the LangChain tool `search_jobs_tool` (LLM name `search_jobs`) formats them
+  inside `<untrusted_web_content>`. Filtering happens in Python, because the API has no search.
+- **Errors:** 10 s timeout, 3 tries (`tenacity`) for timeouts/429/5xx, a 10-minute page cache,
+  a "no matches, try broader keywords" message, and a friendly message when Arbeitnow is down.
+- **Removed:** `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` from `config.py`, `.env.example`, the registry
+  and the docs. The tool is on by default.
+- **Tests:** 10 offline tests in `tests/test_tools.py` use `httpx.MockTransport` (filtering,
+  ranking, visa parameter, untrusted wrapping, empty results, retry, no retry on 404, outage,
+  cache, page-2 failure).
+- **Why and trade-offs:** DECISIONS.md D79.
+- **Try it:** `uv run pytest tests/test_tools.py -k search_jobs`, then in the chat: "Find
+  remote Python developer jobs".
+

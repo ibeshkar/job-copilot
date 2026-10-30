@@ -44,7 +44,7 @@ experience, and they lose track of where they applied. Generic AI writers make i
 
 **SHOULD and COULD**
 - ✅ Copilot chat (custom ReAct graph) with **5 tools**, sidebar toggles and approval before changes
-- ✅ Company research (Tavily), job search (Adzuna)
+- ✅ Company research (Tavily), job search (Arbeitnow, free, no key)
 - ✅ Token and cost tracking per action and per session
 - ✅ LangSmith tracing with `action` and `prompt_version` metadata
 - ✅ Developer settings (password): model, temperature, max tokens, prompts, raw state, costs
@@ -74,9 +74,9 @@ uv run streamlit run app/main.py
 Then on the **👋 Get started** page: click **✨ Fill in the demo persona**, then **🧪 Use the
 demo persona**, and finish. On the **🗂️ Board**, click **➕ Add job** and pick a sample job.
 
-Optional keys in `.env`: `TAVILY_API_KEY` (company research), `ADZUNA_APP_ID` +
-`ADZUNA_APP_KEY` (job search), `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` (tracing),
-`APP_DEV_PASSWORD` (developer settings; change the default).
+Optional keys in `.env`: `TAVILY_API_KEY` (company research), `LANGSMITH_TRACING=true` +
+`LANGSMITH_API_KEY` (tracing), `APP_DEV_PASSWORD` (developer settings; change the default).
+Job search uses the free Arbeitnow API and needs no key.
 
 **Development**
 ```bash
@@ -142,7 +142,7 @@ speak). The LLM only classifies.
 | 1 | `fetch_job_posting` | read | — | Reads a job URL (URL guard, 10 s, 2 MB) or pasted text into a structured posting |
 | 2 | `search_my_experience` | read | — | Searches your documents; returns snippets with file names |
 | 3 | `research_company` | read, external | Tavily key | Products, culture, tech stack, news; results wrapped as untrusted |
-| 4 | `search_jobs` | read, external | Adzuna keys | Open roles by keywords and location |
+| 4 | `search_jobs` | read, external | — | Open roles on Arbeitnow (Germany/EU) by keywords, city, remote and visa sponsorship; results wrapped as untrusted |
 | 5 | `get_applications` / `update_tracker` | read / **write** | — | Reads or changes the tracker; changes need your approval |
 
 Tools without their keys are switched off in the sidebar with a hint.
@@ -170,9 +170,10 @@ Tools without their keys are switched off in the sidebar with a hint.
 - **Network:** the app listens on `localhost` only.
 - **Privacy:** all data stays in `data/runtime/` on your computer. Text needed for an AI step is
   sent to **OpenRouter** (which forwards it to the model provider), company names to **Tavily**,
-  job keywords to **Adzuna**, and, if you turn tracing on, traces to **LangSmith**
-  (`LANGSMITH_HIDE_INPUTS=true` keeps the texts out). **Delete all my data** on the Memory page
-  empties everything.
+  and, if you turn tracing on, traces to **LangSmith** (`LANGSMITH_HIDE_INPUTS=true` keeps the
+  texts out). Job search downloads the public **Arbeitnow** job list and filters it on your
+  computer, so your keywords stay local. **Delete all my data** on the Memory page empties
+  everything.
 
 Details and known gaps: [`docs/SECURITY.md`](docs/SECURITY.md).
 

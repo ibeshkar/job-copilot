@@ -14,7 +14,7 @@ from app.config import Settings, get_settings
 from app.tools.company import research_company
 from app.tools.experience import search_my_experience
 from app.tools.job_posting import fetch_job_posting
-from app.tools.job_search import search_jobs
+from app.tools.job_search import search_jobs_tool
 from app.tools.tracker import get_applications, update_tracker
 
 
@@ -56,9 +56,9 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         ToolSpec(
             name="job_search",
             label="🌍 Search job ads",
-            description="Find open roles on Adzuna.",
-            tools=(search_jobs,),
-            required_env_keys=("ADZUNA_APP_ID", "ADZUNA_APP_KEY"),
+            description="Find open roles on Arbeitnow (Germany/EU, no key needed).",
+            tools=(search_jobs_tool,),
+            default_enabled=True,
         ),
         ToolSpec(
             name="tracker",

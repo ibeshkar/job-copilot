@@ -404,8 +404,10 @@ TOOL_DESCRIPTIONS = {
         "Returns web snippets with source URLs (untrusted content)."
     ),
     "search_jobs": (
-        "Find open job ads on Adzuna by keywords and location. country is a 2-letter code "
-        "such as de, gb, nl, at, fr, pl. Returns titles, companies, locations and links."
+        "Find open job ads on the Arbeitnow job board (mostly Germany and the EU) by keywords. "
+        "Optional: a city as location (leave it empty for the whole country), remote_only, "
+        "visa_sponsorship and limit. Returns titles, companies, locations, tags, dates, links "
+        "and short descriptions (untrusted content)."
     ),
     "get_applications": (
         "List the jobs on the user's tracker board, newest first, with id, title, company, "

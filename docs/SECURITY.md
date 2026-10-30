@@ -37,7 +37,8 @@ signature (the approval card).
 - **Where data lives:** only in `data/runtime/` on the user's computer (gitignored): `app.db`,
   `checkpoints.db`, `memory.db`, `chroma/`, `app.log`.
 - **What leaves the computer:** text needed for an AI step goes to **OpenRouter**, which forwards
-  it to the model provider. Company names go to **Tavily**, job keywords to **Adzuna**. If
+  it to the model provider. Company names go to **Tavily**. Job search only downloads the public **Arbeitnow** job list;
+  the keywords are matched on the computer and never sent. If
   LangSmith tracing is on, traces go to **LangSmith**; `LANGSMITH_HIDE_INPUTS=true` keeps the
   structure, timing and token counts but not the texts.
 - **User control:** the Memory page shows everything the app remembers; each item can be

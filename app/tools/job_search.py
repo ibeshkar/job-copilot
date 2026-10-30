@@ -1,110 +1,227 @@
-# What: the `search_jobs` tool: finds open job ads on Adzuna by keywords, location and country.
-# Why: "What should I apply to next?" needs real openings. Adzuna has a free API and covers
-#      Germany and many other EU countries. The tool is off unless both Adzuna keys are set.
+# What: the `search_jobs` tool: finds open job ads on the Arbeitnow job board by keywords,
+#       location, remote and visa sponsorship.
+# Why: "What should I apply to next?" needs real openings. Arbeitnow's API is free, needs no
+#      key and focuses on Germany and the EU, so the tool works out of the box. The API has no
+#      search parameters, so we download the newest ads and filter them here (DECISIONS.md D79).
 # Used by: app/tools/registry.py (copilot chat).
 
-from dataclasses import dataclass
+import html
+import re
+import time
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 import httpx
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.agent.prompts import TOOL_DESCRIPTIONS, wrap
-from app.config import get_settings
-from app.utils.errors import ConfigError, ExternalServiceError, GuardBlockedError
+from app.utils.errors import ExternalServiceError
 
-ADZUNA_URL = "https://api.adzuna.com/v1/api/jobs/{country}/search/1"
-# Countries Adzuna supports. Checking this also stops odd values ending up in the URL path.
-COUNTRIES = {
-    "at", "au", "be", "br", "ca", "ch", "de", "es", "fr", "gb",
-    "in", "it", "mx", "nl", "nz", "pl", "sg", "us", "za",
-}  # fmt: skip
-RESULTS = 5
+ARBEITNOW_URL = "https://www.arbeitnow.com/api/job-board-api"
 TIMEOUT_SECONDS = 10
-NO_KEYS_MESSAGE = "Job search needs Adzuna keys. Set ADZUNA_APP_ID and ADZUNA_APP_KEY in .env."
+MAX_PAGES = 2  # 300 ads per page, newest first; enough to filter without hammering the API
+MAX_LIMIT = 20
+DESCRIPTION_CHARS = 300
+# Arbeitnow updates hourly and rate-limits hard (HTTP 429), so pages are reused for a while.
+CACHE_SECONDS = 600
+DOWN_MESSAGE = (
+    "The Arbeitnow job board isn't reachable right now. Please try again in a few minutes."
+)
 
 
 @dataclass
 class JobAd:
-    """One job ad from Adzuna."""
+    """One job ad from Arbeitnow, cleaned up."""
 
     title: str
     company: str
     location: str
-    salary: str
+    remote: bool
     url: str
-    created: str
+    description: str  # plain text, shortened to DESCRIPTION_CHARS
+    tags: list[str] = field(default_factory=list)
+    posted: str = ""  # "2026-10-20"
 
 
 class SearchJobsArgs(BaseModel):
     keywords: str = Field(description="Job title or skills, e.g. 'junior AI engineer python'")
-    location: str | None = Field(default=None, description="City or region, e.g. 'Berlin'")
-    country: str = Field(default="de", description="2-letter country code, e.g. de, gb, nl")
+    location: str | None = Field(
+        default=None, description="City, e.g. 'Berlin'. Leave empty for all of Germany/EU."
+    )
+    remote_only: bool = Field(default=False, description="Only remote jobs")
+    visa_sponsorship: bool = Field(default=False, description="Only jobs that sponsor a visa")
+    limit: int = Field(default=10, ge=1, le=MAX_LIMIT, description="How many ads to return")
 
 
-def _get(url: str, params: dict) -> dict:
-    """One GET request to Adzuna. Tests replace this function."""
-    response = httpx.get(url, params=params, timeout=TIMEOUT_SECONDS)
-    response.raise_for_status()
-    return response.json()
+def _client() -> httpx.Client:
+    """The HTTP client. Tests replace this with one that has a mock transport."""
+    return httpx.Client(timeout=TIMEOUT_SECONDS)
 
 
-def _salary(ad: dict) -> str:
-    low, high = ad.get("salary_min"), ad.get("salary_max")
-    if not low and not high:
-        return "not stated"
-    return f"{int(low or high):,}–{int(high or low):,} per year"
+def _is_transient(exc: BaseException) -> bool:
+    """Worth retrying: timeouts, connection errors, rate limits and server errors."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    return isinstance(exc, httpx.TransportError)
 
 
-def search_adzuna(keywords: str, location: str | None = None, country: str = "de") -> list[JobAd]:
-    """Search Adzuna for job ads.
+@retry(
+    retry=retry_if_exception(_is_transient),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=4),  # 1s, 2s, then give up
+    reraise=True,
+)
+def _get(params: dict) -> dict:
+    """One GET request to Arbeitnow, retried on transient errors."""
+    with _client() as client:
+        response = client.get(ARBEITNOW_URL, params=params)
+        response.raise_for_status()
+        return response.json()
+
+
+_cache: dict[tuple, tuple[float, dict]] = {}  # (page, visa) → (time fetched, answer)
+
+
+def _fetch_page(page: int, visa_sponsorship: bool) -> dict:
+    """One page of ads (300, newest first), from the cache if it's recent enough."""
+    key = (page, visa_sponsorship)
+    if (hit := _cache.get(key)) and time.monotonic() - hit[0] < CACHE_SECONDS:
+        return hit[1]
+    params: dict = {"page": page}
+    if visa_sponsorship:
+        params["visa_sponsorship"] = "true"
+    data = _get(params)
+    _cache[key] = (time.monotonic(), data)
+    return data
+
+
+def _plain_text(markup: str) -> str:
+    """HTML description → one line of plain text, shortened."""
+    text = html.unescape(re.sub(r"<[^>]+>", " ", markup))
+    text = " ".join(text.split())
+    return text if len(text) <= DESCRIPTION_CHARS else text[:DESCRIPTION_CHARS].rstrip() + "…"
+
+
+def _posted(timestamp: object) -> str:
+    try:
+        return datetime.fromtimestamp(int(timestamp), UTC).date().isoformat()  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError):
+        return ""
+
+
+def _to_ad(raw: dict) -> JobAd:
+    return JobAd(
+        title=str(raw.get("title", "")),
+        company=str(raw.get("company_name") or "unknown"),
+        location=str(raw.get("location") or "unknown"),
+        remote=bool(raw.get("remote")),
+        url=str(raw.get("url", "")),
+        description=_plain_text(str(raw.get("description", ""))),
+        tags=[str(t) for t in raw.get("tags") or []],
+        posted=_posted(raw.get("created_at")),
+    )
+
+
+def _score(ad: JobAd, terms: list[str]) -> tuple[int, int]:
+    """How well an ad matches: (terms in the title or tags, terms found anywhere).
+
+    Example: "python developer" vs. "Senior .NET Developer" whose text mentions Python → (1, 2).
+    Returns (0, 0) when no term is in the title or tags: a passing mention isn't enough.
+    """
+    headline = f"{ad.title} {' '.join(ad.tags)}".lower()
+    text = f"{headline} {ad.description.lower()}"
+    patterns = [rf"\b{re.escape(t)}\b" for t in terms]
+    in_headline = sum(bool(re.search(p, headline)) for p in patterns)
+    if not in_headline:
+        return (0, 0)
+    return (in_headline, sum(bool(re.search(p, text)) for p in patterns))
+
+
+def search_jobs(
+    keywords: str,
+    location: str | None = None,
+    remote_only: bool = False,
+    visa_sponsorship: bool = False,
+    limit: int = 10,
+) -> list[JobAd]:
+    """Search Arbeitnow for job ads, best matches first.
+
+    The API returns the newest ads without search, so we fetch up to MAX_PAGES pages and
+    filter by keywords, location and remote here. Ads with more keywords in the title or tags
+    come first, then more keywords in the text, then newer ones. Visa sponsorship isn't in the
+    ad data, so that filter is the API's own `visa_sponsorship` parameter. If a later page
+    fails, the ads from the earlier pages are still returned.
+
+    Example: search_jobs("python developer", location="Berlin", limit=5)
 
     Raises:
-        ConfigError: the Adzuna keys are missing.
-        GuardBlockedError: unsupported country code.
-        ExternalServiceError: Adzuna failed or timed out.
+        ExternalServiceError: the first page failed or timed out, even after retries.
     """
-    settings = get_settings()
-    if not settings.has_adzuna_keys:
-        raise ConfigError("Adzuna keys not set", user_message=NO_KEYS_MESSAGE)
-    country = country.strip().lower()
-    if country not in COUNTRIES:
-        message = f"Adzuna doesn't cover '{country}'. Try one of: {', '.join(sorted(COUNTRIES))}."
-        raise GuardBlockedError(message, user_message=message)
+    terms = keywords.lower().split()
+    place = (location or "").strip().lower()
+    limit = max(1, min(limit, MAX_LIMIT))
+    scored: list[tuple[tuple[int, int], JobAd]] = []
 
-    params = {
-        "app_id": settings.adzuna_app_id,
-        "app_key": settings.adzuna_app_key.get_secret_value(),
-        "what": keywords,
-        "results_per_page": RESULTS,
-        "content-type": "application/json",
-    }
-    if location:
-        params["where"] = location
-    try:
-        data = _get(ADZUNA_URL.format(country=country), params)
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ExternalServiceError(f"Adzuna failed: {exc}") from exc
-    return [
-        JobAd(
-            title=ad.get("title", ""),
-            company=(ad.get("company") or {}).get("display_name", "unknown"),
-            location=(ad.get("location") or {}).get("display_name", "unknown"),
-            salary=_salary(ad),
-            url=ad.get("redirect_url", ""),
-            created=str(ad.get("created", ""))[:10],
+    for page in range(1, MAX_PAGES + 1):
+        try:
+            data = _fetch_page(page, visa_sponsorship)
+        except (httpx.HTTPError, ValueError) as exc:
+            if page > 1:
+                break  # keep what the earlier pages found
+            raise ExternalServiceError(
+                f"Arbeitnow failed: {exc}", user_message=DOWN_MESSAGE
+            ) from exc
+
+        for raw in data.get("data") or []:
+            ad = _to_ad(raw)
+            if remote_only and not ad.remote:
+                continue
+            if place and place not in ad.location.lower():
+                continue
+            score = _score(ad, terms)
+            if score[0]:
+                scored.append((score, ad))
+        if not (data.get("links") or {}).get("next"):
+            break
+
+    scored.sort(key=lambda pair: (pair[0], pair[1].posted), reverse=True)
+    return [ad for _, ad in scored[:limit]]
+
+
+def format_ads(ads: list[JobAd]) -> str:
+    """Numbered ads, e.g. "[1] Title at Company (Berlin, remote), posted 2026-10-20 ..."."""
+    blocks = []
+    for i, ad in enumerate(ads, 1):
+        where = f"{ad.location}, remote" if ad.remote else ad.location
+        tags = f"\nTags: {', '.join(ad.tags)}" if ad.tags else ""
+        blocks.append(
+            f"[{i}] {ad.title} at {ad.company} ({where}), posted {ad.posted}\n"
+            f"{ad.url}{tags}\n{ad.description}"
         )
-        for ad in data.get("results", [])[:RESULTS]
-    ]
+    return "\n\n".join(blocks)
+
+
+def no_results_message(keywords: str, location: str | None) -> str:
+    where = f" in {location}" if location else ""
+    return (
+        f"No job ads on Arbeitnow match '{keywords}'{where}. Try fewer or broader keywords, "
+        "drop the location, or turn off the remote/visa filters. Arbeitnow mostly lists jobs "
+        "in Germany and the EU."
+    )
 
 
 @tool("search_jobs", description=TOOL_DESCRIPTIONS["search_jobs"], args_schema=SearchJobsArgs)
-def search_jobs(keywords: str, location: str | None = None, country: str = "de") -> str:
-    ads = search_adzuna(keywords, location, country)
+def search_jobs_tool(
+    keywords: str,
+    location: str | None = None,
+    remote_only: bool = False,
+    visa_sponsorship: bool = False,
+    limit: int = 10,
+) -> str:
+    ads = search_jobs(keywords, location, remote_only, visa_sponsorship, limit)
     if not ads:
-        return f"No job ads found for '{keywords}'."
-    lines = [
-        f"- {a.title} at {a.company} ({a.location}), salary {a.salary}, posted {a.created}: {a.url}"
-        for a in ads
-    ]
-    return wrap("untrusted_web_content", "\n".join(lines))
+        return no_results_message(keywords, location)
+    # Job ads are written by strangers: data, never instructions.
+    return wrap("untrusted_web_content", format_ads(ads))

@@ -57,7 +57,7 @@ flowchart LR
     C[("checkpoints.db<br/>graph state per thread_id<br/>(short-term memory)")]
     M[("memory.db<br/>profile, preferences, facts,<br/>style rules (long-term memory)")]
     V[("chroma/<br/>document chunks + embeddings")]
-    O[OpenRouter / Tavily / Adzuna<br/>only while an AI step runs]
+    O[OpenRouter / Tavily / Arbeitnow<br/>only while an AI step runs]
     APP --> A
     APP --> C
     APP --> M
@@ -201,7 +201,7 @@ sequenceDiagram
 | 1 | `fetch_job_posting` | read | — | `app/tools/job_posting.py` |
 | 2 | `search_my_experience` | read | — | `app/tools/experience.py` |
 | 3 | `research_company` | read, external | `TAVILY_API_KEY` | `app/tools/company.py` |
-| 4 | `search_jobs` | read, external | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` | `app/tools/job_search.py` |
+| 4 | `search_jobs` | read, external | — (Arbeitnow, free) | `app/tools/job_search.py` |
 | 5 | `get_applications` / `update_tracker` | read / **write** (approval) | — | `app/tools/tracker.py` |
 
 `app/tools/registry.py` → `TOOL_REGISTRY` holds a label, a default, the required keys and the

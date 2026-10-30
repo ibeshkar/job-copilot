@@ -165,7 +165,7 @@ message sequence.
 
 **What are your 5 tools?**
 `fetch_job_posting` (read a job URL or text, URL guard included), `search_my_experience`
-(the user's documents), `research_company` (Tavily web search), `search_jobs` (Adzuna), and
+(the user's documents), `research_company` (Tavily web search), `search_jobs` (Arbeitnow, no key), and
 the tracker pair `get_applications` / `update_tracker`. They are listed in
 `app/tools/registry.py` → `TOOL_REGISTRY`, with a label, a default, the keys they need, and
 which calls need approval.
@@ -494,10 +494,19 @@ Never a stack trace. Code raises an `AppError` subclass (`app/utils/errors.py`),
 shows its `user_message`, such as "The AI service is busy, please retry". The full details go to
 `data/runtime/app.log` through `log_exception()`, together with the job or thread id.
 
-**What if Tavily or Adzuna is down, or the key is missing?**
-Without a key, the tool's toggle is off and disabled with a hint, and the Company tab explains
-how to get a key. If the service fails, the tool raises `ExternalServiceError`, the copilot gets
-a friendly "Tool error: …" and tells the user, and the chat keeps working with the other tools.
+**What if Tavily or Arbeitnow is down, or the key is missing?**
+Without a Tavily key, the tool's toggle is off and disabled with a hint, and the Company tab
+explains how to get a key. Arbeitnow needs no key. Job search retries timeouts, 429s and 5xx
+errors 3 times (`tenacity`, 10 s timeout each) and caches pages for 10 minutes. If a service
+still fails, the tool raises `ExternalServiceError`, the copilot gets a friendly "Tool error: …"
+and tells the user, and the chat keeps working with the other tools.
+
+**Why Arbeitnow and not Adzuna?**
+Adzuna needs an account and keys, and we didn't want to pay or make reviewers sign up. Arbeitnow
+is free with no key and focuses on Germany/the EU, which is our user. The trade-off: fewer
+countries, a smaller dataset, and no search parameters, so `search_jobs` downloads up to 600 of
+the newest ads and filters them by keywords, city and remote in Python. A side benefit: the
+keywords never leave the computer. D79.
 
 **What stops the copilot looping forever?**
 `recursion_limit = 12` steps per message (`chat_config()`). If it's hit, the user sees "I
@@ -674,7 +683,7 @@ Honest list, most important first.
 | Mock interview | 5 questions (behavioural, technical, gap, technical, behavioural); score 1–5 per answer, average in Python; improved answer from your answer + 4 chunks |
 | Learning from feedback | 0–3 rules per edit, 1 per repeated 👎 complaint; duplicates ≥ 85% similar dropped; banned words checked in Python |
 | Help-bot | whole `docs/USER_GUIDE.md` (~2.5k tokens) in the prompt, last 3 Q&As, ~$0.0005 per question |
-| Copilot tools | 5 toggles / 6 tools: fetch_job_posting, search_my_experience, research_company (Tavily), search_jobs (Adzuna), get_applications + update_tracker (needs approval) |
+| Copilot tools | 5 toggles / 6 tools: fetch_job_posting, search_my_experience, research_company (Tavily), search_jobs (Arbeitnow, no key), get_applications + update_tracker (needs approval) |
 | Copilot graph | input_guard (rules + topic classifier) → agent ⇄ tools, approve before write tools; max 12 steps, 4,000 chars per message, last 30 messages sent |
 | Claims and drafts | max 10 claims; letter ≤ 280 words (medium); 3–6 bullets; max 2 draft attempts per round |
 | Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement, grading in batches of 20 pairs |

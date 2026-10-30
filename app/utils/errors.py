@@ -69,7 +69,7 @@ class DocumentError(AppError):
 
 
 class ExternalServiceError(AppError):
-    """An outside service (Tavily, Adzuna) is down, rejected the key or returned nothing useful."""
+    """An outside service (Tavily, Arbeitnow) is down, rejected the key or returned nothing."""
 
     user_message = "That service isn't available right now. Please try again later."
 

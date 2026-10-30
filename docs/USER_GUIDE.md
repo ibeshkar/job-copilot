@@ -115,7 +115,7 @@ A refresh or restart keeps your place: you return to the same question.
   tech stack, culture, news and talking points, with links to the sources.
 - The **💬 Copilot chat** answers questions such as "Summarise my applications this week" or
   "What should I apply to next?". It can search your documents, research companies, find job
-  ads (Adzuna key needed) and read or update your tracker. Before it **changes** your tracker,
+  ads (Arbeitnow, mostly Germany and the EU; no key needed) and read or update your tracker. Before it **changes** your tracker,
   it asks for your approval. Click **New chat** to start over.
 - Switch the copilot's tools on or off under **🔧 Copilot tools** in the sidebar.
 

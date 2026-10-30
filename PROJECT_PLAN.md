@@ -83,7 +83,7 @@ Job seekers send generic applications because tailoring each one takes 30–60 m
 - **C1** **Mock interview** subgraph
 - **C2** **Learn from edits**: diff the drafts → style rules in memory
 - **C3** **Evaluation report** with DeepEval
-- **C4** Job search via the Adzuna API
+- **C4** Job search via the Arbeitnow API (free, no key; replaced Adzuna, see DECISIONS.md D79)
 - **C5** Personality / tone selector (formal, friendly, concise)
 
 ### WON'T (out of scope)
@@ -111,7 +111,7 @@ Auto-applying to jobs, emailing recruiters, multi-user cloud hosting, scraping L
 | App database | SQLite via `sqlmodel` | Tracker, jobs, drafts, usage |
 | Web extraction | `httpx` + `trafilatura` | Clean text from job URLs |
 | Company research | `langchain-tavily` | LLM-friendly search |
-| Job search (optional) | Adzuna REST API via `httpx` | Free, covers DE and other EU countries |
+| Job search | Arbeitnow job board API via `httpx` | Free, no API key, Germany/EU focus (D79) |
 | Documents | `pypdf`, `python-docx` | Parse PDF and DOCX; export DOCX |
 | Reliability | `tenacity` | Retries with backoff |
 | Config | `pydantic-settings`, `python-dotenv` | Typed settings |
@@ -123,8 +123,6 @@ Auto-applying to jobs, emailing recruiters, multi-user cloud hosting, scraping L
 ```
 OPENAI_API_KEY=
 TAVILY_API_KEY=
-ADZUNA_APP_ID=
-ADZUNA_APP_KEY=
 LANGSMITH_TRACING=false
 LANGSMITH_API_KEY=
 LANGSMITH_PROJECT=job-copilot
@@ -177,7 +175,7 @@ job-copilot/
 │   │   ├── job_posting.py    # fetch_job_posting
 │   │   ├── experience.py     # search_my_experience
 │   │   ├── company.py        # research_company
-│   │   ├── job_search.py     # search_jobs (Adzuna)
+│   │   ├── job_search.py     # search_jobs (Arbeitnow)
 │   │   └── tracker.py        # update_tracker / get_applications
 │   ├── rag/
 │   │   ├── ingest.py         # load → chunk → embed → upsert (with doc metadata)
@@ -411,7 +409,7 @@ flowchart LR
 | 1 | `fetch_job_posting(url_or_text)` | read | Extract a structured job posting from a URL or pasted text | `url_guard`, trafilatura, 10s timeout; ask for pasted text on failure |
 | 2 | `search_my_experience(query, k=5)` | read | Search the user's own documents for evidence of skills/experience | Returns snippets + doc names |
 | 3 | `research_company(company, focus?)` | read / external API | Recent news, products, culture, tech stack of a company | Tavily; results wrapped as **untrusted content** |
-| 4 | `search_jobs(keywords, location, country="de")` | read / external API | Find open roles matching the user's profile | Adzuna; off by default if keys are missing |
+| 4 | `search_jobs(keywords, location?, remote_only=False, visa_sponsorship=False, limit=10)` | read / external API | Find open roles matching the user's profile | Arbeitnow (no key, on by default); filtered in Python; 10s timeout, 3 tries; results wrapped as **untrusted content** |
 | 5 | `update_tracker(job_id, status?, note?, next_action?)` / `get_applications(status?)` | **write** / read | Read or change the application tracker | Write requires HITL approval |
 
 `registry.py` exposes `TOOL_REGISTRY` with name, tool, user-friendly label, description, `default_enabled`, `requires_approval` and `required_env_keys`. A tool whose keys are missing is shown as disabled with a hint.
@@ -545,7 +543,7 @@ Streamlit reruns the whole script on every interaction, so:
 | Job text too short / not a job posting | Guard asks for clarification |
 | Empty knowledge base | Fit analysis blocked, with a CTA to upload documents or use the demo persona |
 | No evidence found for any requirement | Shown honestly with "Add context" prompt |
-| Tavily / Adzuna down or no key | Tool disabled with a hint; the agent continues without it |
+| Tavily down or no key / Arbeitnow down | No key: tool disabled with a hint. Down: friendly "Tool error"; the agent continues without it |
 | Graph interrupted, then app restarted | Resumes from the checkpointer |
 | Recursion limit hit | Friendly message + summary of what was done |
 | DOCX export fails | Fall back to downloading a `.txt` file |

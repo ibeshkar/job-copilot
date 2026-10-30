@@ -3,8 +3,8 @@
 One line per term, in alphabetical order. Added to after every phase.
 
 - **`add_messages`**: the reducer for chat history: new messages are appended instead of replacing the list.
-- **Adzuna**: a job-ad search engine with a free API; our `search_jobs` tool uses it (needs `ADZUNA_APP_ID` and `ADZUNA_APP_KEY`).
 - **Agentic RAG**: RAG where the agent grades its own search results and searches again with new words if nothing relevant was found.
+- **Arbeitnow**: a job board with a free public API (no key), mostly jobs in Germany and the EU; our `search_jobs` tool uses it. It replaced Adzuna (D79).
 - **Answer relevancy**: a DeepEval metric: the share of statements in an answer that address the question; checks relevance, not truth.
 - **Approval (write tool)**: the copilot's pause before a tool that changes data (`update_tracker`); you approve or decline.
 - **AppTest**: Streamlit's tool for running an app in a test without a browser.

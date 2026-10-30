@@ -53,8 +53,6 @@ class Settings(BaseSettings):
 
     # Other API keys: SecretStr hides the value in logs and reprs.
     tavily_api_key: SecretStr | None = None
-    adzuna_app_id: str | None = None
-    adzuna_app_key: SecretStr | None = None
 
     # Observability
     langsmith_tracing: bool = False
@@ -90,11 +88,6 @@ class Settings(BaseSettings):
     def has_tavily_key(self) -> bool:
         """True when company research (Tavily) can run."""
         return self.tavily_api_key is not None
-
-    @property
-    def has_adzuna_keys(self) -> bool:
-        """True when job search (Adzuna) can run; it needs both an app id and a key."""
-        return self.adzuna_app_id is not None and self.adzuna_app_key is not None
 
     @property
     def app_db_path(self) -> Path:
