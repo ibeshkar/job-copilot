@@ -673,8 +673,10 @@ if picked != job_id:
     st.rerun()
 
 card = applications.get_job_summary(job_id)
-head, status_col, delete_col = st.columns([4, 2, 1])
+head, controls = st.columns([4, 3])
 head.markdown(f"### {card.title}\n{card.company}")
+# Bottom-align so the bin button lines up with the select box, not its label.
+status_col, delete_col = controls.columns([2, 1], vertical_alignment="bottom")
 new_status = status_col.selectbox(
     "Board column", STATUSES, index=STATUSES.index(card.status), format_func=STATUS_LABELS.get
 )

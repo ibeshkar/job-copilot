@@ -78,6 +78,9 @@ uv run streamlit run app/main.py         # now on http://localhost:8501 only
   the Phase 9 commit used `--only extraction`, and the report replaces the whole generated block.
   The full-run numbers are still in EVALUATION.md §7 and `evals/results/latest.json`, so the
   README cites those. A full re-run (`uv run python evals/run_evals.py`) fixes the block.
+- **UI fix:** on the Job workspace page the 🗑️ button sat higher than the "Board column" select box
+  (the select box has a label, the button doesn't); they now sit in a nested `st.columns(...,
+  vertical_alignment="bottom")`, so the bottoms line up without custom CSS.
 
 ## Possible review questions (with short answers)
 **Which agent types did you use, and which not?** ReAct for chat, a workflow for applications, a
