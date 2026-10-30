@@ -6,12 +6,14 @@
 # Used by: pytest.
 
 from app.agent.state import Claim, FitReport, Requirement, RequirementMatch
+from app.tools.company import WebResult
 from app.ui.components import (
     claim_markdown,
     claims_summary,
     group_claims,
     group_requirements,
     match_rows,
+    news_line,
     status_badge,
 )
 
@@ -121,3 +123,13 @@ def test_no_page_lines_up_buttons_with_spacers() -> None:
     for path in Path("app/ui").rglob("*.py"):
         source = path.read_text()
         assert not [s for s in spacers if s in source], f"{path}: use action_row() instead"
+
+
+def test_news_line_shows_month_or_date_unknown() -> None:
+    dated = WebResult("Lumen opens Vienna office", "https://news.example/v", "", "2026-09-14")
+    undated = WebResult("", "https://news.example/u", "", None)
+
+    assert news_line(dated) == "[Lumen opens Vienna office](https://news.example/v) · Sep 2026"
+    assert news_line(undated) == (
+        "[https://news.example/u](https://news.example/u) · :gray[date unknown]"
+    )

@@ -416,7 +416,7 @@ flowchart LR
 |---|---|---|---|---|
 | 1 | `fetch_job_posting(url_or_text)` | read | Extract a structured job posting from a URL or pasted text | `url_guard`, trafilatura, 10s timeout; ask for pasted text on failure |
 | 2 | `search_my_experience(query, k=5)` | read | Search the user's own documents for evidence of skills/experience | Returns snippets + doc names |
-| 3 | `research_company(company, focus?)` | read / external API | Recent news, products, culture, tech stack of a company | Tavily; results wrapped as **untrusted content** |
+| 3 | `research_company(company, focus?)` | read / external API | Recent news, products, culture, tech stack of a company | Tavily; results wrapped as **untrusted content**; the Company tab's news is filtered to the last 12 months in Python (D87) |
 | 4 | `search_jobs(keywords, location?, remote_only=False, visa_sponsorship=False, limit=10)` | read / external API | Find open roles matching the user's profile | Arbeitnow (no key, on by default); filtered in Python; 10s timeout, 3 tries; results wrapped as **untrusted content** |
 | 5 | `estimate_salary(job_id, refresh=False)` | read / external API | Yearly gross salary range for a tracked job, compared with the user's expectation | Tavily (2–3 searches, Entgeltatlas for Germany); LLM only extracts figures, Python computes the range; cached in `SalaryCache`; "not enough data" instead of a guess; logged as `estimate_salary` |
 | 6 | `update_tracker(job_id, status?, note?, next_action?)` / `get_applications(status?)` | **write** / read | Read or change the application tracker | Write requires HITL approval |

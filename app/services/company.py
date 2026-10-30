@@ -1,13 +1,15 @@
 # What: company research for the Job workspace's Company tab: web search with the
-#       `research_company` tool's search function, then an LLM brief (structured output) with
-#       the sources listed, cached per job.
+#       `research_company` tool's search function plus a dated news search (only the last 12
+#       months, checked in Python), then an LLM brief (structured output) with the sources
+#       listed, cached per job.
 # Why: the brief helps tailor the letter and prepare for the interview. Caching it in the Store
 #      means a refresh or restart doesn't spend Tavily and LLM credits again.
 #      Its tokens are logged as the "company_research" action.
 # Used by: app/ui/pages/2_job_workspace.py, app/services/applications.py (delete_job).
 
+import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from langchain_core.language_models import BaseChatModel
 
@@ -17,7 +19,13 @@ from app.agent.state import CompanyBrief
 from app.db import repo
 from app.memory import store
 from app.services.observability import track_run
-from app.tools.company import WebResult, format_results, search_company
+from app.tools.company import (
+    NEWS_MAX_AGE_DAYS,
+    WebResult,
+    format_results,
+    search_company,
+    search_news,
+)
 from app.utils.errors import ExternalServiceError, friendly_message
 from app.utils.logging import get_logger, log_exception
 
@@ -33,6 +41,9 @@ class CompanyResearch:
     sources: list[WebResult]
     focus: str | None
     researched_at: datetime
+    # News from the last 12 months, newest first; undated items last ("date unknown").
+    # None for research saved before the news search existed.
+    news: list[WebResult] | None = None
 
 
 def research_for_job(
@@ -47,16 +58,30 @@ def research_for_job(
     """
     with repo.session_scope() as session:
         job = repo.get_job(session, job_id)
+    today = datetime.now(UTC).date()
     results = search_company(job.company, focus)
-    if not results:
+    news = search_news(job.company, today)
+    if not results and not news:
         raise ExternalServiceError(
             f"No results for {job.company}",
             user_message=f"I found nothing on the web about {job.company}.",
         )
+    # Only dated news goes to the model: an undated item could be old, so talking points
+    # never rest on it. It is still shown in the tab, marked "date unknown".
+    dated_news = [n for n in news if n.published]
     brief = invoke_structured(
         llm or get_llm(),
         CompanyBrief,
-        company_brief_messages(job.company, job.title, format_results(results)),
+        company_brief_messages(
+            job.company,
+            job.title,
+            format_results(results),
+            format_results(dated_news),
+            today.isoformat(),
+        ),
+    )
+    brief = brief.model_copy(
+        update={"talking_points": drop_stale_points(brief.talking_points, today)}
     )
     research = CompanyResearch(
         company=job.company,
@@ -66,6 +91,7 @@ def research_for_job(
         sources=results,
         focus=focus,
         researched_at=datetime.now(UTC),
+        news=news,
     )
     store.save_company_research(job_id, _to_dict(research))
     return research
@@ -92,6 +118,7 @@ def saved_research(job_id: int) -> CompanyResearch | None:
         sources=[WebResult(**s) for s in data["sources"]],
         focus=data.get("focus"),
         researched_at=datetime.fromisoformat(data["researched_at"]),
+        news=[WebResult(**n) for n in data["news"]] if "news" in data else None,
     )
 
 
@@ -107,4 +134,19 @@ def _to_dict(research: CompanyResearch) -> dict:
         "sources": [vars(s) for s in research.sources],
         "focus": research.focus,
         "researched_at": research.researched_at.isoformat(),
+        "news": [vars(n) for n in research.news or []],
     }
+
+
+def drop_stale_points(points: list[str], today: date) -> list[str]:
+    """Drop talking points that name a year before the 12-month news window.
+
+    A safety net for the prompt rule: in October 2026 the window starts in October 2025, so
+    "their 2023 Series A" is dropped and "their 2025 launch" or "their AI assistant" is kept.
+    """
+    oldest_year = (today - timedelta(days=NEWS_MAX_AGE_DAYS)).year
+    return [
+        point
+        for point in points
+        if all(int(year) >= oldest_year for year in re.findall(r"\b(?:19|20)\d{2}\b", point))
+    ]

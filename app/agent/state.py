@@ -282,13 +282,16 @@ class GuardReport(BaseModel):
 
 
 class CompanyBrief(BaseModel):
-    """A short company research summary for the Company tab (from web results only)."""
+    """A short company research summary for the Company tab (from web results only).
+
+    No news field: recent news is the dated news search result itself, filtered by date in
+    Python (app/tools/company.py), so the model can't present old news as recent.
+    """
 
     summary: str = Field(description="2-3 sentences: what the company does")
     products: list[str] = Field(description="Main products or services")
     tech_stack: list[str] = Field(description="Technologies the company is known to use")
     culture: list[str] = Field(description="Culture, values, ways of working")
-    recent_news: list[str] = Field(description="Notable recent news, each with its month/year")
     talking_points: list[str] = Field(description="2-4 honest things to mention when applying")
 
 

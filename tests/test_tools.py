@@ -4,6 +4,8 @@
 #      switch off tools whose API keys are missing.
 # Used by: pytest.
 
+from datetime import date
+
 import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
@@ -152,6 +154,88 @@ def test_research_company_needs_a_key(monkeypatch) -> None:
     with pytest.raises(ConfigError) as error:
         company.search_company("Lumen Health")
     assert "TAVILY_API_KEY" in error.value.user_message
+
+
+# ---------------------------------------------------------------- recent news filter
+
+TODAY = date(2026, 10, 30)
+
+
+def _news(published: str | None) -> company.WebResult:
+    return company.WebResult(
+        f"News {published}", f"https://news.example/{published}", "", published
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Tue, 08 Oct 2026 14:00:00 GMT", date(2026, 10, 8)),
+        ("2026-10-08T14:00:00Z", date(2026, 10, 8)),
+        ("2026-10-08", date(2026, 10, 8)),
+        ("last week", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_parse_published(value, expected) -> None:
+    assert company.parse_published(value) == expected
+
+
+def test_filter_recent_drops_news_older_than_12_months() -> None:
+    items = [
+        _news("2026-10-29"),  # yesterday
+        _news("2025-10-30"),  # exactly 365 days ago: still in
+        _news("2025-10-29"),  # one day too old
+        _news("2023-05-12"),  # the bug: 2023 news shown as recent in 2026
+        _news(None),  # no date: kept, shown as "date unknown"
+    ]
+
+    kept = company.filter_recent(items, TODAY)
+
+    assert [n.published for n in kept] == ["2026-10-29", "2025-10-30", None]
+
+
+def test_filter_recent_treats_a_future_date_as_unknown() -> None:
+    kept = company.filter_recent([_news("2027-03-01")], TODAY)
+
+    assert [n.published for n in kept] == [None]
+
+
+def test_search_news_asks_for_this_years_news_and_filters_by_date(monkeypatch) -> None:
+    calls = []
+
+    def fake_tavily(query, n, include_domains=None, topic="general", time_range=None):
+        calls.append((query, topic, time_range))
+        return {
+            "results": [
+                {
+                    "title": "Old",
+                    "url": "https://a",
+                    "published_date": "Fri, 12 May 2023 09:00:00 GMT",
+                },
+                {"title": "Undated", "url": "https://b"},
+                {"title": "Spring", "url": "https://c", "published_date": "2026-04-02T08:00:00Z"},
+                {"title": "Autumn", "url": "https://d", "published_date": "2026-10-01"},
+            ]
+        }
+
+    monkeypatch.setattr(company, "_tavily_search", fake_tavily)
+
+    news = company.search_news("Lumen Health", TODAY)
+
+    assert calls == [('"Lumen Health" company news 2026', "news", "year")]
+    assert [(n.title, n.published) for n in news] == [
+        ("Autumn", "2026-10-01"),
+        ("Spring", "2026-04-02"),
+        ("Undated", None),
+    ]
+
+
+def test_format_results_shows_the_publish_date() -> None:
+    assert "(https://news.example/2026-05-02, published 2026-05-02)" in company.format_results(
+        [_news("2026-05-02")]
+    )
 
 
 # ---------------------------------------------------------------- search_jobs

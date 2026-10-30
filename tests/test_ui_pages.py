@@ -331,6 +331,39 @@ def test_company_tab_without_tavily_key(fake_app, monkeypatch) -> None:
     assert _button(at, "🔎 Research Lumen Health").disabled
 
 
+def test_company_tab_without_recent_news_says_so(fake_app) -> None:
+    from datetime import UTC, datetime
+
+    from app.agent.state import CompanyBrief
+    from app.memory import store
+    from app.services import company
+    from app.tools.company import WebResult
+
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+    brief = CompanyBrief(
+        summary="Lumen builds AI for clinics.",
+        products=[],
+        tech_stack=[],
+        culture=[],
+        talking_points=["Your RAG project fits their assistant."],
+    )
+    research = company.CompanyResearch(
+        "Lumen Health",
+        brief,
+        [WebResult("Lumen", "https://lumen.example", "…")],
+        None,
+        datetime.now(UTC),
+        news=[],
+    )
+    store.save_company_research(job_id, company._to_dict(research))
+
+    at = _open_workspace(_app(job_id))
+
+    assert not at.exception
+    assert any("No recent news found in the last 12 months" in c.value for c in at.caption)
+
+
 # ---------------------------------------------------------------- Phase 7: hardening pages
 
 

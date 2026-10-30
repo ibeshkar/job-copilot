@@ -196,3 +196,24 @@ per estimate, cached until Refresh.
   `app/ui/pages/4_memory.py`, `tests/test_ui_components.py`, `docs/DECISIONS.md`.
 - **Checked:** light and dark theme at 900 px and a 420 px window (Playwright + Chrome
   screenshots, element boxes measured: input and button both start at the same y, 40 px high).
+
+
+## Follow-up: only recent news in Company research
+- **What changed:** "Recent news" showed items from 2023 in a 2026 run. A separate Tavily news
+  search (`topic="news"`, `time_range="year"`, current year in the query) now feeds the list,
+  and Python drops anything older than 12 months by its `published_date`. Undated items are
+  marked "date unknown"; with nothing recent the tab says "No recent news found in the last 12
+  months". "Things you could mention" may only use the dated recent news (prompt rule), and
+  points naming an older year are dropped in Python. D87.
+- **Files:** `app/tools/company.py` (`search_news`, `parse_published`, `filter_recent`,
+  `WebResult.published`, `topic` / `time_range` for `_tavily_search`), `app/services/company.py`
+  (`CompanyResearch.news`, `drop_stale_points`), `app/agent/state.py` (`CompanyBrief` without
+  `recent_news`), `app/agent/prompts.py` (brief prompt, `PROMPT_VERSION` 2026-10-30.2),
+  `app/ui/components.py` (`news_line`), `app/ui/pages/2_job_workspace.py`,
+  `tests/test_tools.py` (date parsing, 12-month filter, news query), `tests/test_company_service.py`,
+  `tests/test_ui_components.py`, `tests/test_ui_pages.py`.
+- **Try it:** `uv run pytest tests/test_tools.py tests/test_company_service.py -v`, then open a
+  job → 🏢 Company → 🔄 Research again. Each news item shows its month; nothing is older than
+  12 months.
+- **Known follow-up:** research cached before this change shows "Research again to load news
+  from the last 12 months" until it is refreshed.

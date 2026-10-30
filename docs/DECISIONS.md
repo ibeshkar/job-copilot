@@ -899,3 +899,33 @@ writer and the guard.
   the user loses the "Focus (optional)" label.
 - **Trade-off:** below 640 px Streamlit stacks the columns, so the button moves under the input
   at full width. That's readable, so I kept Streamlit's default.
+
+
+## D87. Recent company news is filtered by date in Python, not left to the LLM (Phase 11)
+- **What:** the Company tab's "Recent news" showed 2023 items in a 2026 run: the LLM wrote
+  `recent_news` from whatever the general search returned, and nothing checked the dates. Now
+  `search_news()` (`app/tools/company.py`) runs a separate Tavily search with `topic="news"`,
+  `time_range="year"` and the current year in the query (`"Lumen Health" company news 2026`).
+  Tavily's `published_date` is parsed (`parse_published`, RFC 2822 or ISO) and
+  `filter_recent()` drops anything older than 365 days. Items without a readable date (or with
+  a date in the future) are kept but shown as "date unknown". The list is shown as is (title,
+  link, month); `CompanyBrief.recent_news` was removed, so the model no longer writes news.
+  With nothing left, the tab says "No recent news found in the last 12 months".
+- **Talking points:** the model gets the general results plus a separate
+  `<untrusted_recent_news>` block with only the *dated* recent items and today's date. The
+  prompt says general results can be old, and a talking point may mention an event only if it
+  is in the recent-news block. As a safety net, `drop_stale_points()`
+  (`app/services/company.py`) removes any talking point that names a year before the 12-month
+  window (in October 2026: anything before 2025).
+- **Why Python:** Tavily's `time_range` is a search hint, not a guarantee (pages are often
+  re-crawled with old content), and an LLM can't be trusted to compare dates it didn't check.
+  A date comparison in code is exact and testable (`tests/test_tools.py`).
+- **Alternatives:** *only `time_range`*: still lets old items through. *Ask the LLM to skip
+  old news*: no guarantee, and it often doesn't know the article's date. *Drop undated items*:
+  loses real news from sites without dates; marking them is more honest.
+- **Old cache:** research saved before this change has no `news` key; the tab then says
+  "Research again to load news from the last 12 months" and ignores the old `recent_news`.
+- **Trade-offs:** one more Tavily search per research (2 instead of 1). The year check on
+  talking points is coarse: "their 2025 launch" is kept in October 2026 even if it was in
+  January 2025; a point about an old event that doesn't name a year can still slip through.
+  The chat tool `research_company` is unchanged apart from showing a date when a result has one.

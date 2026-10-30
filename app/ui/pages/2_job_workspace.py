@@ -38,6 +38,7 @@ from app.ui.components import (
     init_claim_state,
     input_with_action,
     kept_claim_text,
+    news_line,
     reviewed_claims,
     set_claims_kept,
 )
@@ -550,6 +551,17 @@ def _bullets(title: str, items: list[str]) -> None:
         st.markdown("\n".join(f"- {item}" for item in items))
 
 
+def _recent_news(news: list | None) -> None:
+    """Dated news from the last 12 months (filtered in Python), undated items marked."""
+    st.markdown("**Recent news**")
+    if news is None:
+        st.caption("Research again to load news from the last 12 months.")
+    elif not news:
+        st.caption("No recent news found in the last 12 months.")
+    else:
+        st.markdown("\n".join(f"- {news_line(item)}" for item in news))
+
+
 def _company_tab(job_id: int) -> None:
     card = applications.get_job_summary(job_id)
     settings = get_settings()
@@ -587,7 +599,7 @@ def _company_tab(job_id: int) -> None:
         _bullets("Tech stack", research.brief.tech_stack)
     with right:
         _bullets("Culture", research.brief.culture)
-        _bullets("Recent news", research.brief.recent_news)
+        _recent_news(research.news)
     if research.brief.talking_points:
         st.success(
             "**Things you could mention**\n"

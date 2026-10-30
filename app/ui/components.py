@@ -1,12 +1,13 @@
 # What: reusable Streamlit widgets: the bottom-aligned "input + button" row, status/fit/salary
 #       badges, the fit card with its requirements summary, filter and compact requirement
 #       rows, the claim check list (group headers, compact claim rows, evidence popovers, edit
-#       on demand), the reviewed-claims list, the fact-check warning, and the profile and
-#       preferences forms.
+#       on demand), the reviewed-claims list, the fact-check warning, the company news line,
+#       and the profile and preferences forms.
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
 #      share the forms. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
 
+from datetime import date
 from typing import NamedTuple
 
 import streamlit as st
@@ -22,6 +23,7 @@ from app.agent.state import (
     UnsupportedStatement,
 )
 from app.memory.store import Preferences, Profile
+from app.tools.company import WebResult
 
 STATUS_LABELS = {
     "saved": "🔖 Saved",
@@ -100,6 +102,12 @@ def input_with_action(
 def thousands(amount: int) -> str:
     """Short money amount, e.g. 52500 → "52.5k", 61000 → "61k"."""
     return f"{amount / 1000:.1f}".removesuffix(".0") + "k"
+
+
+def news_line(item: WebResult) -> str:
+    """One news item, e.g. "[Lumen raises Series B](https://…) · May 2026" or "… · date unknown"."""
+    when = date.fromisoformat(item.published).strftime("%b %Y") if item.published else None
+    return f"[{item.title or item.url}]({item.url}) · {when or ':gray[date unknown]'}"
 
 
 def salary_badge(estimate: SalaryEstimate | None) -> str:
