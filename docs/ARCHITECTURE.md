@@ -202,7 +202,8 @@ sequenceDiagram
 | 2 | `search_my_experience` | read | — | `app/tools/experience.py` |
 | 3 | `research_company` | read, external | `TAVILY_API_KEY` | `app/tools/company.py` |
 | 4 | `search_jobs` | read, external | — (Arbeitnow, free) | `app/tools/job_search.py` |
-| 5 | `get_applications` / `update_tracker` | read / **write** (approval) | — | `app/tools/tracker.py` |
+| 5 | `estimate_salary` | read, external | `TAVILY_API_KEY` | `app/tools/salary.py` |
+| 6 | `get_applications` / `update_tracker` | read / **write** (approval) | — | `app/tools/tracker.py` |
 
 `app/tools/registry.py` → `TOOL_REGISTRY` holds a label, a default, the required keys and the
 calls that need approval for each tool. A tool with missing keys is shown off and disabled.

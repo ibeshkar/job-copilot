@@ -224,6 +224,68 @@ class CompanyBrief(BaseModel):
     talking_points: list[str] = Field(description="2-4 honest things to mention when applying")
 
 
+class SalaryDataPoint(BaseModel):
+    """One salary figure the LLM found in a search result or the posting (not yet checked)."""
+
+    amount: float = Field(gt=0, description="The number as written, e.g. 55000 for '55.000 €'")
+    currency: str = Field(description="3-letter code, e.g. EUR, CHF, GBP, USD")
+    period: Literal["yearly", "monthly", "hourly"]
+    basis: Literal["gross", "net", "unknown"] = Field(description="Brutto = gross, Netto = net")
+    role: str = Field(description="The job title the figure is for, as the source says")
+    location: str = Field(description="City or country the figure is for; '' if not stated")
+    source_url: str = Field(description="URL of the result it comes from, or 'job posting'")
+
+
+class SalaryExtraction(BaseModel):
+    data_points: list[SalaryDataPoint] = Field(
+        description="Every salary figure in the sources. A range gives two points (low, high)."
+    )
+
+
+class NormalisedSalary(BaseModel):
+    """A data point after the Python checks: yearly gross in EUR, or the reason it was dropped."""
+
+    point: SalaryDataPoint
+    source_title: str = ""
+    yearly_gross: float | None = None  # EUR; None when dropped
+    relevant: bool = False  # role and location match the job
+    from_posting: bool = False
+    dropped_reason: str | None = None  # e.g. "outlier", "number not found in the source"
+
+
+class SalaryExplanation(BaseModel):
+    """The LLM's words around the Python-computed range. It never states numbers of its own."""
+
+    factors_up: list[str] = Field(description="1-4 things about this job that push pay up")
+    factors_down: list[str] = Field(description="1-4 things that push pay down")
+    expectation_comparison: str = Field(
+        description="1-2 sentences comparing the candidate's expectation with the range"
+    )
+    negotiation_tips: list[str] = Field(description="2-3 honest, specific negotiation tips")
+
+
+class SalaryEstimate(BaseModel):
+    """The Salary tab's result, cached per job. The numbers come from Python, not the LLM."""
+
+    status: Literal["ok", "not_enough_data"]
+    currency: str = "EUR"
+    low: int | None = None  # 25th percentile, yearly gross
+    typical: int | None = None  # median
+    high: int | None = None  # 75th percentile
+    confidence: Literal["high", "medium", "low"] | None = None
+    posting_salary: str | None = None  # what the posting itself says, if anything
+    data_points: list[NormalisedSalary] = Field(default_factory=list)
+    queries: list[str] = Field(default_factory=list)
+    expectation: str | None = None  # the user's expectation from the profile, as typed
+    expectation_position: Literal["below", "within", "above", "unknown"] = "unknown"
+    explanation: SalaryExplanation | None = None
+    estimated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @property
+    def usable(self) -> list[NormalisedSalary]:
+        return [d for d in self.data_points if d.dropped_reason is None]
+
+
 class FitAssessment(BaseModel):
     matches: list[MatchClassification]
     strengths_summary: str = Field(description="2-3 sentences, grounded in the evidence")

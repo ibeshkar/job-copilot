@@ -30,6 +30,7 @@ from app.agent.state import (
     FitReviewDecision,
     JobPosting,
     Requirement,
+    SalaryEstimate,
     UnsupportedStatement,
 )
 from app.config import PROJECT_ROOT, get_settings
@@ -114,6 +115,7 @@ class JobCard:
     stage: Stage
     review_action: str | None
     notes: str = ""
+    salary: SalaryEstimate | None = None  # the cached estimate, for the board badge
 
 
 # ---------------------------------------------------------------- graph access
@@ -497,13 +499,21 @@ def list_board() -> dict[str, list[JobCard]]:
     """All jobs grouped by board column, in board order (Saved → … → Rejected)."""
     with repo.session_scope() as session:
         rows = repo.list_jobs(session)
+        salaries = repo.salary_estimates(session)
     board: dict[str, list[JobCard]] = {status.value: [] for status in JobStatus}
     for row in rows:
-        board[row.status].append(_card(row))
+        board[row.status].append(_card(row, salaries.get(row.id)))
     return board
 
 
-def _card(row: Job) -> JobCard:
+def _salary(estimate_json: str | None) -> SalaryEstimate | None:
+    try:
+        return SalaryEstimate.model_validate_json(estimate_json) if estimate_json else None
+    except ValueError:  # an older, unreadable cache entry: just no badge
+        return None
+
+
+def _card(row: Job, salary_json: str | None = None) -> JobCard:
     view = get_workflow_view(row.id)
     return JobCard(
         id=row.id,
@@ -516,6 +526,7 @@ def _card(row: Job) -> JobCard:
         stage=view.stage,
         review_action=view.review_action,
         notes=row.notes,
+        salary=_salary(salary_json),
     )
 
 

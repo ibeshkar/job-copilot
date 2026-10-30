@@ -7,7 +7,7 @@ import streamlit as st
 
 from app.db.models import JobStatus
 from app.services import applications, onboarding
-from app.ui.components import STATUS_LABELS, fit_badge, stage_badge
+from app.ui.components import STATUS_LABELS, fit_badge, salary_badge, stage_badge
 from app.ui.state import ONBOARDING_PAGE, open_job
 
 STATUSES = [s.value for s in JobStatus]
@@ -92,7 +92,8 @@ for column, status in zip(st.columns(len(STATUSES)), STATUSES, strict=True):
         with column.container(border=True):
             st.markdown(f"**{card.title}**  \n{card.company}")
             st.markdown(
-                f"{fit_badge(card.fit_score)} {stage_badge(card.stage, card.review_action)}"
+                f"{fit_badge(card.fit_score)} {stage_badge(card.stage, card.review_action)} "
+                f"{salary_badge(card.salary)}"
             )
             if card.next_action:
                 due = f" · {card.next_action_date:%d %b}" if card.next_action_date else ""

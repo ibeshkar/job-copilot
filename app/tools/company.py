@@ -2,7 +2,8 @@
 #       culture, tech stack and news, and returns the snippets marked as untrusted content.
 # Why: tailoring an application needs facts about the company. Web text can contain anything,
 #      including prompt injections, so it is always wrapped in <untrusted_web_content> tags.
-# Used by: app/tools/registry.py (copilot chat), app/services/company.py (Company tab).
+# Used by: app/tools/registry.py (copilot chat), app/services/company.py (Company tab),
+#          app/tools/salary.py (salary searches through `web_search`).
 
 from dataclasses import dataclass
 
@@ -35,7 +36,7 @@ class ResearchCompanyArgs(BaseModel):
     )
 
 
-def _tavily_search(query: str, max_results: int) -> dict:
+def _tavily_search(query: str, max_results: int, include_domains: list[str] | None = None) -> dict:
     """Call Tavily and return its raw answer. Tests replace this function."""
     key = get_settings().tavily_api_key
     if key is None:
@@ -43,13 +44,39 @@ def _tavily_search(query: str, max_results: int) -> dict:
     search = TavilySearch(
         tavily_api_key=key.get_secret_value(), max_results=max_results, topic="general"
     )
+    payload: dict = {"query": query}
+    if include_domains:
+        payload["include_domains"] = include_domains
     try:
-        answer = search.invoke({"query": query})
+        answer = search.invoke(payload)
     except ToolException:
         return {"results": []}  # Tavily found nothing
     if isinstance(answer, dict) and "error" in answer:
         raise ExternalServiceError(f"Tavily failed: {answer['error']}")
     return answer
+
+
+def web_search(
+    query: str, max_results: int = MAX_RESULTS, include_domains: list[str] | None = None
+) -> list[WebResult]:
+    """Search the web with Tavily, optionally only on some sites, e.g. ["arbeitsagentur.de"].
+
+    Raises:
+        ConfigError: no Tavily key.
+        ExternalServiceError: Tavily failed.
+    """
+    if include_domains:
+        raw = _tavily_search(query, max_results, include_domains)
+    else:
+        raw = _tavily_search(query, max_results)
+    return [
+        WebResult(
+            title=str(r.get("title", "")),
+            url=str(r.get("url", "")),
+            content=str(r.get("content", ""))[:SNIPPET_CHARS],
+        )
+        for r in raw.get("results", [])[:max_results]
+    ]
 
 
 def search_company(company: str, focus: str | None = None) -> list[WebResult]:
@@ -60,15 +87,7 @@ def search_company(company: str, focus: str | None = None) -> list[WebResult]:
         ExternalServiceError: Tavily failed.
     """
     topic = focus or "products customers culture tech stack recent news"
-    raw = _tavily_search(f'"{company}" company {topic}', MAX_RESULTS)
-    return [
-        WebResult(
-            title=str(r.get("title", "")),
-            url=str(r.get("url", "")),
-            content=str(r.get("content", ""))[:SNIPPET_CHARS],
-        )
-        for r in raw.get("results", [])[:MAX_RESULTS]
-    ]
+    return web_search(f'"{company}" company {topic}', MAX_RESULTS)
 
 
 def format_results(results: list[WebResult]) -> str:

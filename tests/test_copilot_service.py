@@ -11,7 +11,7 @@ from app.services import copilot
 from tests.copilot_fakes import calls, research_and_move_script, two_jobs
 
 THREAD = "chat-00000000000a"
-ALL_TOGGLES = ["job_posting", "experience", "company", "job_search", "tracker"]
+ALL_TOGGLES = ["job_posting", "experience", "company", "job_search", "salary", "tracker"]
 
 
 def _kinds(events) -> list[str]:

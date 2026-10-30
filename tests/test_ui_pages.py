@@ -480,3 +480,64 @@ def test_memory_page_shows_rule_sources_and_adds_a_rule(fake_app) -> None:
         "Avoid the word 'passionate'",
         "Keep it under 200 words",
     ]
+
+
+# ---------------------------------------------------------------- Phase 11: salary tab
+
+
+def _save_estimate(job_id: int, **fields) -> None:
+    from app.agent.state import SalaryEstimate, SalaryExplanation
+    from app.db import repo
+
+    estimate = SalaryEstimate(
+        **(
+            {
+                "status": "ok",
+                "low": 52000,
+                "typical": 56500,
+                "high": 61000,
+                "confidence": "medium",
+                "expectation": "55-65k EUR",
+                "expectation_position": "within",
+                "explanation": SalaryExplanation(
+                    factors_up=["Berlin"],
+                    factors_down=["Junior role"],
+                    expectation_comparison="Your expectation fits.",
+                    negotiation_tips=["Ask for the band early."],
+                ),
+            }
+            | fields
+        )
+    )
+    with repo.session_scope() as session:
+        repo.save_salary_estimate(session, job_id, estimate.model_dump_json())
+
+
+def test_salary_tab_and_board_badge_show_the_saved_estimate(fake_app) -> None:
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+    _save_estimate(job_id)
+
+    at = _open_workspace(_app(job_id))
+
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "€52,000 – €61,000 per year (gross)" in text
+    assert "medium confidence" in text
+    assert "Estimate only, not financial advice." in " ".join(c.value for c in at.caption)
+    assert any("within" in i.value for i in at.info)
+    assert _button(at, "🔄 Refresh")
+
+    board = _app().run()
+    assert "💰 €52k–61k" in " ".join(m.value for m in board.markdown)
+
+
+def test_salary_tab_says_when_there_is_not_enough_data(fake_app) -> None:
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+    _save_estimate(job_id, status="not_enough_data", low=None, typical=None, high=None)
+
+    at = _open_workspace(_app(job_id))
+
+    assert not at.exception
+    assert any("Not enough data" in w.value for w in at.warning)

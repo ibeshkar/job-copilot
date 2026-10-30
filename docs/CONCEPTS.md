@@ -59,7 +59,7 @@ kitchen brigade: a sous-chef, a pastry chef and a grill chef passing plates.
 | **Workflow / state machine** | Fixed nodes and edges; LLM calls inside nodes | ✅ Application graph | High stakes: the claim check may never be skipped; easy to audit and test |
 | **Loop** (a small workflow that repeats) | The same round N times | ✅ Mock interview | 5 rounds of ask → answer → evaluate |
 | **Plan-and-execute** | An LLM writes a plan of steps, then runs them | ❌ | Our application steps are known in advance; a planner would only add a way to get the order wrong |
-| **Multi-agent** | Several specialised agents hand work to each other | ❌ | One copilot with 5 tools is simpler to test; worth it only with many more tools or very different skills |
+| **Multi-agent** | Several specialised agents hand work to each other | ❌ | One copilot with 6 tools is simpler to test; worth it only with many more tools or very different skills |
 
 **Where it is in our code:** `ARCHITECTURE.md` §3 compares the three graphs side by side
 (`application_graph.py`, `copilot_graph.py`, `interview_graph.py`).
@@ -305,6 +305,55 @@ for attempt in (1, 2):
     attempt_messages = [*messages, structured_retry_message(str(result["parsing_error"]))]
 raise StructuredOutputError(...)
 ```
+
+---
+
+## LLM extracts, Python calculates: the salary estimate (Phase 11)
+
+**One sentence:** for a salary range, the LLM only reads the messy web text and lists the
+figures it finds; plain Python checks each figure, converts it to yearly gross EUR, drops
+outliers and computes the range, so no number in the range is invented.
+
+**Analogy:** an intern copies the numbers from the newspaper clippings onto a form, and an
+accountant checks each one against its clipping and does the maths. You'd never let the
+intern just "estimate the total".
+
+**Why split it:** LLMs are good at reading ("4.500 € brutto im Monat" is a monthly gross
+figure) but bad at arithmetic, and they fill gaps with plausible numbers. A salary is a number
+people act on, so the parts that must be right are deterministic and tested.
+
+**The steps** (`app/tools/salary.py` → `estimate_for_job()`):
+1. 2–3 Tavily searches (`salary_queries`): "<level> <role> salary <city>", for Germany also
+   "<role> Gehalt <city> brutto" and the **Entgeltatlas** (only `arbeitsagentur.de`).
+2. **LLM extraction** (structured output `SalaryExtraction`): each figure with amount,
+   currency, period, gross/net, role, location and source URL. The results are inside
+   `<untrusted_web_content>`; the prompt says "copy numbers exactly, never invent one".
+3. **Python checks** (`check_point`): the source URL must be one of our results (or "job
+   posting"), and the number must really appear in that source's text (`numbers_in` reads
+   "55.000", "55k", "60 000"). Then yearly gross EUR (`to_yearly_gross`: ×12 monthly, ×2,080
+   hourly, rough net → gross, fixed exchange rates) and a plausibility band (10k–400k).
+4. **Relevance** (`is_relevant`): same role (a shared title word), same place, same level
+   ("Junior …" doesn't count for a mid-level job).
+5. **Outliers** (`drop_outliers`): Tukey's fences, only with 4+ figures; the posting's own
+   salary is never an outlier.
+6. **Range** (`salary_range`): 25th percentile, median, 75th percentile, rounded to 500, from
+   the relevant figures if there are at least 2, otherwise from all usable ones.
+7. **Confidence** (`confidence`): high = 5+ relevant figures (or the posting's salary + 3);
+   medium = 3+ relevant or the posting states a salary; low = less.
+8. **Refuse to guess:** fewer than 2 usable figures and no salary in the posting →
+   `status="not_enough_data"`, no range, and the explanation step is skipped.
+9. **LLM explanation** (`SalaryExplanation`): factors up/down, comparison with the expected
+   salary (Python says below / within / above), 2–3 honest tips. It gets our numbers, never
+   the raw web text, and must not state other numbers.
+
+```python
+checked = [check_point(p, sources, job.salary_range, job.title, places, job.seniority) for p in points]
+estimate = build_estimate(checked, job.salary_range, queries)  # outliers, percentiles, confidence
+```
+
+**Where it is in our code:** `app/tools/salary.py`; models in `app/agent/state.py`; prompts
+`SALARY_EXTRACTION_SYSTEM` / `SALARY_EXPLANATION_SYSTEM` in `app/agent/prompts.py`; the tab
+in `app/ui/pages/2_job_workspace.py` → `_salary_tab()`; tests in `tests/test_salary.py`.
 
 ---
 

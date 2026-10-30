@@ -43,8 +43,9 @@ experience, and they lose track of where they applied. Generic AI writers make i
 - ✅ Input guards, friendly errors with Retry, empty / loading / error states
 
 **SHOULD and COULD**
-- ✅ Copilot chat (custom ReAct graph) with **5 tools**, sidebar toggles and approval before changes
+- ✅ Copilot chat (custom ReAct graph) with **6 tools**, sidebar toggles and approval before changes
 - ✅ Company research (Tavily), job search (Arbeitnow, free, no key)
+- ✅ Salary suggestion per job: range from real web data computed in Python, confidence, sources, negotiation tips; "not enough data" instead of a guess
 - ✅ Token and cost tracking per action and per session
 - ✅ LangSmith tracing with `action` and `prompt_version` metadata
 - ✅ Developer settings (password): model, temperature, max tokens, prompts, raw state, costs
@@ -58,7 +59,7 @@ experience, and they lose track of where they applied. Generic AI writers make i
 | Level | Tasks |
 |---|---|
 | Easy | Model picker, temperature / max-token sliders, personality (tone), interactive help, AI critique of the project (`docs/DECISIONS.md` D77) |
-| Medium | Token and cost tracking, long-term memory, 5 tools + toggles, security guard + separate developer settings, feedback loop |
+| Medium | Token and cost tracking, long-term memory, 6 tools + toggles, security guard + separate developer settings, feedback loop |
 | Hard | Agentic RAG, observability (LangSmith), DeepEval evaluation report, learning from feedback |
 
 ## 3. Quick start
@@ -74,7 +75,7 @@ uv run streamlit run app/main.py
 Then on the **👋 Get started** page: click **✨ Fill in the demo persona**, then **🧪 Use the
 demo persona**, and finish. On the **🗂️ Board**, click **➕ Add job** and pick a sample job.
 
-Optional keys in `.env`: `TAVILY_API_KEY` (company research), `LANGSMITH_TRACING=true` +
+Optional keys in `.env`: `TAVILY_API_KEY` (company research and salary estimates), `LANGSMITH_TRACING=true` +
 `LANGSMITH_API_KEY` (tracing), `APP_DEV_PASSWORD` (developer settings; change the default).
 Job search uses the free Arbeitnow API and needs no key.
 
@@ -115,7 +116,7 @@ a service layer. Diagrams: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 flowchart LR
     UI[Streamlit pages] --> SVC[Services]
     SVC --> WF[Application workflow<br/>fixed order, 3 pauses]
-    SVC --> RE[Copilot chat<br/>ReAct + 5 tools]
+    SVC --> RE[Copilot chat<br/>ReAct + 6 tools]
     SVC --> IV[Mock interview<br/>5-round loop]
     WF --> KB[(Chroma: your documents)]
     WF --> MEM[(Store: profile, facts, style)]
@@ -143,7 +144,8 @@ speak). The LLM only classifies.
 | 2 | `search_my_experience` | read | — | Searches your documents; returns snippets with file names |
 | 3 | `research_company` | read, external | Tavily key | Products, culture, tech stack, news; results wrapped as untrusted |
 | 4 | `search_jobs` | read, external | — | Open roles on Arbeitnow (Germany/EU) by keywords, city, remote and visa sponsorship; results wrapped as untrusted |
-| 5 | `get_applications` / `update_tracker` | read / **write** | — | Reads or changes the tracker; changes need your approval |
+| 5 | `estimate_salary` | read, external | Tavily key | Salary range for a tracked job from web data (Python maths), compared with your expectation |
+| 6 | `get_applications` / `update_tracker` | read / **write** | — | Reads or changes the tracker; changes need your approval |
 
 Tools without their keys are switched off in the sidebar with a hint.
 
@@ -169,7 +171,8 @@ Tools without their keys are switched off in the sidebar with a hint.
 - **Secrets:** `.env` only (gitignored), never shown; developer page password-protected.
 - **Network:** the app listens on `localhost` only.
 - **Privacy:** all data stays in `data/runtime/` on your computer. Text needed for an AI step is
-  sent to **OpenRouter** (which forwards it to the model provider), company names to **Tavily**,
+  sent to **OpenRouter** (which forwards it to the model provider), company names and job
+  titles with their city (salary searches) to **Tavily**,
   and, if you turn tracing on, traces to **LangSmith** (`LANGSMITH_HIDE_INPUTS=true` keeps the
   texts out). Job search downloads the public **Arbeitnow** job list and filters it on your
   computer, so your keywords stay local. **Delete all my data** on the Memory page empties

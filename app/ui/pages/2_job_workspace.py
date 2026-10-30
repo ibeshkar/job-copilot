@@ -2,13 +2,13 @@
 #       render whatever the paused workflow is waiting for (fit review, claim check, draft
 #       review) and send the user's decision back; Documents also shows the style rules learned
 #       from the user's edits and 👎 comments (with Undo). Company shows web research about the
-#       employer. Interview prep runs the mock interview. Notes keeps notes, next action and
-#       versions.
+#       employer. Salary shows a market salary estimate. Interview prep runs the mock interview.
+#       Notes keeps notes, next action and versions.
 # Why: this is the interrupt-rendering pattern from PROJECT_PLAN.md §7. On every rerun the page
 #      reads the saved graph state, so refreshing the browser or restarting the app shows the
 #      same step again.
 # Used by: app/main.py (st.navigation). Work is done by app/services/applications.py,
-#          company.py, interview.py and learning.py.
+#          company.py, salary.py, interview.py and learning.py.
 
 import re
 
@@ -18,12 +18,14 @@ from app.agent.state import Drafts, InterviewTurn
 from app.config import get_settings
 from app.db.models import JobStatus
 from app.guards.input_guard import MAX_ANSWER_CHARS
-from app.services import applications, company, interview, learning
+from app.services import applications, company, interview, learning, salary
 from app.services.applications import RunResult, WorkflowView
 from app.services.export import drafts_to_text
 from app.services.interview import InterviewView
 from app.services.learning import LearnedRule
+from app.tools.salary import DISCLAIMER
 from app.ui.components import (
+    CONFIDENCE_BADGES,
     STATUS_LABELS,
     claim_badge,
     claim_evidence,
@@ -34,7 +36,20 @@ from app.ui.components import (
 from app.ui.state import BOARD_PAGE, current_job_id, select_job
 
 STATUSES = [s.value for s in JobStatus]
-TABS = ["🎯 Fit", "✅ Claim check", "📝 Documents", "🏢 Company", "🎤 Interview prep", "🗒️ Notes"]
+TABS = [
+    "🎯 Fit",
+    "✅ Claim check",
+    "📝 Documents",
+    "🏢 Company",
+    "💰 Salary",
+    "🎤 Interview prep",
+    "🗒️ Notes",
+]
+POSITION_TEXT = {
+    "below": "Your expectation is **below** this range: you may be able to ask for more.",
+    "within": "Your expectation is **within** this range.",
+    "above": "Your expectation is **above** this range: be ready to justify it.",
+}
 # Open the tab that needs the user's attention, e.g. "Claim check" while claims wait for review.
 TAB_FOR_STAGE = {"claim_check": TABS[1], "draft_review": TABS[2]}
 TARGET_NAMES = {"letter": "cover letter", "bullets": "CV bullets"}
@@ -466,6 +481,108 @@ def _company_tab(job_id: int) -> None:
     )
 
 
+# ---------------------------------------------------------------- salary tab
+
+
+def _salary_sources(estimate) -> None:
+    usable = [p for p in estimate.usable if not p.from_posting]
+    dropped = [p for p in estimate.data_points if p.dropped_reason]
+    with st.expander(f"🔗 Sources and data points ({len(usable)} used, {len(dropped)} dropped)"):
+        for p in usable:
+            point = p.point
+            mark = "🎯" if p.relevant else "▫️"
+            st.markdown(
+                f"- {mark} **€{p.yearly_gross:,.0f}**/year · {point.role or '?'}, "
+                f"{point.location or '?'} · from {point.amount:,.0f} {point.currency} "
+                f"{point.period} {point.basis} · [{p.source_title or 'source'}]({point.source_url})"
+            )
+        for p in dropped:
+            st.caption(f"Dropped: {p.point.amount:,.0f} {p.point.currency} ({p.dropped_reason})")
+        st.caption(
+            "🎯 = same role and place as this job. Searches: " + " · ".join(estimate.queries)
+        )
+
+
+def _salary_tab(job_id: int) -> None:
+    settings = get_settings()
+    estimate = salary.saved_estimate(job_id)
+    if not settings.has_tavily_key:
+        st.info(
+            "Salary estimates use Tavily web search. Get a free key at tavily.com, set "
+            "`TAVILY_API_KEY` in `.env` and restart the app.",
+            icon="🔑",
+        )
+    label = "🔄 Refresh" if estimate else "💰 Estimate salary"
+    if st.button(
+        label,
+        key=f"salary_run_{job_id}",
+        type="secondary" if estimate else "primary",
+        disabled=not (settings.has_tavily_key and settings.has_llm_key),
+    ):
+        with st.spinner("Searching salary data and computing the range…"):
+            fresh, message = salary.run_estimate(job_id)
+        if fresh is None:
+            st.error(message)
+        else:
+            st.rerun()
+
+    if estimate is None:
+        st.caption(
+            "No estimate yet. I search the web for salaries of similar roles (the Entgeltatlas "
+            "for jobs in Germany), compute a range from the figures I find, and compare it "
+            "with your expectation. It's saved for this job."
+        )
+        return
+    if estimate.status != "ok":
+        posting = (
+            f"the posting's salary ({estimate.posting_salary}) couldn't be read"
+            if estimate.posting_salary
+            else "the posting doesn't state a salary"
+        )
+        st.warning(
+            f"**Not enough data.** I found {len(estimate.usable)} usable salary figure(s) and "
+            f"{posting}, so I won't guess a range. Try **Refresh** "
+            "later, check the [Entgeltatlas](https://web.arbeitsagentur.de/entgeltatlas/), or "
+            "ask the recruiter for the salary band.",
+            icon="🤷",
+        )
+        _salary_sources(estimate)
+        st.caption(f"Checked {estimate.estimated_at:%d %b %Y %H:%M} UTC. {DISCLAIMER}")
+        return
+
+    st.markdown(f"#### €{estimate.low:,} – €{estimate.high:,} per year (gross)")
+    st.markdown(
+        f"Typical: **€{estimate.typical:,}** · {CONFIDENCE_BADGES[estimate.confidence]} · "
+        f"{len(estimate.usable)} data points"
+    )
+    if estimate.posting_salary:
+        st.caption(f"The posting says: {estimate.posting_salary}")
+    if estimate.expectation:
+        text = POSITION_TEXT.get(estimate.expectation_position, "")
+        st.info(f"Your expectation: **{estimate.expectation}**. {text}", icon="🎯")
+    else:
+        st.caption("Add your expected salary on the Memory page to compare it with the range.")
+
+    if explanation := estimate.explanation:
+        left, right = st.columns(2)
+        with left:
+            _bullets("⬆️ Pushes pay up", explanation.factors_up)
+        with right:
+            _bullets("⬇️ Pushes pay down", explanation.factors_down)
+        st.write(explanation.expectation_comparison)
+        if explanation.negotiation_tips:
+            st.success(
+                "**Negotiation tips**\n"
+                + "\n".join(f"- {tip}" for tip in explanation.negotiation_tips),
+                icon="💡",
+            )
+    _salary_sources(estimate)
+    st.caption(
+        f"Estimated {estimate.estimated_at:%d %b %Y %H:%M} UTC. The range is the 25th–75th "
+        f"percentile of the figures found, converted to yearly gross EUR. **{DISCLAIMER}**"
+    )
+
+
 # ---------------------------------------------------------------- interview prep tab
 
 
@@ -693,7 +810,7 @@ with delete_col.popover("🗑️", help="Delete this job"):
 view = applications.get_workflow_view(job_id)
 if view.stage in TAB_FOR_STAGE:
     st.info(f"Waiting for you in **{TAB_FOR_STAGE[view.stage]}**.", icon="👉")
-fit_tab, claims_tab, docs_tab, company_tab, interview_tab, notes_tab = st.tabs(
+fit_tab, claims_tab, docs_tab, company_tab, salary_tab, interview_tab, notes_tab = st.tabs(
     TABS, default=TAB_FOR_STAGE.get(view.stage)
 )
 with fit_tab:
@@ -704,6 +821,8 @@ with docs_tab:
     _documents_tab(view)
 with company_tab:
     _company_tab(job_id)
+with salary_tab:
+    _salary_tab(job_id)
 with interview_tab:
     _interview_tab(job_id)
 with notes_tab:

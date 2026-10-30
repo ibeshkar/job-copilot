@@ -115,13 +115,44 @@ A refresh or restart keeps your place: you return to the same question.
   tech stack, culture, news and talking points, with links to the sources.
 - The **💬 Copilot chat** answers questions such as "Summarise my applications this week" or
   "What should I apply to next?". It can search your documents, research companies, find job
-  ads (Arbeitnow, mostly Germany and the EU; no key needed) and read or update your tracker. Before it **changes** your tracker,
+  ads (Arbeitnow, mostly Germany and the EU; no key needed), estimate salaries and read or
+  update your tracker. Before it **changes** your tracker,
   it asks for your approval. Click **New chat** to start over.
 - Switch the copilot's tools on or off under **🔧 Copilot tools** in the sidebar.
 
 ![The board: one column per status, each card with its fit score and next step](assets/board.png)
 
 ![The copilot asks for approval before moving a job to Applied](assets/chat_approval.png)
+
+## Use case 5: "What salary should I ask for?"
+
+1. Open a job that has a finished fit analysis and click the **💰 Salary** tab. It needs a
+   Tavily key (`TAVILY_API_KEY`), like company research.
+2. Click **💰 Estimate salary**. The app searches the web for salaries of similar roles in the
+   job's city (for jobs in Germany also the Bundesagentur für Arbeit's **Entgeltatlas**), takes
+   the figures it finds and computes a range. It takes about 15 seconds.
+3. You see:
+   - the **range** per year, gross: low (25th percentile), **typical** (median) and high
+     (75th percentile), in euros,
+   - a **confidence** badge (high / medium / low) based on how many figures match this role,
+     place and level,
+   - what the **posting** itself says about pay, if anything,
+   - how your **expected salary** compares (below / within / above). Set it on the
+     **🧠 Memory** page under your profile,
+   - what pushes the pay **up** and **down** for this job, and 2–3 honest **negotiation tips**,
+   - **Sources and data points**: every figure used, with a link to where it came from, and
+     the figures that were dropped and why.
+4. If there isn't enough data, you see **"Not enough data"** instead of a made-up number.
+   Try **🔄 Refresh** later, look the role up in the
+   [Entgeltatlas](https://web.arbeitsagentur.de/entgeltatlas/), or ask the recruiter for the
+   salary band.
+5. The estimate is saved for the job: the board card shows a **💰 €52k–61k** badge, and the
+   tab doesn't search again until you click **🔄 Refresh**.
+6. In the **💬 Copilot chat** you can ask "What salary should I ask for at Lumen Health?". The
+   copilot finds the job on your board and uses the same estimate.
+
+It's an **estimate only, not financial advice**. Figures from the web can be out of date or
+for slightly different roles; check the sources.
 
 ## Tone
 

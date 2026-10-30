@@ -1,4 +1,5 @@
-# What: the SQLite tables of the app (jobs, drafts, documents, usage, feedback, interviews).
+# What: the SQLite tables of the app (jobs, drafts, documents, usage, feedback, interviews,
+#       salary estimates).
 # Why: the tracker board, draft history and cost tracking need data that survives restarts.
 #      SQLModel gives us typed Python classes and safe, parameterised SQL (no SQL injection).
 # Used by: app/db/repo.py (all reads and writes go through the repo, not these classes directly).
@@ -106,4 +107,14 @@ class InterviewSession(SQLModel, table=True):
     job_id: int = Field(foreign_key="job.id", index=True)
     qa_json: str = "[]"
     overall_score: float | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class SalaryCache(SQLModel, table=True):
+    """The latest salary estimate of a job (a SalaryEstimate as JSON), so the Salary tab and the
+    board badge don't search the web again on every page load. A separate table, because
+    `create_all` adds new tables to an existing database but never new columns."""
+
+    job_id: int = Field(foreign_key="job.id", primary_key=True)
+    estimate_json: str
     created_at: datetime = Field(default_factory=utc_now)

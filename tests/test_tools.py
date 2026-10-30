@@ -26,12 +26,13 @@ from tests.graph_fakes import EXTRACTION, POSTING
 # ---------------------------------------------------------------- registry
 
 
-def test_registry_has_five_toggles_and_six_tools() -> None:
+def test_registry_has_six_toggles_and_seven_tools() -> None:
     assert list(registry.TOOL_REGISTRY) == [
         "job_posting",
         "experience",
         "company",
         "job_search",
+        "salary",
         "tracker",
     ]
     assert set(registry.ALL_TOOLS) == set(TOOL_DESCRIPTIONS)
@@ -46,6 +47,7 @@ def test_tools_without_keys_are_switched_off(monkeypatch) -> None:
     monkeypatch.setattr(settings, "tavily_api_key", None)
 
     assert "company" not in registry.default_toggles()
+    assert "salary" not in registry.default_toggles()  # also needs TAVILY_API_KEY
     # Job search (Arbeitnow) needs no key, so it's on by default.
     assert registry.missing_keys(registry.TOOL_REGISTRY["job_search"]) == []
     assert "job_search" in registry.default_toggles()

@@ -23,10 +23,10 @@ def _llm(answer: HelpAnswer | Exception) -> FakeStructuredLLM:
     return FakeStructuredLLM({HelpAnswer: respond})
 
 
-def test_guide_has_the_four_use_cases() -> None:
+def test_guide_has_the_five_use_cases() -> None:
     headings = help_bot.guide_headings()
 
-    assert sum(h.startswith("Use case") for h in headings) == 4
+    assert sum(h.startswith("Use case") for h in headings) == 5
     assert UNDO_SECTION in headings
 
 

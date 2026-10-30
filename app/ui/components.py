@@ -1,4 +1,4 @@
-# What: reusable Streamlit widgets: status/fit badges, the fit card, claim
+# What: reusable Streamlit widgets: status/fit/salary badges, the fit card, claim
 #       badges and the reviewed-claims list, the fact-check warning, draft history, and the
 #       profile and preferences forms.
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
@@ -7,7 +7,14 @@
 
 import streamlit as st
 
-from app.agent.state import Claim, FitReport, JobPosting, Requirement, UnsupportedStatement
+from app.agent.state import (
+    Claim,
+    FitReport,
+    JobPosting,
+    Requirement,
+    SalaryEstimate,
+    UnsupportedStatement,
+)
 from app.memory.store import Preferences, Profile
 
 STATUS_LABELS = {
@@ -34,6 +41,27 @@ def fit_badge(score: int | None) -> str:
     if score >= 40:
         return f":orange-badge[{score} · partial fit]"
     return f":red-badge[{score} · weak fit]"
+
+
+CONFIDENCE_BADGES = {
+    "high": ":green-badge[high confidence]",
+    "medium": ":orange-badge[medium confidence]",
+    "low": ":red-badge[low confidence]",
+}
+
+
+def thousands(amount: int) -> str:
+    """Short money amount, e.g. 52500 → "52.5k", 61000 → "61k"."""
+    return f"{amount / 1000:.1f}".removesuffix(".0") + "k"
+
+
+def salary_badge(estimate: SalaryEstimate | None) -> str:
+    """A board badge like ':violet-badge[💰 €52k–61k]', or "" if there is no estimate."""
+    if estimate is None:
+        return ""
+    if estimate.status != "ok":
+        return ":gray-badge[💰 no salary data]"
+    return f":violet-badge[💰 €{thousands(estimate.low)}–{thousands(estimate.high)}]"
 
 
 def stage_badge(stage: str, review_action: str | None) -> str:

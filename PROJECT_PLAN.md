@@ -72,7 +72,7 @@ Job seekers send generic applications because tailoring each one takes 30–60 m
 - **M10** README and documentation
 
 ### SHOULD (about 4 hours)
-- **S1** **Copilot chat panel** (ReAct agent with 5 tools)
+- **S1** **Copilot chat panel** (ReAct agent with 6 tools)
 - **S2** **Tool toggles** (enable or disable each tool in the UI)
 - **S3** **Company research** (Tavily)
 - **S4** **Token usage and cost** display (per action and per session)
@@ -85,13 +85,14 @@ Job seekers send generic applications because tailoring each one takes 30–60 m
 - **C3** **Evaluation report** with DeepEval
 - **C4** Job search via the Arbeitnow API (free, no key; replaced Adzuna, see DECISIONS.md D79)
 - **C5** Personality / tone selector (formal, friendly, concise)
+- **C6** **Salary suggestion** per job: web salary data (Tavily, Entgeltatlas for Germany) → LLM extracts the figures → Python computes the range (25th/50th/75th percentile) and confidence → LLM explains it, compares it with the user's expectation and gives negotiation tips. "Not enough data" instead of a guess. Salary tab, board badge, copilot tool `estimate_salary` (Phase 11, D80–D82)
 
 ### WON'T (out of scope)
 Auto-applying to jobs, emailing recruiters, multi-user cloud hosting, scraping LinkedIn (its Terms of Service forbid it).
 
 ### Course optional tasks covered
 - **Easy:** model picker, temperature/max-token sliders, personality, interactive help, ChatGPT critique
-- **Medium:** token and cost tracking (S4), long-term memory (M8), 5 tools + toggles (S1 + S2), security guard + separate developer settings (M9, S6), feedback loop (C2)
+- **Medium:** token and cost tracking (S4), long-term memory (M8), 6 tools + toggles (S1 + S2), security guard + separate developer settings (M9, S6), feedback loop (C2)
 - **Hard:** agentic RAG (M4), observability (S5), DeepEval evaluation report (C3), learning from feedback (C2)
 
 ---
@@ -289,6 +290,12 @@ class StyleRule(BaseModel):
     created_at: datetime
 ```
 
+Salary models (Phase 11): `SalaryDataPoint` (amount, currency, period, gross/net, role,
+location, source URL; what the LLM extracts), `NormalisedSalary` (yearly gross EUR, relevant,
+from the posting, or why it was dropped; filled in by Python), `SalaryExplanation` (factors up
+and down, expectation comparison, tips) and `SalaryEstimate` (status, low / typical / high,
+confidence, data points, explanation).
+
 ### 5.2 Fit score (deterministic, in code)
 
 ```
@@ -309,6 +316,7 @@ This keeps the score **reproducible**. The LLM only classifies; Python does the 
 - `Feedback(id, job_id, target, rating, comment, created_at)`
   - `target` ∈ fit | letter | bullets | interview
 - `InterviewSession(id, job_id, qa_json, overall_score, created_at)`
+- `SalaryCache(job_id, estimate_json, created_at)`: the latest `SalaryEstimate` per job (a new table, because `create_all` never adds columns to an existing table)
 
 ### 5.4 Long-term memory (Store) namespaces
 
@@ -402,7 +410,7 @@ flowchart LR
 - The system prompt includes the user profile and preferences loaded from the Store.
 - `thread_id = "chat-<uuid>"`, kept in `st.session_state`, with a "New chat" button.
 
-### 6.3 The 5 tools (`app/tools/`)
+### 6.3 The 6 tools (`app/tools/`)
 
 | # | Tool | Type | Description (shown to the LLM) | Notes |
 |---|---|---|---|---|
@@ -410,7 +418,8 @@ flowchart LR
 | 2 | `search_my_experience(query, k=5)` | read | Search the user's own documents for evidence of skills/experience | Returns snippets + doc names |
 | 3 | `research_company(company, focus?)` | read / external API | Recent news, products, culture, tech stack of a company | Tavily; results wrapped as **untrusted content** |
 | 4 | `search_jobs(keywords, location?, remote_only=False, visa_sponsorship=False, limit=10)` | read / external API | Find open roles matching the user's profile | Arbeitnow (no key, on by default); filtered in Python; 10s timeout, 3 tries; results wrapped as **untrusted content** |
-| 5 | `update_tracker(job_id, status?, note?, next_action?)` / `get_applications(status?)` | **write** / read | Read or change the application tracker | Write requires HITL approval |
+| 5 | `estimate_salary(job_id, refresh=False)` | read / external API | Yearly gross salary range for a tracked job, compared with the user's expectation | Tavily (2–3 searches, Entgeltatlas for Germany); LLM only extracts figures, Python computes the range; cached in `SalaryCache`; "not enough data" instead of a guess; logged as `estimate_salary` |
+| 6 | `update_tracker(job_id, status?, note?, next_action?)` / `get_applications(status?)` | **write** / read | Read or change the application tracker | Write requires HITL approval |
 
 `registry.py` exposes `TOOL_REGISTRY` with name, tool, user-friendly label, description, `default_enabled`, `requires_approval` and `required_env_keys`. A tool whose keys are missing is shown as disabled with a hint.
 
@@ -453,7 +462,7 @@ Thumbs up/down ratings with optional comments also go to `Feedback`. Repeated ne
    - Profile basics → upload documents (with an "Use the demo persona" button) → preferences (tone, letter language, deal-breakers)
    - Ends with "Your knowledge base: 14 chunks from 3 documents ✔"
 2. **Board**:
-   - Kanban columns (`st.columns`) with job cards showing title, company, fit score badge, next action and date
+   - Kanban columns (`st.columns`) with job cards showing title, company, fit score badge, salary badge (if estimated), next action and date
    - Status change by select box
    - "➕ Add job" dialog (`st.dialog`): paste a URL or text
 3. **Job workspace** (per job), with tabs:
@@ -471,6 +480,7 @@ Thumbs up/down ratings with optional comments also go to `Feedback`. Repeated ne
      - 👍/👎 rating
      - Buttons: *Accept & save*, *Export DOCX*, *Copy*
    - **Company**: research summary with sources (S3)
+   - **Salary**: range (low / typical / high, yearly gross EUR), confidence badge, sources and data points, factors up/down, comparison with the expected salary, negotiation tips, a Refresh button and the disclaimer "Estimate only, not financial advice." (C6)
    - **Interview prep**: mock interview chat (C1)
    - **Notes & history**: draft versions, notes, next action
 4. **Copilot chat**:
@@ -556,7 +566,7 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 
 - Wrap every graph or LLM run with LangChain's usage-metadata callback (`get_usage_metadata_callback()` or `UsageMetadataCallbackHandler`).
 - `config.py` holds `MODEL_PRICING = {model: {"input": $/1M, "output": $/1M}}`. Values are editable, with a note to check current prices.
-- Save the totals to `UsageLog` per action (`analyse_fit`, `draft`, `chat`, …).
+- Save the totals to `UsageLog` per action (`analyse_fit`, `draft`, `chat`, `company_research`, `estimate_salary`, …).
 - Sidebar badge: "This session: 12.4k tokens · $0.006".
 - Dev settings: a table of costs by action.
 
@@ -656,6 +666,15 @@ All exceptions are logged (`app/utils/logging.py`) with the job/thread id. Users
 - [x] `docs/USER_GUIDE.md` with 4 use cases and screenshots
 - [x] Ask ChatGPT/Claude to critique usability, security and prompts → write the findings and responses into `docs/DECISIONS.md` (easy task 1)
 - [ ] Record a 3-minute demo GIF/video (optional; skipped, screenshots in `docs/assets/` instead)
+
+### Phase 11: Salary suggestion (C6, after the review prep)
+- [x] `SalaryDataPoint`, `SalaryExtraction`, `NormalisedSalary`, `SalaryExplanation`, `SalaryEstimate` in `app/agent/state.py`
+- [x] `app/tools/salary.py`: searches, LLM extraction, Python checks / normalisation / outliers / percentiles / confidence, LLM explanation, `estimate_salary` tool
+- [x] `SalaryCache` table + repo functions; deleted with the job and by "Delete all my data"
+- [x] 💰 Salary tab with Refresh, board badge, registry toggle (needs `TAVILY_API_KEY`)
+- [x] Usage logged as `estimate_salary`, also when the copilot runs the tool
+- [x] Tests: `tests/test_salary.py` (maths offline; pipeline with a fake Tavily and a scripted LLM)
+- **Done when:** a Berlin job shows a range with sources, a job with no data shows "Not enough data", and "What salary should I ask for at Lumen Health?" in the chat uses the tool.
 
 ---
 

@@ -45,6 +45,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Edge**: a connection in a graph: "after node A, run node B".
 - **Embedding**: a list of numbers (1,536 here) that represents the meaning of a text; similar texts get similar numbers.
 - **Engine (SQLAlchemy)**: the object that knows how to connect to the database; created once and reused.
+- **Entgeltatlas**: the Bundesagentur für Arbeit's public salary statistics for Germany (median gross pay per job); the salary estimate searches it first for German jobs.
 - **Entry point**: the file you start the app with; here `app/main.py`.
 - **`.env` file**: a local text file with secret settings (like API keys) that is never committed to git.
 - **`.env.example`**: a committed copy of `.env` with empty values, so others know which settings exist without seeing your secrets.
@@ -87,7 +88,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`max_tokens`**: the longest answer the model may give (1,500 here); a longer answer is cut off and fails to parse.
 - **Metadata**: extra labels saved with each chunk (`doc_name`, `doc_type`, `chunk_id`), used for citations and filters.
 - **Mock interview**: a 5-question practice interview for one job, with a 1–5 score, a STAR check and an improvement per answer.
-- **Multi-agent system**: several specialised agents that hand work to each other; not used here (one copilot with 5 tools is enough).
+- **Multi-agent system**: several specialised agents that hand work to each other; not used here (one copilot with 6 tools is enough).
 - **Namespace**: a folder-like path in the Store, e.g. `("local", "profile")`: user id, then kind of memory.
 - **Node**: one step in a LangGraph graph: a function that reads the state and returns updates.
 - **Onboarding wizard**: the 3-step first-run setup: profile, documents, preferences.
@@ -98,6 +99,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`penalize_ambiguous_claims`**: a DeepEval faithfulness setting: a statement the context neither confirms nor contradicts counts as unfaithful.
 - **Plan-and-execute agent**: an agent that first writes a plan of all steps, then runs them; not used here because our workflow's steps are known in advance.
 - **PostgresSaver / PostgresStore**: the Postgres versions of LangGraph's checkpointer and Store; the path to a multi-user deployment.
+- **Percentile**: the value below which a given share of the data lies; the 25th percentile is our salary "low", the 50th (median) "typical", the 75th "high".
 - **Precision**: of the items the app returned, the share that are correct ("how much of the catch is fish").
 - **Prompt injection**: text that tries to give an LLM new instructions, e.g. "ignore all previous instructions" inside a job posting.
 - **Prompt stuffing (context stuffing)**: putting a whole document into the prompt instead of searching it with RAG; fine for small documents like our user guide.
@@ -117,6 +119,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Requirement**: one thing the job asks for, with an id (R1…), a category and an importance (must / nice).
 - **Retry (from checkpoint)**: continuing a broken run with `graph.stream(None, config)`, which runs only the steps that hadn't finished.
 - **Run metadata**: labels attached to a trace, here `prompt_version`, `action` and `job_id` / `thread_id`, used to filter traces in LangSmith.
+- **Salary data point**: one salary figure from a web result or the job posting (`SalaryDataPoint`); used only if Python finds its number in that source.
 - **`SecretStr`**: a Pydantic type that hides a secret's value when printed or logged.
 - **Self-preference bias**: a judge model tends to rate text written by itself higher; we use a different model as the judge to reduce it.
 - **Service layer**: plain Python functions between the pages and the agent (`app/services/`); pages call them instead of the graph or LLM.
@@ -138,7 +141,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **`st.status`**: a Streamlit box that shows progress lines while a long task runs, then turns green or red.
 - **Style rule**: a writing preference in long-term memory, e.g. "Avoid the word 'passionate'"; learned from edits or 👎 comments, or added by you.
 - **Supported claim**: a claim that cites evidence Python could find; unsupported ones start unticked.
-- **Tavily**: a web search API made for LLMs; our `research_company` tool uses it (needs `TAVILY_API_KEY`).
+- **Tavily**: a web search API made for LLMs; `research_company` and `estimate_salary` use it (needs `TAVILY_API_KEY`).
 - **tenacity**: a Python library for retrying a call with growing waits (we use it for busy servers).
 - **Text splitter**: code that cuts text into chunks, trying paragraph breaks first, then sentences, then words (`RecursiveCharacterTextSplitter`).
 - **thread_id**: the name of one saved conversation or workflow run in LangGraph; each job gets `job-<id>`.
@@ -154,6 +157,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Trace**: the record of one run in LangSmith: every LLM call, tool call and graph step inside it.
 - **`tracing_context`**: a LangSmith helper that attaches metadata and tags to every trace started inside a `with` block.
 - **trafilatura**: a library that pulls the main text out of a web page, without menus and ads.
+- **Tukey's fences**: a simple outlier rule: values below Q1 − 1.5 × IQR or above Q3 + 1.5 × IQR (IQR = Q3 − Q1) are outliers; used for salary figures.
 - **Undo (learned rule)**: the ↩️ button next to a newly learned style rule; it deletes the rule from memory.
 - **Untrusted content**: text from outside (web pages, job ads); wrapped in `<untrusted_web_content>` so the model treats it as data.
 - **UsageLog**: the table with one row per action and model: tokens in, tokens out and cost in US dollars.

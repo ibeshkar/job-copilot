@@ -22,6 +22,7 @@ from app.db.models import (
     InterviewSession,
     Job,
     JobStatus,
+    SalaryCache,
     UsageLog,
     utc_now,
 )
@@ -156,9 +157,9 @@ def update_job(session: Session, job_id: int, **fields: Any) -> Job:
 
 
 def delete_job(session: Session, job_id: int) -> None:
-    """Delete a job and everything that belongs to it (drafts, feedback, interviews)."""
+    """Delete a job and everything that belongs to it (drafts, feedback, interviews, salary)."""
     job = get_job(session, job_id)
-    for model in (Draft, Feedback, InterviewSession):
+    for model in (Draft, Feedback, InterviewSession, SalaryCache):
         for row in session.exec(select(model).where(model.job_id == job_id)).all():
             session.delete(row)
     session.delete(job)
@@ -309,7 +310,7 @@ def latest_usage(session: Session) -> UsageLog | None:
 
 def delete_all_rows(session: Session) -> None:
     """Empty every app table ("Delete all my data"). Children first, because of foreign keys."""
-    for model in (Draft, Feedback, InterviewSession, Job, Document, UsageLog):
+    for model in (Draft, Feedback, InterviewSession, SalaryCache, Job, Document, UsageLog):
         for row in session.exec(select(model)).all():
             session.delete(row)
     session.commit()
@@ -368,3 +369,29 @@ def list_interview_sessions(session: Session, job_id: int) -> list[InterviewSess
         .order_by(InterviewSession.created_at.desc(), InterviewSession.id.desc())
     )
     return list(session.exec(query).all())
+
+
+# ---------------------------------------------------------------- salary estimates
+
+
+def save_salary_estimate(session: Session, job_id: int, estimate_json: str) -> SalaryCache:
+    """Save a job's salary estimate, replacing the previous one."""
+    get_job(session, job_id)  # fail early with NotFoundError
+    row = session.get(SalaryCache, job_id) or SalaryCache(job_id=job_id, estimate_json="")
+    row.estimate_json = estimate_json
+    row.created_at = utc_now()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def get_salary_estimate(session: Session, job_id: int) -> str | None:
+    """A job's saved salary estimate (JSON text), or None."""
+    row = session.get(SalaryCache, job_id)
+    return row.estimate_json if row else None
+
+
+def salary_estimates(session: Session) -> dict[int, str]:
+    """All saved salary estimates as {job_id: JSON text}, for the board badges."""
+    return {row.job_id: row.estimate_json for row in session.exec(select(SalaryCache)).all()}

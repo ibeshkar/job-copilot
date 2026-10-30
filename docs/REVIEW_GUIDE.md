@@ -45,8 +45,8 @@ flowchart LR
    flags anything no approved claim backs. Edit, regenerate one section, rate 👍/👎.
 6. **Accept & save**: versions go to SQLite, edits become **style rules** ("Avoid the word
    'passionate'"), DOCX export.
-7. **Around it**: a Kanban **board**, a **ReAct copilot chat** with 5 tools (asks before
-   changing the tracker), company research, a 5-question **mock interview**, the Memory page,
+7. **Around it**: a Kanban **board**, a **ReAct copilot chat** with 6 tools (asks before
+   changing the tracker), company research, a **salary estimate**, a 5-question **mock interview**, the Memory page,
    and a cost badge.
 
 Everything is saved after every step, so a refresh or restart continues where the user left.
@@ -65,7 +65,7 @@ Everything is saved after every step, so a refresh or restart continues where th
 | Security | `SECURITY.md`; `guards/`; `tests/test_injection.py`; the Phase 10 critique (D77) |
 | Reflection and improvement | §6 here; `DECISIONS.md` (78 entries); `EVALUATION.md` §7–8; README "Limitations" |
 | Prompt engineering vs. RAG vs. agents | Tone = prompt; user facts = RAG; multi-step job workflow = agent/graph (`CONCEPTS.md` "When to use…") |
-| Bonus (≥ 2 medium + 1 hard) | Medium: cost tracking, long-term memory, 5 tools + toggles, security guard + dev settings, feedback loop. Hard: agentic RAG, LangSmith, DeepEval report, learning from feedback |
+| Bonus (≥ 2 medium + 1 hard) | Medium: cost tracking, long-term memory, 6 tools + toggles, security guard + dev settings, feedback loop. Hard: agentic RAG, LangSmith, DeepEval report, learning from feedback |
 
 ## 4. Key technical decisions (top 8)
 
@@ -118,7 +118,7 @@ a workflow with one agentic decision (search again?). See `CONCEPTS.md` "What is
 ReAct (reason → act → observe), plan-and-execute (plan all steps first, then run them),
 workflow / state machine, and multi-agent (several specialised agents talking). Our tasks don't
 need them: the application steps are known in advance, so a planner would only add a way to get
-the order wrong; and one copilot with 5 tools is easier to test than agents handing work to each
+the order wrong; and one copilot with 6 tools is easier to test than agents handing work to each
 other. If the copilot grew to 20+ tools, splitting it into specialists would be worth it.
 
 **Why is the application flow a workflow graph and not a free agent?**
@@ -163,10 +163,10 @@ with the result and the same `tool_call_id`. The graph goes back to the model, w
 calls more tools or answers. CONCEPTS.md, "Function calling: the full loop", shows a real
 message sequence.
 
-**What are your 5 tools?**
+**What are your 6 tools?**
 `fetch_job_posting` (read a job URL or text, URL guard included), `search_my_experience`
-(the user's documents), `research_company` (Tavily web search), `search_jobs` (Arbeitnow, no key), and
-the tracker pair `get_applications` / `update_tracker`. They are listed in
+(the user's documents), `research_company` (Tavily web search), `search_jobs` (Arbeitnow, no key),
+`estimate_salary` (salary range from web data, Python maths), and the tracker pair `get_applications` / `update_tracker`. They are listed in
 `app/tools/registry.py` → `TOOL_REGISTRY`, with a label, a default, the keys they need, and
 which calls need approval.
 
@@ -553,6 +553,39 @@ Yes: Developer settings → Model. The choice is saved in `data/runtime/dev_sett
 applied over `.env`; the cached settings and both graphs are rebuilt, so the next action uses
 it (D54).
 
+### Salary estimate (Phase 11)
+**Why does the LLM extract the salaries but not calculate the range?**
+The LLM is good at reading "4.500 € brutto/Monat" and bad at arithmetic, and it fills gaps
+with plausible numbers. So it only lists figures with their source URL (`SalaryExtraction`).
+Python then checks the URL is one of our search results and that the number is really in that
+result's text, converts to yearly gross EUR, drops outliers (Tukey's fences) and takes the
+25th / 50th / 75th percentiles (`app/tools/salary.py` → `check_point`, `build_estimate`). The
+explanation LLM gets our numbers and is told not to state others. All the maths is unit-tested
+without an LLM (`tests/test_salary.py`). D80.
+
+**What happens when there's no data? Why not let the model guess?**
+With fewer than 2 usable figures and no salary in the posting, the result is "not enough
+data": no range, no explanation call, and the tab suggests the Entgeltatlas or asking the
+recruiter. A confident-looking number the user takes into a negotiation is worse than an honest
+"I don't know": it could cost them money or make them look uninformed. The same principle as
+the claim check: no evidence, no claim. D81.
+
+**How do you know a data point is relevant, and how is confidence set?**
+`is_relevant`: a shared title word ("Python Developer" ~ "Backend Python Developer"), the job's
+city or country in the figure's location, and the same level ("Junior …" doesn't count for a
+mid-level job). If there are at least 2 relevant figures, the range uses only those.
+Confidence: high = 5+ relevant figures (or the posting's salary plus 3), medium = 3+ relevant or
+a salary in the posting, low = less. Known weakness: word overlap is crude ("Java Developer"
+matches "Python Developer" through "developer", and "ML Engineer" doesn't match "Machine
+Learning Engineer").
+
+**Where is it cached, and what does it cost?**
+In a new `SalaryCache` table (one row per job), not a new column on `Job`, because
+`create_all` adds new tables to an existing database but never new columns, and we have no
+migration tool (D82). The 💰 Salary tab and the board badge read the cache; **🔄 Refresh** runs
+it again. One estimate is 2–3 Tavily searches plus two small LLM calls, about $0.0006 in
+tokens, logged as `estimate_salary` (also when the copilot calls the tool).
+
 ### Evaluation
 **How do you evaluate the app?**
 `uv run python evals/run_evals.py` runs the real app code on fixed datasets and writes
@@ -683,7 +716,8 @@ Honest list, most important first.
 | Mock interview | 5 questions (behavioural, technical, gap, technical, behavioural); score 1–5 per answer, average in Python; improved answer from your answer + 4 chunks |
 | Learning from feedback | 0–3 rules per edit, 1 per repeated 👎 complaint; duplicates ≥ 85% similar dropped; banned words checked in Python |
 | Help-bot | whole `docs/USER_GUIDE.md` (~2.5k tokens) in the prompt, last 3 Q&As, ~$0.0005 per question |
-| Copilot tools | 5 toggles / 6 tools: fetch_job_posting, search_my_experience, research_company (Tavily), search_jobs (Arbeitnow, no key), get_applications + update_tracker (needs approval) |
+| Copilot tools | 6 toggles / 7 tools: fetch_job_posting, search_my_experience, research_company (Tavily), search_jobs (Arbeitnow, no key), estimate_salary (Tavily), get_applications + update_tracker (needs approval) |
+| Salary estimate | 2–3 Tavily searches (Entgeltatlas for DE); LLM extracts, Python checks the number is in the source; yearly gross EUR; Tukey outliers (≥ 4 figures); P25 / median / P75 rounded to 500; < 2 usable figures and no posting salary → "not enough data"; cached in `SalaryCache`; ~$0.0006 |
 | Copilot graph | input_guard (rules + topic classifier) → agent ⇄ tools, approve before write tools; max 12 steps, 4,000 chars per message, last 30 messages sent |
 | Claims and drafts | max 10 claims; letter ≤ 280 words (medium); 3–6 bullets; max 2 draft attempts per round |
 | Agentic RAG | top 4 chunks, grade ≥ 0.4 kept, max 2 rewrites, max 4 evidence per requirement, grading in batches of 20 pairs |

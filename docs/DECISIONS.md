@@ -722,3 +722,54 @@ writer and the guard.
 - **Trade-off:** fewer countries and a smaller dataset; only the newest ~600 ads are searched,
   so niche or older roles can be missed; no salary data; keyword matching is plain word
   matching (no synonyms, and German titles won't match English keywords).
+
+## D80. Salary estimate: the LLM extracts, Python calculates (Phase 11)
+- **What:** the LLM's only jobs are to (1) list salary figures it finds in the search results
+  (`SalaryExtraction`: amount, currency, period, gross/net, role, location, source URL) and
+  (2) explain a finished range (`SalaryExplanation`). Everything numeric is plain Python in
+  `app/tools/salary.py`: checking each figure, converting it to yearly gross EUR, relevance,
+  outliers, percentiles, confidence and the comparison with the user's expectation.
+- **Why:** a salary is a number people act on. LLMs read messy text well ("4.500 € brutto im
+  Monat") but are unreliable at arithmetic and fill gaps with plausible numbers. Python is
+  deterministic, explainable in one sentence per step, and unit-tested without an LLM.
+- **Guard against invented figures:** a figure is only used if its URL is one of our search
+  results (or "job posting") and its number really appears in that result's text
+  (`numbers_in` reads "55.000", "55k", "60 000"). The explanation prompt receives our numbers,
+  not the web text, and is told not to state other numbers.
+- **Choices inside:** yearly gross EUR as the one currency (fixed, approximate exchange rates in
+  `EUR_RATES`); monthly × 12, hourly × 2,080; net → gross with a rough German factor (÷ 0.62);
+  plausible band 10k–400k; Tukey's fences (1.5 × IQR) only with 4+ figures; the posting's own
+  salary is never an outlier; range = P25 / median / P75 rounded to 500, from the relevant
+  figures if there are at least 2, else from all usable ones.
+- **Alternative:** ask the LLM for "a fair range for this job". One call, but the number can't
+  be traced to a source and changes between runs.
+- **Trade-off:** more code; relevance by shared title words is crude ("Java Developer" matches
+  "Python Developer", "ML" doesn't match "Machine Learning"); exchange rates and the net
+  factor are approximations; 13th-month salaries and bonuses are ignored.
+
+## D81. With too little data, refuse to give a range (Phase 11)
+- **What:** fewer than 2 usable figures and no salary in the posting → `status =
+  "not_enough_data"`: no range, no explanation call, and the tab and the copilot say so and
+  point to the Entgeltatlas or the recruiter. Confidence (high / medium / low) is shown with
+  every range, based on how many figures match the role, place and level.
+- **Why:** a made-up number looks exactly as confident as a real one, and the user may take it
+  into a negotiation. Same principle as the claim check: no evidence, no claim. The copilot's
+  system prompt also says to quote only numbers the tool returned.
+- **Alternative:** fall back to a national average, or to the LLM's general knowledge. Both
+  give an answer every time, but for the wrong role or with no source.
+- **Trade-off:** niche roles and small cities often get "not enough data". The Refresh button
+  and the Entgeltatlas link are the way out.
+
+## D82. Salary estimates are cached in a new `SalaryCache` table (Phase 11)
+- **What:** one row per job (`job_id` primary key, the `SalaryEstimate` as JSON, a timestamp),
+  written by `repo.save_salary_estimate()`; the tab, the board badge and the copilot tool read
+  it; **🔄 Refresh** (or `refresh=true` in the chat) runs the estimate again. Deleted with the
+  job and by "Delete all my data". Company research is cached in the Store instead (D45),
+  but a salary is data about the job, so it sits next to the job in SQLite.
+- **Why a table, not a `Job.salary_json` column:** `SQLModel.metadata.create_all()` creates
+  missing tables in an existing database but never adds columns, and the project has no
+  migration tool. A new column would crash on every existing `app.db` ("no such column").
+- **Alternative:** add Alembic migrations. Right for a real product, too much for one field.
+- **Trade-off:** one more table and a join-like lookup for the board (one query for all
+  estimates, `repo.salary_estimates()`).
+

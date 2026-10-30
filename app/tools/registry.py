@@ -1,4 +1,4 @@
-# What: TOOL_REGISTRY, the list of the copilot's 5 tools with a user-friendly label, a
+# What: TOOL_REGISTRY, the list of the copilot's 6 tools with a user-friendly label, a
 #       description for the sidebar toggle, whether it's on by default, which tool calls need
 #       the user's approval, and which API keys it needs.
 # Why: one place decides what the copilot can do. The sidebar toggles, the chat graph's dynamic
@@ -15,6 +15,7 @@ from app.tools.company import research_company
 from app.tools.experience import search_my_experience
 from app.tools.job_posting import fetch_job_posting
 from app.tools.job_search import search_jobs_tool
+from app.tools.salary import estimate_salary
 from app.tools.tracker import get_applications, update_tracker
 
 
@@ -59,6 +60,14 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
             description="Find open roles on Arbeitnow (Germany/EU, no key needed).",
             tools=(search_jobs_tool,),
             default_enabled=True,
+        ),
+        ToolSpec(
+            name="salary",
+            label="💰 Estimate salaries",
+            description="Salary range for a job from web data (Tavily).",
+            tools=(estimate_salary,),
+            default_enabled=True,
+            required_env_keys=("TAVILY_API_KEY",),
         ),
         ToolSpec(
             name="tracker",
