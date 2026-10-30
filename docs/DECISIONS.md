@@ -876,3 +876,26 @@ writer and the guard.
 - **Trade-offs:** the Word file no longer contains the CV bullets (they're in **📋 Copy as
   text**); the date is the export date in English format ("22 October 2026") for every letter
   language; the German fallback is a small word-count heuristic, not a language detector.
+
+
+## D86. One layout helper for "input + button" rows (Phase 11)
+- **What:** `action_row(*widths)` in `app/ui/components.py` returns `st.columns(...,
+  vertical_alignment="bottom")`; `input_with_action(label, button_label, key=...)` builds the
+  common case (labelled `st.text_input` + full-width `st.button`) on top of it and returns
+  `(text, clicked)`. Every row where an input sits next to a button or popover uses one of them:
+  the Company tab's Focus + 🔎/🔄 Research, the workspace header's Board column + 🗑️, and the
+  Memory page's text + 💾 + 🗑️ rows.
+- **Why:** the same misalignment came back three times. The button column has no label, so with
+  the default top alignment the button sits level with the input's *label*; the fixes were a
+  `markdown("&nbsp;")` spacer, which drifts with the font and theme, or a caption inside the
+  input column, which made that column taller and pushed bottom-aligned buttons down. Bottom
+  alignment needs no spacer, and Streamlit's inputs, select boxes and buttons are all 2.5rem
+  (40 px) high, so the edges match without CSS. Captions go under the row.
+- **Guard:** `tests/test_ui_components.py` checks the helper is bottom-aligned, that Enter only
+  commits the text and the click runs the action, and that no file in `app/ui/` has a spacer
+  (`markdown("&nbsp;")`, `write("")`, margin CSS).
+- **Alternatives:** *CSS that pads the button by the label's height*: depends on the font size
+  and breaks with `label_visibility="collapsed"`. *Collapsing the input's label*: aligned, but
+  the user loses the "Focus (optional)" label.
+- **Trade-off:** below 640 px Streamlit stacks the columns, so the button moves under the input
+  at full width. That's readable, so I kept Streamlit's default.

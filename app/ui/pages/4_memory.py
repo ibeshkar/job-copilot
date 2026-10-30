@@ -9,7 +9,7 @@ import streamlit as st
 
 from app.memory.store import Profile
 from app.services import my_data
-from app.ui.components import preferences_form, profile_form
+from app.ui.components import action_row, preferences_form, profile_form
 from app.ui.state import ONBOARDING_PAGE
 from app.utils.errors import friendly_message
 
@@ -34,18 +34,18 @@ def _editable_list(
 ) -> None:
     """One row per item: an editable text, 💾 save and 🗑️ delete, and an optional caption."""
     for key, text in items.items():
-        text_col, save_col, delete_col = st.columns([8, 1, 1], vertical_alignment="bottom")
+        text_col, save_col, delete_col = action_row(8, 1, 1)
         new_text = text_col.text_input(
             kind, value=text, key=f"{kind}_{key}", label_visibility="collapsed"
         )
-        if captions and captions.get(key):
-            text_col.caption(captions[key])
         if save_col.button("💾", key=f"save_{kind}_{key}", help="Save the new wording"):
             on_save(key, new_text)
             _done(f"{kind.capitalize()} updated.")
         if delete_col.button("🗑️", key=f"delete_{kind}_{key}", help="Forget this"):
             on_delete(key)
             _done(f"{kind.capitalize()} deleted.")
+        if captions and captions.get(key):
+            st.caption(captions[key])  # below the row, so it can't push the buttons down
 
 
 st.title("🧠 What I know about you")

@@ -1,7 +1,8 @@
-# What: reusable Streamlit widgets: status/fit/salary badges, the fit card with its
-#       requirements summary, filter and compact requirement rows, the claim check list
-#       (group headers, compact claim rows, evidence popovers, edit on demand), the
-#       reviewed-claims list, the fact-check warning, and the profile and preferences forms.
+# What: reusable Streamlit widgets: the bottom-aligned "input + button" row, status/fit/salary
+#       badges, the fit card with its requirements summary, filter and compact requirement
+#       rows, the claim check list (group headers, compact claim rows, evidence popovers, edit
+#       on demand), the reviewed-claims list, the fact-check warning, and the profile and
+#       preferences forms.
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
 #      share the forms. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
@@ -58,6 +59,42 @@ CONFIDENCE_BADGES = {
     "medium": ":orange-badge[medium confidence]",
     "low": ":red-badge[low confidence]",
 }
+
+
+def action_row(*widths: float) -> list:
+    """Columns for an "input + button(s)" row, all bottom-aligned.
+
+    Use this for every row where a labelled input sits next to a button or popover. Bottom
+    alignment puts the button level with the input box, not with the label above it, so the row
+    needs no spacer (an empty `st.write`, a non-breaking space, a line break or margin CSS);
+    spacers break on another font size or theme. Put captions under the row, not inside a
+    column, or the column grows and the button moves down with it. Buttons and inputs are both
+    2.5rem high in Streamlit, so a `use_container_width` button matches the input without CSS.
+    """
+    return st.columns(list(widths), vertical_alignment="bottom")
+
+
+def input_with_action(
+    label: str,
+    button_label: str,
+    *,
+    key: str,
+    placeholder: str | None = None,
+    max_chars: int | None = None,
+    disabled: bool = False,
+    widths: tuple[float, float] = (3, 1),
+) -> tuple[str, bool]:
+    """A labelled text input with a button on the same line; returns (text, clicked).
+
+    Enter in the input only commits the text (a normal rerun); the action runs when the button
+    is clicked, like a plain `st.text_input` + `st.button`.
+    """
+    input_col, button_col = action_row(*widths)
+    text = input_col.text_input(label, key=key, placeholder=placeholder, max_chars=max_chars)
+    clicked = button_col.button(
+        button_label, key=f"{key}_action", disabled=disabled, use_container_width=True
+    )
+    return text, clicked
 
 
 def thousands(amount: int) -> str:

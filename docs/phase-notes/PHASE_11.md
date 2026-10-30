@@ -182,3 +182,17 @@ per estimate, cached until Refresh.
   then in 📝 Documents change the subject and a paragraph, watch the preview, and download both
   files. A sample from a real run is in `data/runtime/CoverLetter_Alex_Novak_LumenHealthGmbH.pdf`.
 - **Known follow-up:** `docs/assets/documents.png` still shows the single text box; retake it.
+
+
+## Follow-up: one helper for "input + button" rows (UI only)
+- **What changed:** the Company tab's **🔄 Research again** button sat a few pixels below the
+  Focus box because of a `markdown("&nbsp;")` spacer. The Board column + 🗑️ row had had the same
+  bug before. New `action_row()` / `input_with_action()` in `app/ui/components.py` bottom-align
+  the row, so the button and the input share top and bottom edges (both 40 px). The Company tab,
+  the workspace header and the Memory page now use them. On the Memory page the "learned from…"
+  caption moved under the row; inside the input column it pushed 💾 and 🗑️ down. Behaviour is
+  unchanged: Enter in the Focus box only keeps the text, and the button runs the research. D86.
+- **Files:** `app/ui/components.py`, `app/ui/pages/2_job_workspace.py`,
+  `app/ui/pages/4_memory.py`, `tests/test_ui_components.py`, `docs/DECISIONS.md`.
+- **Checked:** light and dark theme at 900 px and a 420 px window (Playwright + Chrome
+  screenshots, element boxes measured: input and button both start at the same y, 40 px high).

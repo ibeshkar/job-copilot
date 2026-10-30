@@ -86,3 +86,38 @@ def test_claim_markdown() -> None:
     assert claim_markdown("Built X", kept=True, edited=False) == "Built X"
     assert claim_markdown("Built X", kept=True, edited=True) == "Built X :blue-badge[edited]"
     assert claim_markdown("Built X", kept=False, edited=False) == ":gray[~~Built X~~]"
+
+
+# ---------------------------------------------------------------- input + button rows
+
+
+def test_input_with_action_is_bottom_aligned_and_returns_the_text() -> None:
+    from streamlit.proto.Block_pb2 import Block
+    from streamlit.testing.v1 import AppTest
+
+    def script() -> None:
+        import streamlit as st
+
+        from app.ui.components import input_with_action
+
+        text, clicked = input_with_action("Focus (optional)", "Go", key="focus")
+        st.write(f"{text}|{clicked}")
+
+    at = AppTest.from_function(script).run()
+    bottom = Block.Column.VerticalAlignment.BOTTOM
+    assert [c.proto.vertical_alignment for c in at.columns] == [bottom, bottom]
+    assert at.text_input[0].label == "Focus (optional)"  # the label stays visible
+
+    at.text_input[0].set_value("funding").run()  # Enter: commits the text, no action
+    assert at.markdown[-1].value == "funding|False"
+    at.button[0].click().run()
+    assert at.markdown[-1].value == "funding|True"
+
+
+def test_no_page_lines_up_buttons_with_spacers() -> None:
+    from pathlib import Path
+
+    spacers = ['markdown("&nbsp;")', 'write("")', "<br>&nbsp;", "margin-top"]
+    for path in Path("app/ui").rglob("*.py"):
+        source = path.read_text()
+        assert not [s for s in spacers if s in source], f"{path}: use action_row() instead"

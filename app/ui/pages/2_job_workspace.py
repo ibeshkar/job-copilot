@@ -28,6 +28,7 @@ from app.tools.salary import DISCLAIMER
 from app.ui.components import (
     CONFIDENCE_BADGES,
     STATUS_LABELS,
+    action_row,
     claim_keys,
     claim_list,
     claims_summary,
@@ -35,6 +36,7 @@ from app.ui.components import (
     fit_card,
     guard_issues_box,
     init_claim_state,
+    input_with_action,
     kept_claim_text,
     reviewed_claims,
     set_claims_kept,
@@ -558,20 +560,15 @@ def _company_tab(job_id: int) -> None:
             "`TAVILY_API_KEY` in `.env` and restart the app.",
             icon="🔑",
         )
-    focus_col, button_col = st.columns([3, 1])
-    focus = focus_col.text_input(
+    focus, clicked = input_with_action(
         "Focus (optional)",
-        placeholder="e.g. tech stack, recent funding, engineering culture",
+        "🔄 Research again" if research else f"🔎 Research {card.company}",
         key=f"company_focus_{job_id}",
+        placeholder="e.g. tech stack, recent funding, engineering culture",
         max_chars=200,
-    )
-    label = "🔄 Research again" if research else f"🔎 Research {card.company}"
-    button_col.markdown("&nbsp;")  # lines the button up with the text box
-    if button_col.button(
-        label,
         disabled=not (settings.has_tavily_key and settings.has_llm_key),
-        use_container_width=True,
-    ):
+    )
+    if clicked:
         with st.spinner(f"Searching the web for {card.company}…"):
             fresh, message = company.run_research(job_id, focus)
         if fresh is None:
@@ -917,8 +914,8 @@ if picked != job_id:
 card = applications.get_job_summary(job_id)
 head, controls = st.columns([4, 3])
 head.markdown(f"### {card.title}\n{card.company}")
-# Bottom-align so the bin button lines up with the select box, not its label.
-status_col, delete_col = controls.columns([2, 1], vertical_alignment="bottom")
+with controls:
+    status_col, delete_col = action_row(2, 1)
 new_status = status_col.selectbox(
     "Board column", STATUSES, index=STATUSES.index(card.status), format_func=STATUS_LABELS.get
 )
