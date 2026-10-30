@@ -803,3 +803,38 @@ writer and the guard.
 - **Trade-off:** a popover hides the evidence for one click; printing the page no longer shows
   all evidence at once.
 
+
+## D84. The claim check: one flat list, edit on demand, unconfirmed first (Phase 11)
+- **What:** the Claim check tab was an `st.form` with one bordered container per claim (an
+  always-open `text_area`, a badge and an "Evidence" expander). Now: (1) a header with the
+  explanation, a summary ("N claims · ✅ X backed by documents · ⚠️ Y need your confirmation")
+  and two small buttons, *Keep all backed* and *Untick unconfirmed*; (2) one flat list with thin
+  dividers, grouped "⚠️ Needs your confirmation" first, then "✅ Backed by your documents"
+  (empty groups hidden); (3) one compact row per claim: checkbox (label collapsed, accessible
+  label "Keep claim: …") | claim text | "📄 N sources" / "⚠️ not found" popover | ✏️; (4) a footer
+  "X of N claims selected" with one primary button *✍️ Write my application →*, disabled with a
+  hint when nothing is selected. Unticked claims are grey and struck through; edited ones get an
+  "edited" tag. The pieces live in `app/ui/components.py` (`claim_list`, `claim_row`,
+  `claim_group_header`, `claim_evidence_popover`, `group_claims`, `claims_summary`, the state
+  helpers); the popover reuses `evidence_quotes`, the same quote style as the requirements (D83).
+- **Why (UX):**
+  - **No nested containers:** cards inside a form box made every claim heavy; only ~4 fit on a
+    screen. A flat list with dividers shows about three times as many.
+  - **Edit on demand:** most claims are kept word for word, so an open text box per claim was
+    noise. ✏️ opens it for that row only, with Save / Cancel.
+  - **Unconfirmed claims first:** they're the only ones that need a real decision (they start
+    unticked and become remembered facts if ticked), so they're at the top, in orange.
+  - **One clear primary action:** the count and the button sit at the end of the list; the bulk
+    buttons are secondary so they don't compete.
+- **State:** no more `st.form`, because a form can't hold the ✏️ / Save / Cancel buttons. Each
+  claim's tick, saved wording and editor flag are in `st.session_state` (keys from
+  `claim_keys()`), defaulted once from the claims the graph saved at the interrupt. A refresh is
+  a new session, so it starts again from those claims; the keys are cleared after a successful
+  submit. Trade-off: every tick reruns the page (cheap, it reads one checkpoint).
+- **Not changed:** the graph, the interrupt and the resume payload: one `{"id", "action":
+  "remove" | "approve" | "edit", "text"}` per claim, built the same way as before.
+- **Layout detail:** `st.columns(..., vertical_alignment="center", wrap=False)`, as in D83, so the
+  controls stay on the claim's line on a phone. Colours are Streamlit's named colours, and the
+  divider is translucent grey, so both themes work.
+- **Alternative:** `st.data_editor` with a checkbox and an editable text column. Very compact,
+  but cells can't show evidence quotes, and long claims are cut off.

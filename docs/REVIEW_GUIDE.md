@@ -271,6 +271,19 @@ one row (icon, text, MUST / nice, one-line explanation); evidence and the honest
 popover. Three ideas: prioritise gaps, progressive disclosure, fewer clicks. UI only: the score,
 evidence and actions are unchanged (`app/ui/components.py` → `requirements_section()`, D83).
 
+**Why did you redesign the claim check?**
+Each claim was a bordered card inside a bordered form with an always-open text box, a badge and
+an "Evidence" expander, so only about four claims fit on a screen and every claim looked like a
+form to fill in. Now it's one flat list with thin dividers: one row per claim (checkbox, text,
+"📄 N sources" popover, ✏️). The ideas: **no nested containers** (less visual noise, more claims
+per screen), **edit on demand** (most claims are kept as they are, so the text box only opens
+on ✏️), **unconfirmed claims first** (they're the only ones that need a real decision, and they
+start unticked) and **one clear primary action** at the end ("X of N selected" + *Write my
+application*, disabled with nothing selected). UI only: the interrupt and the resume payload
+(`remove` / `approve` / `edit` per claim) are the same. The form is gone because ✏️ / Save /
+Cancel need reruns, so choices are kept in `st.session_state`, defaulted from the graph's saved
+claims, which is why a refresh still works (`app/ui/components.py` → `claim_list()`, D84).
+
 **How does `interrupt()` work with Streamlit, which reruns the whole script on every click?**
 Nothing important lives in Streamlit's memory. The graph's state is saved in SQLite under
 `thread_id = job-<id>`. On every rerun, `app/services/applications.py` → `get_workflow_view()`

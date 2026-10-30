@@ -1,15 +1,18 @@
 # What: reusable Streamlit widgets: status/fit/salary badges, the fit card with its
-#       requirements summary, filter and compact requirement rows, claim
-#       badges and the reviewed-claims list, the fact-check warning, draft history, and the
-#       profile and preferences forms.
+#       requirements summary, filter and compact requirement rows, the claim check list
+#       (group headers, compact claim rows, evidence popovers, edit on demand), the
+#       reviewed-claims list, the fact-check warning, and the profile and preferences forms.
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
 #      share the forms. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
+
+from typing import NamedTuple
 
 import streamlit as st
 
 from app.agent.state import (
     Claim,
+    Evidence,
     FitReport,
     JobPosting,
     Requirement,
@@ -210,6 +213,15 @@ def requirements_summary(rows: list[Row]) -> None:
     st.markdown(" ".join(status_badge(s, counts[s]) for s in ("met", "partial", "missing")))
 
 
+def evidence_quotes(evidence: list[Evidence], empty: str) -> None:
+    """Evidence quotes with document names; one look for requirement and claim popovers."""
+    for ev in evidence:
+        st.markdown(f"**📄 {ev.doc_name}** · relevance {ev.relevance:.0%}")
+        st.markdown(f"> {ev.snippet}")
+    if not evidence:
+        st.caption(empty)
+
+
 def _details(req: Requirement, match: RequirementMatch, key: str) -> None:
     """The row's details button: evidence (met / partial) and the honest tip (missing / partial)."""
     show_evidence = match.status in ("met", "partial")
@@ -219,11 +231,7 @@ def _details(req: Requirement, match: RequirementMatch, key: str) -> None:
     with st.popover(label, key=key, disabled=not has_content, width="stretch"):
         st.markdown(f"**{req.text}**")
         if show_evidence:
-            for ev in match.evidence:
-                st.markdown(f"**📄 {ev.doc_name}** · relevance {ev.relevance:.0%}")
-                st.markdown(f"> {ev.snippet}")
-            if not match.evidence:
-                st.caption("No evidence found in your documents.")
+            evidence_quotes(match.evidence, "No evidence found in your documents.")
         if show_tip and match.honest_positioning:
             st.info(match.honest_positioning, icon="💡")
 
@@ -282,13 +290,186 @@ def claim_badge(claim: Claim) -> str:
     return ":orange-badge[no evidence in your documents]"
 
 
-def claim_evidence(claim: Claim) -> None:
-    """The evidence quotes a claim cites (inside an expander)."""
-    if not claim.evidence:
-        st.caption("No document mentions this. Keep it only if it's true.")
-    for ev in claim.evidence:
-        st.markdown(f"**📄 {ev.doc_name}**")
-        st.markdown(f"> {ev.snippet}")
+# Unconfirmed claims first: they are the ones that need a decision.
+CLAIM_GROUPS = [(False, "⚠️ Needs your confirmation"), (True, "✅ Backed by your documents")]
+# A thin line between rows; translucent grey reads well in the light and the dark theme.
+THIN_DIVIDER = "<hr style='margin:0;border:none;border-top:1px solid rgba(128,128,128,0.25)'>"
+NOT_FOUND_HINT = (
+    "No document mentions this. Keep it only if it's true; I'll remember it as a fact you "
+    "confirmed."
+)
+
+
+class ClaimKeys(NamedTuple):
+    """Session-state keys for one claim at the claim check."""
+
+    keep: str  # the checkbox
+    text: str  # the saved wording; survives closing the editor
+    editing: str  # True while the editor is open
+    draft: str  # the text area while editing
+
+
+def claim_keys(scope: str, claim_id: str) -> ClaimKeys:
+    return ClaimKeys(
+        keep=f"keep_{scope}_{claim_id}",
+        text=f"claim_text_{scope}_{claim_id}",
+        editing=f"claim_editing_{scope}_{claim_id}",
+        draft=f"claim_draft_{scope}_{claim_id}",
+    )
+
+
+def init_claim_state(claims: list[Claim], scope: str) -> None:
+    """Set each claim's defaults once: backed claims ticked, suggested wording, editor closed.
+
+    A browser refresh starts a new session, so the defaults come again from the claims the
+    graph saved at the interrupt.
+    """
+    for claim in claims:
+        keys = claim_keys(scope, claim.id)
+        st.session_state.setdefault(keys.keep, claim.supported)
+        st.session_state.setdefault(keys.text, claim.text)
+        st.session_state.setdefault(keys.editing, False)
+
+
+def clear_claim_state(claims: list[Claim], scope: str) -> None:
+    for claim in claims:
+        for key in claim_keys(scope, claim.id):
+            st.session_state.pop(key, None)
+
+
+def kept_claim_text(claim: Claim, scope: str) -> str | None:
+    """The saved wording of a ticked claim, or None if the user unticked it."""
+    keys = claim_keys(scope, claim.id)
+    return st.session_state[keys.text] if st.session_state[keys.keep] else None
+
+
+def set_claims_kept(claims: list[Claim], scope: str, kept: bool) -> None:
+    """Tick or untick several claims at once (a button callback)."""
+    for claim in claims:
+        st.session_state[claim_keys(scope, claim.id).keep] = kept
+
+
+def group_claims(claims: list[Claim]) -> list[tuple[bool, list[Claim]]]:
+    """(supported, claims) groups: unconfirmed first, then backed; empty groups left out."""
+    groups = [
+        (supported, [c for c in claims if c.supported == supported])
+        for supported, _ in CLAIM_GROUPS
+    ]
+    return [(supported, members) for supported, members in groups if members]
+
+
+def claims_summary(claims: list[Claim]) -> str:
+    """E.g. "5 claims · ✅ 3 backed by documents · ⚠️ 2 need your confirmation"."""
+    backed = sum(c.supported for c in claims)
+    unconfirmed = len(claims) - backed
+    noun = "claim" if len(claims) == 1 else "claims"
+    verb = "needs" if unconfirmed == 1 else "need"
+    return (
+        f"**{len(claims)} {noun}** · ✅ {backed} backed by documents · "
+        f"⚠️ {unconfirmed} {verb} your confirmation"
+    )
+
+
+def claim_markdown(text: str, kept: bool, edited: bool) -> str:
+    """The claim as plain markdown: struck through and grey if unticked, tagged if edited."""
+    tag = " :blue-badge[edited]" if edited else ""
+    return f"{text}{tag}" if kept else f":gray[~~{text}~~]{tag}"
+
+
+def claim_group_header(supported: bool, count: int) -> None:
+    label = dict(CLAIM_GROUPS)[supported]
+    if supported:
+        st.markdown(f"**{label}** · {count}")
+        return
+    st.markdown(f":orange[**{label}**] · {count}")
+    st.caption(
+        "No document mentions these, so they start unticked. Tick one only if it's true; "
+        "I'll remember it as a fact you confirmed."
+    )
+
+
+def claim_evidence_popover(claim: Claim, key: str) -> None:
+    """ "📄 N sources" opening the quotes (same look as the requirements), or "⚠️ not found"."""
+    count = len(claim.evidence)
+    if count:
+        label = f"📄 {count} source{'s' if count > 1 else ''}"
+    else:
+        label = "📄 sources" if claim.supported else "⚠️ not found"
+    with st.popover(label, key=key, width="stretch"):
+        st.markdown(f"**{claim.text}**")
+        evidence_quotes(
+            claim.evidence,
+            "The quotes aren't available any more." if claim.supported else NOT_FOUND_HINT,
+        )
+
+
+def _open_editor(keys: ClaimKeys) -> None:
+    st.session_state[keys.draft] = st.session_state[keys.text]
+    st.session_state[keys.editing] = True
+
+
+def _save_edit(keys: ClaimKeys) -> None:
+    text = st.session_state[keys.draft].strip()
+    if not text:
+        st.toast("A claim can't be empty. Untick it if you don't want to say it.", icon="✏️")
+        return
+    st.session_state[keys.text] = text
+    st.session_state[keys.editing] = False
+
+
+def _close_editor(keys: ClaimKeys) -> None:
+    st.session_state[keys.editing] = False
+
+
+def claim_row(claim: Claim, scope: str) -> None:
+    """One compact row: checkbox | claim text (or the editor) | evidence popover | ✏️.
+
+    Columns that don't wrap (`wrap=False`), so on a phone the controls stay on the claim's line.
+    """
+    keys = claim_keys(scope, claim.id)
+    text = st.session_state[keys.text]
+    tick, body, sources, edit = st.columns(
+        [0.45, 6, 1.9, 0.65], vertical_alignment="center", wrap=False
+    )
+    tick.checkbox(f"Keep claim: {text}", key=keys.keep, label_visibility="collapsed")
+    with body:
+        if st.session_state[keys.editing]:
+            st.text_area(
+                f"Wording of claim {claim.id}",
+                key=keys.draft,
+                height=68,
+                label_visibility="collapsed",
+            )
+            with st.container(horizontal=True, gap="small"):
+                st.button("Save", key=f"{keys.draft}_save", on_click=_save_edit, args=(keys,))
+                st.button(
+                    "Cancel",
+                    key=f"{keys.draft}_cancel",
+                    type="tertiary",
+                    on_click=_close_editor,
+                    args=(keys,),
+                )
+        else:
+            st.markdown(claim_markdown(text, st.session_state[keys.keep], text != claim.text))
+    with sources:
+        claim_evidence_popover(claim, key=f"{keys.keep}_evidence")
+    edit.button(
+        "✏️",
+        key=f"{keys.editing}_open",
+        help="Edit the wording",
+        disabled=st.session_state[keys.editing],
+        on_click=_open_editor,
+        args=(keys,),
+    )
+
+
+def claim_list(claims: list[Claim], scope: str) -> None:
+    """The claims in one flat list: a header per group and thin dividers between rows."""
+    for supported, members in group_claims(claims):
+        claim_group_header(supported, len(members))
+        for claim in members:
+            st.html(THIN_DIVIDER)
+            claim_row(claim, scope)
 
 
 def reviewed_claims(claims: list[Claim], new_facts: list[str]) -> None:

@@ -471,9 +471,10 @@ Thumbs up/down ratings with optional comments also go to `Feedback`. Repeated ne
      - Requirements: summary ("Must-have met: X / Y" + progress bar + met / partial / missing counts), filter (All / Gaps only / Must-have only), one expander per status group (Missing and Partial open, Met closed), compact rows with a popover for evidence snippets (with doc names) and honest positioning tips (D83)
      - Buttons: *Continue to application* / *Add context* (text box → re-run evidence) / *Not a fit*
    - **Claim check**:
-     - A list of claims, each with a supported/unsupported badge, the evidence and Approve / Edit / Remove controls
+     - Summary ("N claims · X backed · Y need your confirmation") and *Keep all backed* / *Untick unconfirmed* buttons
+     - One flat list, "Needs your confirmation" group first: one compact row per claim (checkbox, text, "📄 N sources" evidence popover, ✏️ edit on demand); unticked claims are struck through, edited ones tagged (D84)
      - Unsupported claims are **unchecked by default and highlighted**
-     - Submit → resume the graph
+     - Footer: "X of N claims selected" + *✍️ Write my application →* (disabled with nothing selected) → resume the graph
    - **Documents**:
      - Editable CV bullets and cover letter (`st.text_area`)
      - "Regenerate this paragraph" with an optional instruction

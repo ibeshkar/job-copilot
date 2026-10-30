@@ -61,11 +61,12 @@ posting, extracting requirements, searching my documents, grading, scoring. That
 ## 4. Claim check → remove a claim (60 s)
 
 **On the ✅ Claim check tab, say:** "Before anything is written, the agent shows every claim it
-wants to make about me. Green ones are backed by a document; unsupported ones start unticked.
-This is the second human-in-the-loop pause."
+wants to make about me. The ones no document backs come first and start unticked; the rest
+show how many sources back them. This is the second human-in-the-loop pause."
 
 **Click:** untick one claim that's distinctive (for example the one about a specific project or
-number). Remember its wording. → *Confirm claims and write drafts ▶*.
+number). Remember its wording. Optionally click *📄 N sources* on another to show the quote.
+→ *✍️ Write my application →*.
 
 **On 📝 Documents, say:** "The writer's prompt only receives approved claims, so the removed
 claim can't leak in. Then a second LLM call, the output guard, checks every statement about me

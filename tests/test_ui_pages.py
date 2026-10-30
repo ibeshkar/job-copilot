@@ -12,7 +12,7 @@ from streamlit.testing.v1 import AppTest
 
 from app.memory.store import Profile, save_profile
 from app.services import applications
-from tests.graph_fakes import POSTING
+from tests.graph_fakes import POSTING, UNSUPPORTED_CLAIM
 
 MAIN = str(Path(__file__).resolve().parent.parent / "app" / "main.py")
 
@@ -144,6 +144,10 @@ def _at_claim_check() -> int:
     return job_id
 
 
+def _claim_editors(at: AppTest) -> list:
+    return [t for t in at.text_area if (t.key or "").startswith("claim_draft_")]
+
+
 def test_claim_check_starts_unsupported_claims_unticked(fake_app) -> None:
     job_id = _at_claim_check()
 
@@ -155,15 +159,67 @@ def test_claim_check_starts_unsupported_claims_unticked(fake_app) -> None:
         True,
         False,
     ]
-    assert any("no evidence" in w.value for w in at.warning)
+    text = "\n".join(m.value for m in at.markdown)
+    assert "3 claims** · ✅ 2 backed by documents · ⚠️ 1 needs your confirmation" in text
+    # Unconfirmed claims come first, struck through while unticked.
+    assert text.index("Needs your confirmation") < text.index("Backed by your documents")
+    assert f":gray[~~{UNSUPPORTED_CLAIM}~~]" in text
+    assert "**2 of 3 claims selected**" in text
+    assert not _claim_editors(at)  # no editor until ✏️ is clicked
+
+
+def test_claim_check_edit_on_demand_and_bulk_buttons(fake_app) -> None:
+    job_id = _at_claim_check()
+    at = _open_workspace(_app(job_id))
+
+    at.button(key=f"claim_editing_{job_id}_C3_open").click().run()
+    at.text_area(key=f"claim_draft_{job_id}_C3").input("Led a team of two students.")
+    at.button(key=f"claim_draft_{job_id}_C3_save").click().run()
+    text = "\n".join(m.value for m in at.markdown)
+    assert "Led a team of two students." in text and ":blue-badge[edited]" in text
+    assert not _claim_editors(at)
+
+    at.checkbox(key=f"keep_{job_id}_C1").uncheck().run()
+    at.checkbox(key=f"keep_{job_id}_C3").check().run()
+    _button(at, "Untick unconfirmed").click().run()
+    _button(at, "Keep all backed").click().run()
+    assert [at.checkbox(key=f"keep_{job_id}_C{i}").value for i in (1, 2, 3)] == [
+        True,
+        True,
+        False,
+    ]
+
+    # A refresh is a new session: the choices start again from the graph's saved claims.
+    refreshed = _open_workspace(_app(job_id))
+    assert not refreshed.exception
+    assert "Led a team of two students." not in "\n".join(m.value for m in refreshed.markdown)
+
+    at.checkbox(key=f"keep_{job_id}_C3").check().run()
+    _button(at, "✍️ Write my application →").click().run()
+    assert not at.exception
+    claims = {c.id: c for c in applications.get_workflow_view(job_id).claims}
+    assert claims["C3"].user_decision == "edited"
+    assert claims["C3"].text == "Led a team of two students."
+    assert claims["C1"].user_decision == "approved"
+
+
+def test_write_button_is_disabled_with_no_claim_selected(fake_app) -> None:
+    job_id = _at_claim_check()
+    at = _open_workspace(_app(job_id))
+
+    at.checkbox(key=f"keep_{job_id}_C1").uncheck()
+    at.checkbox(key=f"keep_{job_id}_C2").uncheck().run()
+
+    assert _button(at, "✍️ Write my application →").disabled
+    assert any("Tick at least one claim" in c.value for c in at.caption)
 
 
 def test_claim_check_to_accepted_drafts(fake_app) -> None:
     job_id = _at_claim_check()
     at = _open_workspace(_app(job_id))
 
-    at.checkbox(key=f"keep_{job_id}_C2").uncheck()
-    _button(at, "Confirm claims and write drafts ▶").click().run()
+    at.checkbox(key=f"keep_{job_id}_C2").uncheck().run()
+    _button(at, "✍️ Write my application →").click().run()
 
     assert not at.exception
     view = applications.get_workflow_view(job_id)

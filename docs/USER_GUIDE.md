@@ -63,10 +63,12 @@ is plain Python, so the same assessment always gives the same score.
 
 1. After **Continue to application**, open the **✅ Claim check** tab. It lists the claims your
    application would make about you, for example "Built a RAG chatbot with LangChain".
-2. Claims **backed by your documents** are ticked. Claims with **no evidence** start unticked:
-   tick one only if it's true; the app then remembers it as a fact you confirmed.
-3. Edit any wording, untick what you don't want to say, and click **Confirm claims and write
-   drafts ▶**. The writer only ever sees the claims you kept.
+2. **⚠️ Needs your confirmation** comes first: no document mentions these claims, so they start
+   unticked. Tick one only if it's true; the app then remembers it as a fact you confirmed.
+   **✅ Backed by your documents** are ticked; click **📄 N sources** to see the quotes.
+3. Untick what you don't want to say (it gets struck through), click **✏️** to change the
+   wording (then **Save**), or use **Keep all backed** / **Untick unconfirmed**. Then click
+   **✍️ Write my application →**. The writer only ever sees the claims you kept.
 
 ![The claim check: each claim with a Keep box, editable text, a badge and its evidence](assets/claim_check.png)
 4. The **📝 Documents** tab shows your **CV bullets** and **cover letter**. A fact-checker

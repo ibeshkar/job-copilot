@@ -27,11 +27,16 @@ from app.tools.salary import DISCLAIMER
 from app.ui.components import (
     CONFIDENCE_BADGES,
     STATUS_LABELS,
-    claim_badge,
-    claim_evidence,
+    claim_keys,
+    claim_list,
+    claims_summary,
+    clear_claim_state,
     fit_card,
     guard_issues_box,
+    init_claim_state,
+    kept_claim_text,
     reviewed_claims,
+    set_claims_kept,
 )
 from app.ui.state import BOARD_PAGE, current_job_id, select_job
 
@@ -163,62 +168,83 @@ def _fit_tab(view: WorkflowView) -> None:
 # ---------------------------------------------------------------- claim check tab
 
 
-def _claim_review_form(view: WorkflowView) -> None:
+def _claim_review(view: WorkflowView) -> None:
+    """Header with bulk actions, the flat claim list, and a footer with the one primary action.
+
+    No st.form: the ✏️ / Save / Cancel buttons must rerun the page, which a form doesn't allow.
+    The choices live in st.session_state until the user submits (see init_claim_state).
+    """
+    scope = str(view.job_id)
+    claims = view.claims
+    init_claim_state(claims, scope)
+    backed = [c for c in claims if c.supported]
+    unconfirmed = [c for c in claims if not c.supported]
+
     st.markdown(
         "These are the things your application would say about you. **Untick** anything you "
         "don't want to say, and **edit** the wording if it's not quite right. Only the claims "
         "you keep are used, and the writer never sees the rest."
     )
-    if any(not c.supported for c in view.claims):
-        st.warning(
-            "Claims marked **no evidence** start unticked. Tick one only if it's true; I'll "
-            "remember it as a fact you confirmed.",
-            icon="⚠️",
+    st.markdown(claims_summary(claims))
+    with st.container(horizontal=True, gap="small"):
+        st.button(
+            "Keep all backed",
+            key=f"claims_{scope}_keep_backed",
+            disabled=not backed,
+            on_click=set_claims_kept,
+            args=(backed, scope, True),
         )
-    with st.form(f"claims_{view.job_id}"):
-        for claim in view.claims:
-            with st.container(border=True):
-                keep_col, text_col = st.columns([1, 9])
-                keep_col.checkbox(
-                    "Keep", value=claim.supported, key=f"keep_{view.job_id}_{claim.id}"
-                )
-                text_col.text_area(
-                    f"Claim {claim.id}",
-                    value=claim.text,
-                    key=f"text_{view.job_id}_{claim.id}",
-                    height=68,
-                    label_visibility="collapsed",
-                )
-                text_col.markdown(claim_badge(claim))
-                with text_col.expander("Evidence"):
-                    claim_evidence(claim)
-        submitted = st.form_submit_button(
-            "Confirm claims and write drafts ▶", type="primary", use_container_width=True
+        st.button(
+            "Untick unconfirmed",
+            key=f"claims_{scope}_untick_unconfirmed",
+            disabled=not unconfirmed,
+            on_click=set_claims_kept,
+            args=(unconfirmed, scope, False),
         )
-    if not submitted:
+
+    claim_list(claims, scope)
+
+    kept = {c.id: kept_claim_text(c, scope) for c in claims}
+    selected = sum(text is not None for text in kept.values())
+    st.divider()
+    count_col, button_col = st.columns([3, 2], vertical_alignment="center")
+    count_col.markdown(f"**{selected} of {len(claims)} claims selected**")
+    if any(st.session_state[claim_keys(scope, c.id).editing] for c in claims):
+        count_col.caption("✏️ Save or cancel your open edit; unsaved wording isn't used.")
+    if not selected:
+        count_col.caption("Tick at least one claim: otherwise there's nothing true to write about.")
+    if not button_col.button(
+        "✍️ Write my application →",
+        type="primary",
+        disabled=not selected,
+        use_container_width=True,
+    ):
         return
 
+    # Same payload as before the redesign: remove, approve (unchanged) or edit (new wording).
     decisions = []
-    for claim in view.claims:
-        if not st.session_state[f"keep_{view.job_id}_{claim.id}"]:
+    for claim in claims:
+        text = kept[claim.id]
+        if text is None:
             decisions.append({"id": claim.id, "action": "remove"})
             continue
-        text = st.session_state[f"text_{view.job_id}_{claim.id}"].strip()
         action = "approve" if text == claim.text else "edit"
         decisions.append({"id": claim.id, "action": action, "text": text})
-    _after(
-        _run_with_status(
-            "Writing your drafts…",
-            lambda p: applications.submit_claim_review(view.job_id, decisions, on_progress=p),
-        )
+    result = _run_with_status(
+        "Writing your drafts…",
+        lambda p: applications.submit_claim_review(view.job_id, decisions, on_progress=p),
     )
+    if result.ok:
+        clear_claim_state(claims, scope)
+    _after(result)
 
 
 def _claims_tab(view: WorkflowView) -> None:
     if view.stage == "claim_check":
         if not view.claims:
             st.info("I couldn't find any claims to make. Add context on the Fit tab first.")
-        _claim_review_form(view)
+            return
+        _claim_review(view)
     elif view.claims and any(c.user_decision != "pending" for c in view.claims):
         st.caption("Your decisions at the claim check:")
         reviewed_claims(view.claims, view.new_facts)

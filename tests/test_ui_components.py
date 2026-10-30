@@ -1,10 +1,19 @@
-# What: tests for the pure helpers behind the Fit tab's requirements list (app/ui/components.py).
+# What: tests for the pure helpers behind the Fit tab's requirements list and the claim check
+#       list (app/ui/components.py).
 # Why: the grouping, filter and sort order decide what the user sees first: gaps before
-#      matches, must-haves before nice-to-haves, and no empty groups.
+#      matches, must-haves before nice-to-haves, unconfirmed claims before backed ones, and no
+#      empty groups.
 # Used by: pytest.
 
-from app.agent.state import FitReport, Requirement, RequirementMatch
-from app.ui.components import group_requirements, match_rows, status_badge
+from app.agent.state import Claim, FitReport, Requirement, RequirementMatch
+from app.ui.components import (
+    claim_markdown,
+    claims_summary,
+    group_claims,
+    group_requirements,
+    match_rows,
+    status_badge,
+)
 
 
 def _req(rid: str, importance: str) -> Requirement:
@@ -52,3 +61,28 @@ def test_filters() -> None:
 def test_status_badge() -> None:
     assert status_badge("missing", 2) == ":red-badge[❌ 2 missing]"
     assert status_badge("met") == ":green-badge[✅ Met]"
+
+
+def _claim(cid: str, supported: bool) -> Claim:
+    return Claim(id=cid, text=f"claim {cid}", evidence_chunk_ids=[], supported=supported)
+
+
+def test_claim_groups_are_unconfirmed_first_and_never_empty() -> None:
+    claims = [_claim("C1", True), _claim("C2", False), _claim("C3", True)]
+
+    groups = group_claims(claims)
+
+    assert [(s, [c.id for c in cs]) for s, cs in groups] == [(False, ["C2"]), (True, ["C1", "C3"])]
+    assert [s for s, _ in group_claims(claims[:1])] == [True]
+
+
+def test_claims_summary() -> None:
+    assert claims_summary([_claim("C1", True), _claim("C2", False)]) == (
+        "**2 claims** · ✅ 1 backed by documents · ⚠️ 1 needs your confirmation"
+    )
+
+
+def test_claim_markdown() -> None:
+    assert claim_markdown("Built X", kept=True, edited=False) == "Built X"
+    assert claim_markdown("Built X", kept=True, edited=True) == "Built X :blue-badge[edited]"
+    assert claim_markdown("Built X", kept=False, edited=False) == ":gray[~~Built X~~]"

@@ -127,3 +127,29 @@ per estimate, cached until Refresh.
 - **Known follow-up:** the screenshots `docs/assets/fit_good.png` and `fit_poor.png` still show
   the old list; retake them with the D78 throwaway-runtime script.
 
+
+## Follow-up: claim check redesign (UI only)
+- **What changed:** each claim was a bordered card inside a bordered form, with an always-open
+  text box, a badge and an "Evidence" expander; only ~4 claims fit on a screen. Now: a summary
+  line, *Keep all backed* / *Untick unconfirmed*, one flat list with thin dividers ("⚠️ Needs your
+  confirmation" first, then "✅ Backed by your documents"), one compact row per claim (checkbox,
+  text, "📄 N sources" popover, ✏️ to edit with Save / Cancel) and a footer with "X of N claims
+  selected" and *✍️ Write my application →*. D84.
+- **UX reasoning:** no nested containers (more claims per screen, less noise), edit on demand
+  (most claims are kept as they are), unconfirmed claims first (they're the real decisions),
+  one clear primary action at the end (disabled when nothing is selected).
+- **Files:** `app/ui/components.py` (claim check pieces and state helpers; `evidence_quotes`
+  shared with the requirements popover; `claim_evidence` removed),
+  `app/ui/pages/2_job_workspace.py` (`_claim_review` replaces the form),
+  `tests/test_ui_components.py` (grouping, summary, row markdown), `tests/test_ui_pages.py`
+  (summary and order, edit / Save, bulk buttons, refresh, disabled button, payload).
+- **Problem I hit:** the old `st.form` can't contain normal buttons, so ✏️ / Save / Cancel were
+  impossible inside it. The choices moved to `st.session_state`, defaulted from the graph's saved
+  claims, so a refresh still shows the same claims with the default ticks.
+- **Not changed:** graph, interrupt, and the resume payload.
+- **Try it:** add the *Partial fit* sample job, choose *Continue to application*, open
+  ✅ Claim check. Untick a claim (struck through, count drops), edit one with ✏️ (tag "edited"),
+  open "📄 N sources", try both bulk buttons, untick everything (button disabled), refresh the
+  browser, then write the application and check the Documents tab.
+- **Known follow-up:** `docs/assets/claim_check.png` still shows the old cards; retake it with
+  the D78 throwaway-runtime script.
