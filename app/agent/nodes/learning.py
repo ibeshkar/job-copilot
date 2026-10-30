@@ -53,7 +53,7 @@ def edit_diff(before: Drafts, after: Drafts) -> str:
     bullets = _diff_lines(before.cv_bullets, after.cv_bullets)
     if bullets:
         parts.append("CV bullets:\n" + "\n".join(bullets))
-    letter = _diff_lines(_sentences(before.cover_letter), _sentences(after.cover_letter))
+    letter = _diff_lines(_sentences(before.cover_letter.text), _sentences(after.cover_letter.text))
     if letter:
         parts.append("Cover letter:\n" + "\n".join(letter))
     return "\n\n".join(parts)[:MAX_DIFF_CHARS]

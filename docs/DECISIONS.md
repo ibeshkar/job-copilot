@@ -838,3 +838,41 @@ writer and the guard.
   divider is translucent grey, so both themes work.
 - **Alternative:** `st.data_editor` with a checkbox and an editable text column. Very compact,
   but cells can't show evidence quotes, and long claims are cut off.
+
+
+## D85. Cover letter as a structured `CoverLetter`, exported to PDF with reportlab (Phase 11)
+- **What:** the drafting prompt returns a `CoverLetter` (`app/agent/state.py`): recipient
+  company / department / city / contact name, subject, salutation, 4–6 `body_paragraphs`,
+  closing and sender name, instead of one text block. `finalise_letter()`
+  (`app/agent/nodes/drafting.py`) then fixes the header fields in Python: a contact name is kept
+  only if it appears in the posting (otherwise the salutation becomes "Dear Hiring Team,", or
+  "Sehr geehrte Damen und Herren," for a German letter), the sender is the profile's name, and an
+  empty subject or closing gets a default. The sender's email, phone, LinkedIn and city come from
+  the profile at export time, never from the LLM. `app/services/export.py` turns the letter into
+  an ordered list of `LetterBlock`s once (`letter_blocks()`); the PDF (reportlab), the Word file
+  (python-docx) and the UI preview only style those blocks, with one shared `LetterLayout`
+  (A4, 2.5 cm margins, 11 pt body, 18 pt bold name, line height 1.3).
+- **Why structured:** a layout is only reliable if the code knows which line is the subject and
+  which is the salutation. Guessing that from free text with regex breaks on the first letter
+  that starts differently. Structured fields also let Python enforce the honesty rule for the
+  contact name (an invented "Dear Ms Weber" is worse than a generic greeting) and let the user
+  edit each part separately.
+- **Why reportlab:** pure Python, one dependency, no system packages, deterministic output, and it
+  can tell us the page count, so the exporter tries `LAYOUTS` in order (less spacing first, then
+  10.5 / 10 pt) until the letter fits on one page. Word can't report where its page ends, so the
+  .docx uses the layout that made the PDF fit.
+- **Alternatives:** *HTML-to-PDF* (WeasyPrint, wkhtmltopdf): nicer CSS, but needs native
+  libraries (Pango/Cairo or a binary) that break `uv sync` on a fresh machine. *LibreOffice
+  headless* (DOCX → PDF): the PDF would match the Word file exactly, but it's a 300 MB system
+  install and slow to start. *Free text plus a template*: no reliable layout (see above).
+- **Font:** Liberation Sans (SIL OFL, `app/assets/fonts/` with its licence) is embedded in the
+  PDF so ä, ö, ü, ß and "–" render on every machine. It has Arial's letter widths, so the Word
+  file, set in Arial, breaks lines the same way.
+- **Old drafts:** the `Draft.cover_letter` column now holds the letter as JSON. Older rows and
+  checkpoints hold plain text; `Drafts` accepts a string and `CoverLetter.from_stored()` turns it
+  into body paragraphs with empty salutation and closing, so nothing is added twice. No
+  migration needed. `CoverLetter.text` gives salutation-to-signature as plain text for the
+  fact-checker, the edit diff and the evals.
+- **Trade-offs:** the Word file no longer contains the CV bullets (they're in **📋 Copy as
+  text**); the date is the export date in English format ("22 October 2026") for every letter
+  language; the German fallback is a small word-count heuristic, not a language detector.

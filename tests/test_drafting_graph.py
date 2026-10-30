@@ -16,6 +16,7 @@ from tests.graph_fakes import (
     make_deps,
     make_llm,
     run,
+    with_paragraph,
 )
 
 PYTHON_CLAIM = "Two years of Python and SQL."
@@ -152,9 +153,7 @@ def test_output_guard_flags_injected_fake_claim_and_draft_is_rewritten() -> None
         drafts = answer_drafts(messages)
         calls["n"] += 1
         if calls["n"] == 1:
-            drafts.cover_letter = drafts.cover_letter.replace(
-                "Best regards", f"{FAKE_CLAIM}\nBest regards"
-            )
+            drafts = with_paragraph(drafts, FAKE_CLAIM)
         return drafts
 
     llm = make_llm({Drafts: writer_that_invents_once})
@@ -164,7 +163,7 @@ def test_output_guard_flags_injected_fake_claim_and_draft_is_rewritten() -> None
     # The rewrite prompt told the writer exactly what to drop.
     assert FAKE_CLAIM in drafting_prompts(llm)[1]
     state = graph.get_state(config)
-    assert FAKE_CLAIM not in state.values["drafts"].cover_letter
+    assert FAKE_CLAIM not in state.values["drafts"].cover_letter.text
     assert state.values["guard_issues"] == []
 
 
@@ -255,13 +254,13 @@ def test_accept_with_edits_saves_an_edited_version_and_finishes() -> None:
     memory = FakeMemory()
     graph, config = to_draft_review(make_deps(memory=memory))
     drafts = graph.get_state(config).values["drafts"]
-    edited = drafts.model_copy(update={"cover_letter": drafts.cover_letter + "\nP.S. Thanks!"})
+    edited = with_paragraph(drafts, "P.S. Thanks!")
 
     graph.invoke(Command(resume={"action": "accept", "edited": edited.model_dump()}), config)
 
     state = graph.get_state(config)
     assert state.next == ()
-    assert state.values["user_edits"].cover_letter.endswith("P.S. Thanks!")
+    assert state.values["user_edits"].cover_letter.body_paragraphs[-1] == "P.S. Thanks!"
     assert [edited for _, _, edited in memory.drafts] == [False, True]
 
 

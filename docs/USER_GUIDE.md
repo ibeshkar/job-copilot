@@ -73,10 +73,18 @@ is plain Python, so the same assessment always gives the same score.
 ![The claim check: each claim with a Keep box, editable text, a badge and its evidence](assets/claim_check.png)
 4. The **📝 Documents** tab shows your **CV bullets** and **cover letter**. A fact-checker
    marks any statement it couldn't match to an approved claim.
-5. Edit the texts directly, or use **🔄 Regenerate a section** with an instruction like
-   "shorter" or "more about the RAG project". Your edits to the other section are kept.
+5. Edit the texts directly. The cover letter is split into parts: the recipient (company,
+   department, city), the subject, the salutation, one box per paragraph and the
+   closing. Empty a paragraph to remove it, or write one in **Add a paragraph**. Next to it, a
+   white **preview** shows the letter exactly as the PDF will look. Your name, email, phone,
+   LinkedIn and city at the top come from your profile (**🧠 Memory → Profile**). Or use
+   **🔄 Regenerate a section** with an instruction like "shorter" or "more about the RAG
+   project". Your edits to the other section are kept.
 6. Click **✅ Accept & save**. Every version is saved; see them in the **🗒️ Notes** tab.
-7. **⬇️ Export DOCX** downloads a Word file. **📋 Copy as text** shows plain text to copy.
+7. **⬇️ PDF** downloads the letter as a one-page A4 PDF, ready to send. **⬇️ Word (.docx)**
+   gives the same layout to edit in Word. The files are named like
+   `CoverLetter_Alex_Novak_LumenHealth.pdf`. **📋 Copy as text** shows the CV bullets and the
+   letter as plain text.
 8. Rate the letter and the bullets with 👍 or 👎. After a 👎 you can say what was wrong.
 
 ![The Documents tab: fact check passed, editable CV bullets and cover letter, Accept & save](assets/documents.png)
@@ -198,6 +206,8 @@ appears.
 - **No evidence for any requirement**: your documents may not mention it; use **Add context**
   or upload more documents.
 - **The chat refuses my question**: it only helps with your job search.
+- **"Sorry, I couldn't build the PDF"**: download the letter as **.txt** instead (the button
+  changes) and paste it into your own template. The details are in `data/runtime/app.log`.
 
 ## FAQ
 

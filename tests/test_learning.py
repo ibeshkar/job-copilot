@@ -11,6 +11,7 @@ from langgraph.types import Command
 from app.agent.nodes.drafting import find_avoided_phrases
 from app.agent.nodes.learning import edit_diff, is_duplicate, propose_rules
 from app.agent.state import (
+    CoverLetter,
     Drafts,
     ProposedStyleRule,
     StyleRule,
@@ -29,7 +30,9 @@ from tests.graph_fakes import (
     make_deps,
     make_llm,
     passionate_writer,
+    replace_in_letter,
     run,
+    with_paragraph,
 )
 
 KEEP_TWO = [
@@ -159,13 +162,9 @@ def test_accepting_an_edit_learns_and_remembers_a_rule() -> None:
     llm = make_llm({Drafts: passionate_writer})
     graph, config = _to_draft_review(make_deps(llm, memory=memory))
     drafts = graph.get_state(config).values["drafts"]
-    assert PASSIONATE in drafts.cover_letter
+    assert PASSIONATE in drafts.cover_letter.text
 
-    edited = drafts.model_copy(
-        update={
-            "cover_letter": drafts.cover_letter.replace(PASSIONATE, "I enjoy building AI products.")
-        }
-    )
+    edited = replace_in_letter(drafts, PASSIONATE, "I enjoy building AI products.")
     _accept(graph, config, edited)
 
     state = graph.get_state(config)
@@ -194,18 +193,17 @@ def test_a_failed_learning_call_does_not_block_acceptance() -> None:
     graph, config = _to_draft_review(make_deps(llm, memory=memory))
     drafts = graph.get_state(config).values["drafts"]
 
-    _accept(graph, config, drafts.model_copy(update={"cover_letter": "My own letter."}))
+    own = CoverLetter.from_text("My own letter.")
+    _accept(graph, config, drafts.model_copy(update={"cover_letter": own}))
 
     assert graph.get_state(config).next == ()
     assert memory.rules == []
-    assert memory.drafts[-1][1].cover_letter == "My own letter."  # still saved
+    assert memory.drafts[-1][1].cover_letter == own  # still saved
 
 
 def test_banned_word_in_a_new_draft_is_rewritten_once_then_highlighted() -> None:
     def stubborn_writer(messages) -> Drafts:
-        drafts = answer_drafts(messages)
-        drafts.cover_letter += "\nI am Passionate about it."
-        return drafts
+        return with_paragraph(answer_drafts(messages), "I am Passionate about it.")
 
     memory = FakeMemory(rules=[])
     memory.rules.append(_rule("Avoid the word 'passionate'", ["passionate"]))
@@ -230,12 +228,8 @@ def test_done_when_removing_passionate_creates_a_rule_the_next_letter_follows(fa
     applications.submit_fit_review(first, "continue")
     applications.submit_claim_review(first, KEEP_TWO)
     drafts = applications.get_workflow_view(first).drafts
-    assert PASSIONATE in drafts.cover_letter
-    edited = drafts.model_copy(
-        update={
-            "cover_letter": drafts.cover_letter.replace(PASSIONATE, "I enjoy building AI products.")
-        }
-    )
+    assert PASSIONATE in drafts.cover_letter.text
+    edited = replace_in_letter(drafts, PASSIONATE, "I enjoy building AI products.")
     progress: list[str] = []
     assert applications.submit_draft_review(
         first, "accept", edited=edited, on_progress=progress.append
@@ -253,7 +247,7 @@ def test_done_when_removing_passionate_creates_a_rule_the_next_letter_follows(fa
     applications.submit_fit_review(second, "continue")
     applications.submit_claim_review(second, KEEP_TWO)
     view = applications.get_workflow_view(second)
-    assert "passionate" not in view.drafts.cover_letter.lower()
+    assert "passionate" not in view.drafts.cover_letter.text.lower()
     assert view.guard_issues == []
 
 

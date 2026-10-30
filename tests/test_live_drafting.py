@@ -58,11 +58,14 @@ def test_full_flow_to_docx_without_removed_claim(demo_app) -> None:
     assert applications.submit_draft_review(job_id, "accept").ok
 
     drafts = applications.latest_drafts(job_id)
-    file = applications.export_drafts(job_id, drafts)
+    file = applications.export_cover_letter(job_id, drafts.cover_letter, "docx")
     assert file.file_name.endswith(".docx")
     text = "\n".join(p.text for p in Document(io.BytesIO(file.data)).paragraphs)
-    assert drafts.cv_bullets[0] in text
-    print(f"\nREMOVED: {removed.text}\nGUARD: {view.guard_issues}\n\n{drafts.cover_letter}")
+    assert drafts.cover_letter.body_paragraphs[0] in text
+    assert 4 <= len(drafts.cover_letter.body_paragraphs) <= 6
+    pdf = applications.export_cover_letter(job_id, drafts.cover_letter, "pdf")
+    assert pdf.data.startswith(b"%PDF") and not pdf.fell_back
+    print(f"\nREMOVED: {removed.text}\nGUARD: {view.guard_issues}\n\n{drafts.cover_letter.text}")
 
 
 @pytest.mark.live

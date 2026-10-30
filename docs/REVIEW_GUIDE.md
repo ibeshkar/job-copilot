@@ -284,6 +284,19 @@ application*, disabled with nothing selected). UI only: the interrupt and the re
 Cancel need reruns, so choices are kept in `st.session_state`, defaulted from the graph's saved
 claims, which is why a refresh still works (`app/ui/components.py` → `claim_list()`, D84).
 
+**Why is the cover letter a Pydantic model instead of text, and why reportlab for the PDF?**
+A layout is only reliable if the code knows which line is the subject and which is the
+salutation, so the drafting prompt returns a `CoverLetter` (recipient block, subject,
+salutation, 4–6 paragraphs, closing). That also lets Python enforce honesty where the LLM might
+not: a contact name is kept only if it appears in the posting, otherwise "Dear Hiring Team,",
+and the sender's name and contact details come from the profile, never the model
+(`finalise_letter()` in `app/agent/nodes/drafting.py`). `letter_blocks()` in
+`app/services/export.py` decides every line once; the PDF, the Word file and the preview only
+style them with one shared `LetterLayout`. reportlab is pure Python (HTML-to-PDF needs native
+libraries, LibreOffice is a 300 MB install) and reports the page count, so the exporter
+shrinks spacing, then font size, until the letter fits on one page. An embedded Liberation Sans
+font makes umlauts work everywhere. Old plain-text drafts still load as body paragraphs (D85).
+
 **How does `interrupt()` work with Streamlit, which reruns the whole script on every click?**
 Nothing important lives in Streamlit's memory. The graph's state is saved in SQLite under
 `thread_id = job-<id>`. On every rerun, `app/services/applications.py` → `get_workflow_view()`

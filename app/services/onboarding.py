@@ -29,6 +29,8 @@ DEMO_PROFILE = Profile(
     work_authorisation="EU citizen, no visa needed in the EU",
     languages=["Czech native", "English C1", "German A2"],
     salary_expectations="€50,000 – €60,000",
+    email="alex.novak@example.com",
+    city="Berlin, Germany",
 )
 DEMO_PREFERENCES = Preferences(
     tone="friendly",

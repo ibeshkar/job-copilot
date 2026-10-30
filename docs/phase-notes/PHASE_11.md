@@ -153,3 +153,32 @@ per estimate, cached until Refresh.
   browser, then write the application and check the Documents tab.
 - **Known follow-up:** `docs/assets/claim_check.png` still shows the old cards; retake it with
   the D78 throwaway-runtime script.
+
+
+## Follow-up: cover letter PDF export and a structured letter
+- **What changed:** the drafting prompt returns a `CoverLetter` (recipient block, subject,
+  salutation, 4–6 paragraphs, closing, sender) instead of one text block; Python checks the
+  contact name against the posting and falls back to "Dear Hiring Team,". The Documents tab
+  edits each part separately, shows a white "paper" preview, and offers **⬇️ PDF** (primary)
+  and **⬇️ Word (.docx)** with the same layout (A4, 2.5 cm margins, 11 pt Liberation Sans /
+  Arial, 18 pt bold name, grey contact line, recipient, date, bold subject). The letter fits on
+  one page: spacing shrinks first, then the font. If an export fails, the button offers a .txt.
+  The profile got optional email, phone, LinkedIn and city fields. D85.
+- **New dependency:** `reportlab` (PDF). Font: Liberation Sans in `app/assets/fonts/` (OFL).
+- **Files:** `app/agent/state.py` (`CoverLetter`, `Drafts` accepts old plain text),
+  `app/agent/prompts.py`, `app/agent/nodes/drafting.py` (`finalise_letter`),
+  `app/services/export.py` (rewritten: `letter_blocks`, `LetterLayout`, PDF, DOCX, .txt
+  fallback), `app/services/applications.py` (`export_cover_letter`, `cover_letter_blocks`;
+  `export_drafts` removed), `app/memory/store.py` + `app/ui/components.py` (contact fields),
+  `app/ui/pages/2_job_workspace.py` (letter editor, preview, downloads), `evals/runners.py`,
+  `tests/test_export.py` (rewritten) and the tests that used the letter as a string.
+- **Problems I hit:** (1) `Drafts.cover_letter` was a string in ~30 places (fact-checker, edit
+  diff, evals, tests); the new `CoverLetter.text` gives the old plain text where it's needed.
+  (2) reportlab listed Helvetica in every PDF as the canvas's starting font even though no text
+  used it; `initialFontName` fixes that. (3) Old drafts: the DB column and checkpoints keep
+  plain text, so `Drafts` turns a string into body paragraphs without adding a second
+  salutation or signature.
+- **Try it:** use the demo persona, add the *Good fit* sample job, go through the claim check,
+  then in 📝 Documents change the subject and a paragraph, watch the preview, and download both
+  files. A sample from a real run is in `data/runtime/CoverLetter_Alex_Novak_LumenHealthGmbH.pdf`.
+- **Known follow-up:** `docs/assets/documents.png` still shows the single text box; retake it.

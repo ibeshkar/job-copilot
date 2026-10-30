@@ -24,6 +24,7 @@ from app.agent.interview_graph import interview_thread_id
 from app.agent.state import (
     Claim,
     ClaimReviewDecision,
+    CoverLetter,
     DraftReviewDecision,
     Drafts,
     FitReport,
@@ -37,9 +38,10 @@ from app.config import PROJECT_ROOT, get_settings
 from app.db import repo
 from app.db.models import Draft, Job, JobStatus
 from app.guards.input_guard import looks_like_url
+from app.memory.store import get_profile
+from app.services import export
 from app.services.company import forget_research
-from app.services.export import ExportFile
-from app.services.export import export_drafts as _export
+from app.services.export import ExportFile, LetterBlock
 from app.services.observability import track_run
 from app.utils.errors import AppError, ConfigError, NotFoundError, friendly_message
 from app.utils.logging import get_logger, log_exception
@@ -437,7 +439,11 @@ def save_draft_version(job_id: int, drafts: Drafts, is_user_edited: bool = False
     """Save drafts as the job's next version in the Draft table."""
     with repo.session_scope() as session:
         repo.add_draft(
-            session, job_id, drafts.cv_bullets, drafts.cover_letter, is_user_edited=is_user_edited
+            session,
+            job_id,
+            drafts.cv_bullets,
+            drafts.cover_letter.model_dump_json(),
+            is_user_edited=is_user_edited,
         )
 
 
@@ -446,7 +452,7 @@ def _version(row: Draft) -> DraftVersion:
         version=row.version,
         drafts=Drafts(
             cv_bullets=json.loads(row.cv_bullets_json),
-            cover_letter=row.cover_letter,
+            cover_letter=row.cover_letter,  # JSON, or plain text in versions saved before
             used_claim_ids=[],
         ),
         is_user_edited=row.is_user_edited,
@@ -485,11 +491,22 @@ def rate_drafts(job_id: int, target: str, rating: int, comment: str = "") -> Non
         repo.add_feedback(session, target, rating, comment, job_id=job_id)
 
 
-def export_drafts(job_id: int, drafts: Drafts) -> ExportFile:
-    """The drafts as a .docx download (or .txt if Word export fails)."""
+def _complete_letter(job_id: int, letter: CoverLetter) -> CoverLetter:
     with repo.session_scope() as session:
         row = repo.get_job(session, job_id)
-    return _export(drafts, row.title, row.company)
+    return export.fill_missing(letter, row.title, row.company)
+
+
+def cover_letter_blocks(job_id: int, letter: CoverLetter) -> list[LetterBlock]:
+    """The letter's lines as the PDF shows them (for the preview on the Documents tab)."""
+    return export.letter_blocks(_complete_letter(job_id, letter), get_profile())
+
+
+def export_cover_letter(
+    job_id: int, letter: CoverLetter, kind: Literal["pdf", "docx"]
+) -> ExportFile:
+    """The cover letter as a PDF or .docx download (or .txt if that export fails)."""
+    return export.export_cover_letter(_complete_letter(job_id, letter), get_profile(), kind)
 
 
 # ---------------------------------------------------------------- board

@@ -10,17 +10,18 @@
 # Used by: app/main.py (st.navigation). Work is done by app/services/applications.py,
 #          company.py, salary.py, interview.py and learning.py.
 
+import html
 import re
 
 import streamlit as st
 
-from app.agent.state import Drafts, InterviewTurn
+from app.agent.state import CoverLetter, Drafts, InterviewTurn
 from app.config import get_settings
 from app.db.models import JobStatus
 from app.guards.input_guard import MAX_ANSWER_CHARS
 from app.services import applications, company, interview, learning, salary
 from app.services.applications import RunResult, WorkflowView
-from app.services.export import drafts_to_text
+from app.services.export import LAYOUT, ExportFile, LetterBlock, drafts_to_text
 from app.services.interview import InterviewView
 from app.services.learning import LearnedRule
 from app.tools.salary import DISCLAIMER
@@ -61,6 +62,14 @@ TARGET_NAMES = {"letter": "cover letter", "bullets": "CV bullets"}
 KIND_LABELS = {"behavioural": "Behavioural", "technical": "Technical", "gap": "About a gap"}
 STAR = ["situation", "task", "action", "result"]
 TOASTED_KEY = "learned_rules_toasted"  # rule keys already announced with a toast
+# The recipient block, as (CoverLetter field, label) for the editor. A contact person only
+# appears in the salutation, which has its own input.
+RECIPIENT_FIELDS = [
+    ("recipient_company", "Company"),
+    ("recipient_department", "Department (e.g. Recruiting – Data team)"),
+    ("recipient_city_country", "City, country"),
+]
+PX_PER_PT = 1.2  # the preview's "paper" is a bit smaller than the printed page
 
 
 def _run_with_status(label: str, action) -> RunResult:
@@ -258,24 +267,93 @@ def _claims_tab(view: WorkflowView) -> None:
 # ---------------------------------------------------------------- documents tab
 
 
-def _drafts_from_inputs(prefix: str, used_claim_ids: list[str]) -> Drafts:
-    """Read the edited drafts back from the text areas (one bullet per line)."""
-    bullet_lines = st.session_state[f"bullets_{prefix}"].splitlines()
-    return Drafts(
-        cv_bullets=[b for b in (re.sub(r"^\s*[-•*]\s*", "", x).strip() for x in bullet_lines) if b],
-        cover_letter=st.session_state[f"letter_{prefix}"].strip(),
-        used_claim_ids=used_claim_ids,
+def _letter_key(prefix: str, field: str) -> str:
+    return f"letter_{field}_{prefix}"
+
+
+def _letter_from_inputs(prefix: str, letter: CoverLetter) -> CoverLetter:
+    """Read the edited letter back from its inputs. An emptied paragraph is dropped."""
+    state = st.session_state
+    paragraphs = [state[_letter_key(prefix, f"p{i}")] for i in range(len(letter.body_paragraphs))]
+    paragraphs.append(state[_letter_key(prefix, "p_new")])
+    fields = {name: state[_letter_key(prefix, name)].strip() for name, _ in RECIPIENT_FIELDS}
+    return letter.model_copy(
+        update={
+            **{name: value or None for name, value in fields.items()},
+            "recipient_company": fields["recipient_company"],
+            "subject": state[_letter_key(prefix, "subject")].strip(),
+            "salutation": state[_letter_key(prefix, "salutation")].strip(),
+            "body_paragraphs": [p.strip() for p in paragraphs if p.strip()],
+            "closing": state[_letter_key(prefix, "closing")].strip(),
+        }
     )
 
 
-def _draft_editors(drafts: Drafts, prefix: str) -> None:
+def _letter_editor(letter: CoverLetter, prefix: str) -> None:
+    st.caption("Your name and contact details come from your profile (🧠 Memory page).")
+    columns = st.columns(2)
+    for i, (name, label) in enumerate(RECIPIENT_FIELDS):
+        columns[i % 2].text_input(
+            label, value=getattr(letter, name) or "", key=_letter_key(prefix, name)
+        )
+    st.text_input("Subject", value=letter.subject, key=_letter_key(prefix, "subject"))
+    st.text_input("Salutation", value=letter.salutation, key=_letter_key(prefix, "salutation"))
+    for i, paragraph in enumerate(letter.body_paragraphs):
+        st.text_area(
+            f"Paragraph {i + 1}",
+            value=paragraph,
+            height=110,
+            key=_letter_key(prefix, f"p{i}"),
+            help="Empty a paragraph to remove it.",
+        )
+    st.text_area("Add a paragraph (optional)", height=80, key=_letter_key(prefix, "p_new"))
+    st.text_input("Closing", value=letter.closing, key=_letter_key(prefix, "closing"))
+
+
+def _letter_preview(blocks: list[LetterBlock]) -> None:
+    """A white "paper" card with the letter's lines in the PDF's order, sizes and gaps."""
+    lines = []
+    for block in blocks:
+        size = LAYOUT.size(block.kind) * PX_PER_PT
+        weight = "bold" if block.kind in ("name", "subject") else "normal"
+        colour = "#666" if block.kind == "contact" else "#111"
+        style = (
+            f"margin:{LAYOUT.gap_before(block.kind) * PX_PER_PT:.0f}px 0 0;font-size:{size:.1f}px;"
+            f"line-height:{1.2 if block.kind == 'name' else LAYOUT.line_spacing};"
+            f"font-weight:{weight};color:{colour}"
+        )
+        text = html.escape(block.text).replace("\n", "<br>")
+        lines.append(f'<p style="{style}">{text}</p>')
+    st.markdown(
+        '<div style="background:#fff;padding:40px 44px;border-radius:4px;'
+        "box-shadow:0 1px 6px rgba(0,0,0,.25);font-family:Helvetica,Arial,sans-serif;"
+        f'text-align:left">{"".join(lines)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _draft_editors(job_id: int, drafts: Drafts, prefix: str, used_claim_ids: list[str]) -> Drafts:
+    """The bullet editor, the letter editor and a live preview. Returns the edited drafts."""
     st.text_area(
         "CV bullets (one per line)",
         value="\n".join(f"- {b}" for b in drafts.cv_bullets),
         height=180,
         key=f"bullets_{prefix}",
     )
-    st.text_area("Cover letter", value=drafts.cover_letter, height=380, key=f"letter_{prefix}")
+    st.markdown("##### Cover letter")
+    edit_col, preview_col = st.columns(2, gap="large")
+    with edit_col:
+        _letter_editor(drafts.cover_letter, prefix)
+    letter = _letter_from_inputs(prefix, drafts.cover_letter)
+    with preview_col:
+        st.caption("Preview (the PDF and Word files look like this)")
+        _letter_preview(applications.cover_letter_blocks(job_id, letter))
+    bullet_lines = st.session_state[f"bullets_{prefix}"].splitlines()
+    return Drafts(
+        cv_bullets=[b for b in (re.sub(r"^\s*[-•*]\s*", "", x).strip() for x in bullet_lines) if b],
+        cover_letter=letter,
+        used_claim_ids=used_claim_ids,
+    )
 
 
 def _session_learned_key(job_id: int) -> str:
@@ -342,17 +420,33 @@ def _thumbs_down_form(job_id: int, target: str, key: str) -> None:
     st.rerun()
 
 
-def _export_copy_rate(job_id: int, drafts: Drafts, prefix: str) -> None:
-    card = applications.get_job_summary(job_id)
-    file = applications.export_drafts(job_id, drafts)
-    export_col, rate_letter, rate_bullets = st.columns([2, 1, 1])
-    export_col.download_button(
-        "⬇️ Export DOCX" if file.file_name.endswith(".docx") else "⬇️ Export .txt",
+def _download(column, file: ExportFile, label: str, primary: bool) -> None:
+    column.download_button(
+        "⬇️ Letter (.txt)" if file.fell_back else label,
         data=file.data,
         file_name=file.file_name,
         mime=file.mime,
+        type="primary" if primary else "secondary",
         on_click="ignore",
+        key=f"download_{label}",
     )
+
+
+def _export_copy_rate(job_id: int, drafts: Drafts, prefix: str) -> None:
+    card = applications.get_job_summary(job_id)
+    pdf = applications.export_cover_letter(job_id, drafts.cover_letter, "pdf")
+    docx = applications.export_cover_letter(job_id, drafts.cover_letter, "docx")
+    pdf_col, docx_col, rate_letter, rate_bullets = st.columns(4)
+    _download(pdf_col, pdf, "⬇️ PDF", primary=True)
+    _download(docx_col, docx, "⬇️ Word (.docx)", primary=False)
+    if pdf.fell_back or docx.fell_back:
+        st.warning(
+            "Sorry, I couldn't build the "
+            + " and ".join(n for n, f in (("PDF", pdf), ("Word file", docx)) if f.fell_back)
+            + ". You can still download your letter as a .txt file and paste it into your "
+            "own template.",
+            icon="⚠️",
+        )
     for col, target in ((rate_letter, "letter"), (rate_bullets, "bullets")):
         col.caption(f"Rate the {target}")
         key = f"rate_{target}_{prefix}"
@@ -371,8 +465,7 @@ def _draft_review(view: WorkflowView) -> None:
     prefix = f"{view.job_id}_{versions[0].version if versions else 0}"
     _learned_rules_box(view)
     guard_issues_box(view.guard_issues)
-    _draft_editors(view.drafts, prefix)
-    edited = _drafts_from_inputs(prefix, view.drafts.used_claim_ids)
+    edited = _draft_editors(view.job_id, view.drafts, prefix, view.drafts.used_claim_ids)
 
     if st.button("✅ Accept & save", type="primary", use_container_width=True):
         _after(
@@ -421,8 +514,7 @@ def _accepted_drafts(view: WorkflowView) -> None:
     prefix = f"{view.job_id}_{latest.version}"
     st.success("You accepted these drafts. You can still edit them; each save is a new version.")
     _learned_rules_box(view)
-    _draft_editors(latest.drafts, prefix)
-    edited = _drafts_from_inputs(prefix, [])
+    edited = _draft_editors(view.job_id, latest.drafts, prefix, [])
     if st.button("💾 Save changes"):
         saved = applications.save_edited_drafts(view.job_id, edited)
         st.toast("Saved as a new version." if saved else "Nothing changed.")
@@ -796,7 +888,7 @@ def _notes_tab(job_id: int) -> None:
         who = "your edit" if v.is_user_edited else "AI draft"
         with st.expander(f"Version {v.version} · {who} · {v.created_at:%d %b %Y %H:%M}"):
             st.markdown("\n".join(f"- {b}" for b in v.drafts.cv_bullets))
-            st.text(v.drafts.cover_letter)
+            st.text(v.drafts.cover_letter.text)
 
 
 # ---------------------------------------------------------------- page

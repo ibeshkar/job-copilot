@@ -278,8 +278,15 @@ Rules:
 - Don't conclude new skills from a claim. "Processed documents into chunks" must not become
   "this gave me the skills to design RAG pipelines". Say what was done, not what it proves.
 - CV bullets: 3-6 bullets, each starts with a past-tense verb and is based on approved claims.
-- Cover letter: 3-4 paragraphs, at most {{max_words}} words. Open with why this role, show the
-  best-matching claims, and close with a short call to action. Sign with the candidate's name.
+- Cover letter: 4-6 short body_paragraphs, at most {{max_words}} words in total. Open with why
+  this role, show the best-matching claims, and close with a short call to action. The
+  paragraphs hold no salutation, closing or signature: those have their own fields.
+- recipient_name: only a contact person whose name appears in <job_posting>. Never invent one.
+  Without it, the salutation is "Dear Hiring Team," (in the letter's language).
+- recipient_department: "Recruiting – <team>" only if the posting names the team, else null.
+  recipient_city_country: the job's city and country, e.g. "Berlin, Germany", else null.
+- subject: "Application: <job title> – <company>". closing: "Kind regards,".
+  Write these in the letter's language too.
 - Gaps in <known_gaps>: don't claim them. You may mention, honestly, that the candidate is
   learning a skill, only if the gap note says so; otherwise leave the gap out.
 - No placeholders like [Company] or [Your name].

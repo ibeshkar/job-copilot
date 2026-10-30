@@ -1,8 +1,9 @@
-# What: the writing steps. `draft_materials` writes CV bullets and a cover letter from the
-#       approved claims only; `output_guard` has a second LLM call list any statement about the
-#       candidate that no approved claim backs, and checks in Python that no removed claim and
-#       no word banned by a style rule appears; `draft_review` pauses so the user can edit,
-#       regenerate one section, or accept.
+# What: the writing steps. `draft_materials` writes CV bullets and a structured cover letter
+#       from the approved claims only, then fixes the letter's header fields in Python;
+#       `output_guard` has a second LLM call list any statement about the candidate that no
+#       approved claim backs, and checks in Python that no removed claim and no word banned by
+#       a style rule appears; `draft_review` pauses so the user can edit, regenerate one
+#       section, or accept.
 # Why: the drafting prompt never sees removed or unapproved claims, and the guard catches what
 #      the writer adds on its own. If the guard still finds problems after one rewrite, they are
 #      highlighted for the user instead of looping forever.
@@ -18,9 +19,11 @@ from app.agent.prompts import draft_writer_messages, output_guard_messages
 from app.agent.state import (
     ApplicationState,
     Claim,
+    CoverLetter,
     DraftReviewDecision,
     Drafts,
     GuardReport,
+    JobPosting,
     StyleRule,
     UnsupportedStatement,
 )
@@ -28,6 +31,11 @@ from app.memory.store import Profile
 
 MAX_DRAFT_ATTEMPTS = 2  # first draft + one rewrite after the guard complains (§6.1)
 SAME_AS_POSTING = "Same as the job posting"
+FALLBACK_SALUTATION = "Dear Hiring Team,"
+FALLBACK_SALUTATION_DE = "Sehr geehrte Damen und Herren,"
+FALLBACK_CLOSING = "Kind regards,"
+_GERMAN_WORDS = {"und", "ich", "die", "der", "das", "mit", "für", "nicht", "sie", "bei", "ihr"}
+_ENGLISH_WORDS = {"and", "i", "the", "with", "for", "not", "you", "at", "to", "of", "your"}
 
 # ---------------------------------------------------------------- prompt blocks
 
@@ -62,7 +70,7 @@ def _gaps_block(state: ApplicationState) -> str:
 def drafts_as_text(drafts: Drafts, section: str | None = None) -> str:
     """Drafts as plain text: both sections, or only "cover_letter" / "cv_bullets"."""
     bullets = "CV bullets:\n" + "\n".join(f"- {b}" for b in drafts.cv_bullets)
-    letter = f"Cover letter:\n{drafts.cover_letter}"
+    letter = f"Cover letter:\n{drafts.cover_letter.text}"
     if section == "cv_bullets":
         return bullets
     if section == "cover_letter":
@@ -74,6 +82,43 @@ def _clean_bullets(bullets: list[str]) -> list[str]:
     # Models sometimes add their own "- " or "• " although the list is already structured.
     cleaned = (re.sub(r"^\s*[-•*]\s*", "", b).strip() for b in bullets)
     return [b for b in cleaned if b]
+
+
+def _looks_german(text: str) -> bool:
+    words = re.findall(r"\w+", text.lower())
+    return sum(w in _GERMAN_WORDS for w in words) > sum(w in _ENGLISH_WORDS for w in words)
+
+
+def _normalised(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def finalise_letter(letter: CoverLetter, job: JobPosting, profile: Profile | None) -> CoverLetter:
+    """Fix the letter's header fields in Python instead of trusting the model with them.
+
+    A contact name is kept only if it really appears in the posting; without one the
+    salutation is the generic fallback. The sender is the profile's name. Empty fields get
+    sensible defaults, so the export never shows a blank subject or closing.
+    """
+    body = [p.strip() for p in letter.body_paragraphs if p.strip()]
+    name = (letter.recipient_name or "").strip()
+    if not name or _normalised(name) not in _normalised(job.raw_text):
+        name = ""
+    salutation = letter.salutation.strip()
+    if not name or not salutation:
+        german = _looks_german(" ".join(body))
+        salutation = FALLBACK_SALUTATION_DE if german else FALLBACK_SALUTATION
+    return CoverLetter(
+        recipient_company=letter.recipient_company.strip() or job.company,
+        recipient_department=(letter.recipient_department or "").strip() or None,
+        recipient_city_country=(letter.recipient_city_country or "").strip() or None,
+        recipient_name=name or None,
+        subject=letter.subject.strip() or f"Application: {job.title} – {job.company}",
+        salutation=salutation,
+        body_paragraphs=body,
+        closing=letter.closing.strip() or FALLBACK_CLOSING,
+        sender_name=profile.name if profile else letter.sender_name.strip(),
+    )
 
 
 # ---------------------------------------------------------------- nodes
@@ -92,6 +137,7 @@ def draft_materials(state: ApplicationState, deps: GraphDeps) -> dict:
     current = state.get("drafts")
     issues = state.get("guard_issues") or []
     job = state["job"]
+    profile = deps.get_profile()
     language = (
         "the same language as the job posting"
         if preferences.letter_language == SAME_AS_POSTING
@@ -105,7 +151,7 @@ def draft_materials(state: ApplicationState, deps: GraphDeps) -> dict:
             job_summary=f"{job.title} at {job.company} ({job.location or 'location not stated'}). "
             f"{job.summary}\n\n{job.raw_text[:6000]}",
             claims_block=claims_block(claims),
-            basics_block=basics_block(deps.get_profile()),
+            basics_block=basics_block(profile),
             gaps_block=_gaps_block(state),
             tone=preferences.tone,
             letter_length=preferences.letter_length,
@@ -118,7 +164,7 @@ def draft_materials(state: ApplicationState, deps: GraphDeps) -> dict:
     )
     drafts = Drafts(
         cv_bullets=_clean_bullets(answer.cv_bullets),
-        cover_letter=answer.cover_letter.strip(),
+        cover_letter=finalise_letter(answer.cover_letter, job, profile),
         # Only ids of approved claims count; anything else the model lists is dropped.
         used_claim_ids=[i for i in dict.fromkeys(answer.used_claim_ids) if i in approved_ids],
     )

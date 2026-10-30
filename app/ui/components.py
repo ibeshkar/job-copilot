@@ -539,6 +539,15 @@ def profile_form(profile: Profile, key: str, submit_label: str) -> Profile | Non
         salary = st.text_input(
             "Salary expectations (optional)", value=profile.salary_expectations or ""
         )
+        st.caption("Contact details for the top of your cover letters (optional)")
+        email_col, phone_col = st.columns(2)
+        email = email_col.text_input("Email", value=profile.email)
+        phone = phone_col.text_input("Phone", value=profile.phone)
+        linkedin_col, city_col = st.columns(2)
+        linkedin = linkedin_col.text_input(
+            "LinkedIn", value=profile.linkedin, placeholder="linkedin.com/in/your-name"
+        )
+        city = city_col.text_input("City", value=profile.city, placeholder="Berlin, Germany")
         submitted = st.form_submit_button(submit_label, type="primary")
 
     if not submitted:
@@ -554,6 +563,10 @@ def profile_form(profile: Profile, key: str, submit_label: str) -> Profile | Non
         work_authorisation=work_auth.strip(),
         languages=split_list(languages),
         salary_expectations=salary.strip() or None,
+        email=email.strip(),
+        phone=phone.strip(),
+        linkedin=linkedin.strip(),
+        city=city.strip(),
     )
 
 

@@ -224,17 +224,23 @@ def test_claim_check_to_accepted_drafts(fake_app) -> None:
     assert not at.exception
     view = applications.get_workflow_view(job_id)
     assert view.stage == "draft_review"
-    assert "RAG chatbot" not in view.drafts.cover_letter  # the unticked claim is not used
-    letter = at.text_area(key=f"letter_{job_id}_1")
-    assert letter.value == view.drafts.cover_letter
+    letter = view.drafts.cover_letter
+    assert "RAG chatbot" not in letter.text  # the unticked claim is not used
+    assert at.text_area(key=f"letter_p0_{job_id}_1").value == letter.body_paragraphs[0]
+    assert at.text_input(key=f"letter_salutation_{job_id}_1").value == "Dear Hiring Team,"
     assert any("Fact check passed" in s.value for s in at.success)
+    preview = next(m.value for m in at.markdown if "background:#fff" in m.value)
+    assert preview.index("Lumen Health") < preview.index("Dear Hiring Team,")
 
-    letter.input(letter.value + "\nP.S. I can start in May.").run()
+    at.text_area(key=f"letter_p_new_{job_id}_1").input("P.S. I can start in May.").run()
+    at.text_input(key=f"letter_subject_{job_id}_1").input("Application: AI Engineer").run()
     _button(at, "✅ Accept & save").click().run()
 
     assert not at.exception
     assert applications.get_workflow_view(job_id).stage == "finished"
-    assert applications.latest_drafts(job_id).cover_letter.endswith("I can start in May.")
+    saved = applications.latest_drafts(job_id).cover_letter
+    assert saved.body_paragraphs[-1] == "P.S. I can start in May."
+    assert saved.subject == "Application: AI Engineer"
 
 
 def test_notes_are_saved(fake_app) -> None:
@@ -521,7 +527,7 @@ def test_documents_tab_shows_a_learned_rule_with_undo(fake_app) -> None:
         job_id, [{"id": "C1", "action": "approve"}, {"id": "C2", "action": "approve"}]
     )
     at = _open_workspace(_app(job_id))
-    letter = at.text_area(key=f"letter_{job_id}_1")
+    letter = at.text_area(key=f"letter_p2_{job_id}_1")  # the writer adds it as paragraph 3
     assert PASSIONATE in letter.value
 
     letter.input(letter.value.replace(PASSIONATE, "I enjoy building AI products.")).run()

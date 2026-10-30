@@ -17,6 +17,7 @@ from app.agent.state import (
     AnswerFeedback,
     ChunkGrade,
     ClaimPlan,
+    CoverLetter,
     Drafts,
     Evidence,
     ExtractedRequirement,
@@ -125,7 +126,7 @@ def _tag(messages, tag: str) -> str:
 
 UNSUPPORTED_CLAIM = "Led a team of five engineers."
 PASSIONATE = "I am passionate about building AI products."
-GREETING, CLOSING = "Dear Lumen Health team,", "Best regards, Alex"
+GREETING, CLOSING = "Dear Hiring Team,", "Best regards,"
 
 
 def answer_claims(messages) -> ClaimPlan:
@@ -144,11 +145,39 @@ def approved_claims(messages) -> dict[str, str]:
 
 
 def answer_drafts(messages) -> Drafts:
-    """A "writer" that uses every approved claim word for word, one per line."""
+    """A "writer" that uses every approved claim word for word, one paragraph each."""
     approved = approved_claims(messages)
-    letter = "\n".join([GREETING, "", *approved.values(), "", CLOSING])
+    letter = CoverLetter(
+        recipient_company="Lumen Health",
+        recipient_department=None,
+        recipient_city_country="Berlin, Germany",
+        recipient_name=None,
+        subject="Application: Junior AI Engineer – Lumen Health",
+        salutation=GREETING,
+        body_paragraphs=list(approved.values()),
+        closing=CLOSING,
+        sender_name="Alex",
+    )
     return Drafts(
         cv_bullets=list(approved.values()), cover_letter=letter, used_claim_ids=list(approved)
+    )
+
+
+def replace_in_letter(drafts: Drafts, old: str, new: str) -> Drafts:
+    """A copy of the drafts with `old` replaced by `new` in every letter paragraph."""
+    letter = drafts.cover_letter
+    paragraphs = [p.replace(old, new) for p in letter.body_paragraphs]
+    return drafts.model_copy(
+        update={"cover_letter": letter.model_copy(update={"body_paragraphs": paragraphs})}
+    )
+
+
+def with_paragraph(drafts: Drafts, paragraph: str) -> Drafts:
+    """A copy of the drafts with one more letter paragraph at the end."""
+    letter = drafts.cover_letter
+    paragraphs = [*letter.body_paragraphs, paragraph]
+    return drafts.model_copy(
+        update={"cover_letter": letter.model_copy(update={"body_paragraphs": paragraphs})}
     )
 
 
@@ -157,21 +186,21 @@ def passionate_writer(messages) -> Drafts:
     model following its instructions)."""
     drafts = answer_drafts(messages)
     if "'passionate'" not in messages[0].content:
-        drafts.cover_letter = drafts.cover_letter.replace(
-            "Best regards", f"{PASSIONATE}\nBest regards"
-        )
+        drafts.cover_letter.body_paragraphs.append(PASSIONATE)
     return drafts
 
 
 def answer_guard(messages) -> GuardReport:
-    """A "fact-checker": every draft line must be an approved claim (or the greeting/closing)."""
+    """A "fact-checker": every draft line must be an approved claim, the greeting/closing or
+    a line of the candidate's basics (their name, as the signature)."""
+    basics = _tag(messages, "candidate_basics")
     allowed = set(approved_claims(messages).values()) | {GREETING, CLOSING}
     lines = [re.sub(r"^- ", "", line).strip() for line in _tag(messages, "draft").splitlines()]
     return GuardReport(
         unsupported=[
             UnsupportedStatement(quote=line, reason="Not in the approved claims.")
             for line in lines
-            if line and not line.endswith(":") and line not in allowed
+            if line and not line.endswith(":") and line not in allowed and line not in basics
         ]
     )
 

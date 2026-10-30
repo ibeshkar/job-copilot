@@ -47,7 +47,9 @@ def test_done_when_passionate_is_learned_and_avoided(demo_app) -> None:
     first = _to_drafts(GOOD_JOB.read_text())
     drafts = applications.get_workflow_view(first).drafts
     # The AI's letter as if it had said "passionate", and the user's edit that removes it.
-    ai_letter = drafts.cover_letter.replace("\n\n", f"\n\n{PASSIONATE} ", 1)
+    letter = drafts.cover_letter
+    paragraphs = [f"{PASSIONATE} {letter.body_paragraphs[0]}", *letter.body_paragraphs[1:]]
+    ai_letter = letter.model_copy(update={"body_paragraphs": paragraphs})
     # Written "as" the output guard; continuing the run pauses at the draft review again.
     applications.get_graph().update_state(
         applications.job_config(first),
@@ -56,9 +58,7 @@ def test_done_when_passionate_is_learned_and_avoided(demo_app) -> None:
     )
     assert applications.retry_analysis(first).ok
     assert applications.get_workflow_view(first).stage == "draft_review"
-    edited = drafts.model_copy(
-        update={"cover_letter": ai_letter.replace(PASSIONATE, "I enjoy building AI products.")}
-    )
+    edited = drafts.model_copy(update={"cover_letter": letter})  # the user removed it
     assert applications.submit_draft_review(first, "accept", edited=edited).ok
 
     rules = list(store.list_style_rules().values())
@@ -67,7 +67,7 @@ def test_done_when_passionate_is_learned_and_avoided(demo_app) -> None:
 
     second = _to_drafts(GOOD_JOB.read_text())
     letter = applications.get_workflow_view(second).drafts.cover_letter
-    assert "passionate" not in letter.lower()
+    assert "passionate" not in letter.text.lower()
 
 
 @pytest.mark.live

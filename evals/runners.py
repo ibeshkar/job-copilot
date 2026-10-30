@@ -198,12 +198,13 @@ def write_drafts(
         drafts = draft_materials(state, deps)["drafts"]
     except Exception as exc:
         return DraftResult(case.id, error=f"{type(exc).__name__}: {exc}")
-    text = f"{drafts.cover_letter}\n" + "\n".join(drafts.cv_bullets)
+    letter = drafts.cover_letter.text
+    text = f"{letter}\n" + "\n".join(drafts.cv_bullets)
     return DraftResult(
         case_id=case.id,
-        cover_letter=drafts.cover_letter,
+        cover_letter=letter,
         cv_bullets=drafts.cv_bullets,
-        words=len(drafts.cover_letter.split()),
+        words=len(" ".join(drafts.cover_letter.body_paragraphs).split()),  # the word limit's scope
         removed_claim_leaked=bool(find_rejected_claims(text, state["claims"])),
     )
 

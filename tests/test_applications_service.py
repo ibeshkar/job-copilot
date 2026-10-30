@@ -200,13 +200,15 @@ def test_edits_after_acceptance_rating_and_export(fake_app) -> None:
     drafts = applications.latest_drafts(job_id)
 
     assert not applications.save_edited_drafts(job_id, drafts)  # nothing changed
-    changed = drafts.model_copy(update={"cover_letter": "A new letter."})
+    letter = drafts.cover_letter.model_copy(update={"body_paragraphs": ["A new letter."]})
+    changed = drafts.model_copy(update={"cover_letter": letter})
     assert applications.save_edited_drafts(job_id, changed)
-    assert applications.latest_drafts(job_id).cover_letter == "A new letter."
+    assert applications.latest_drafts(job_id).cover_letter == letter
 
     applications.rate_drafts(job_id, "letter", -1, "too long")
     with repo.session_scope() as session:
         assert [(f.target, f.rating) for f in repo.list_feedback(session)] == [("letter", -1)]
 
-    file = applications.export_drafts(job_id, changed)
-    assert file.file_name == "application-lumen-health-junior-ai-engineer.docx"
+    file = applications.export_cover_letter(job_id, changed.cover_letter, "pdf")
+    assert file.file_name == "CoverLetter_LumenHealth.pdf"  # no profile saved
+    assert file.data.startswith(b"%PDF") and not file.fell_back

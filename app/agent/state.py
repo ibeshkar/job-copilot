@@ -6,10 +6,11 @@
 #          app/memory/store.py, and later the UI pages.
 
 import operator
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 # ---------------------------------------------------------------- domain models (§5.1)
 
@@ -120,14 +121,81 @@ class Claim(BaseModel):
         return self.user_decision in ("approved", "edited")
 
 
+class CoverLetter(BaseModel):
+    """A cover letter in parts, so the PDF and Word exports always lay it out the same way.
+
+    Part of the drafting prompt's output. The sender's contact details (email, phone…) are not
+    here: the export reads them from the profile, so the LLM can't get them wrong. Letters
+    saved before this model existed were one text block; `from_stored` turns them into body
+    paragraphs with empty headers.
+    """
+
+    recipient_company: str = Field(description="The employer's name as in the posting")
+    recipient_department: str | None = Field(
+        description="'Recruiting – <team>' if the posting names the team, else null"
+    )
+    recipient_city_country: str | None = Field(
+        description="City and country of the job, e.g. 'Berlin, Germany', else null"
+    )
+    recipient_name: str | None = Field(
+        description="A contact person named in the posting, else null. Never invent a name"
+    )
+    subject: str = Field(description="'Application: <job title> – <company>'")
+    salutation: str = Field(
+        description="'Dear <contact name>,' if recipient_name is set, else 'Dear Hiring Team,'"
+    )
+    body_paragraphs: list[str] = Field(
+        description="The letter's paragraphs, without salutation, closing or signature"
+    )
+    closing: str = Field(description="e.g. 'Kind regards,'")
+    sender_name: str = Field(description="The candidate's name")
+
+    @classmethod
+    def from_text(cls, text: str) -> "CoverLetter":
+        """An old plain-text letter: each paragraph becomes a body paragraph, as it was."""
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+        return cls(
+            recipient_company="",
+            recipient_department=None,
+            recipient_city_country=None,
+            recipient_name=None,
+            subject="",
+            salutation="",
+            body_paragraphs=paragraphs,
+            closing="",
+            sender_name="",
+        )
+
+    @classmethod
+    def from_stored(cls, value: str) -> "CoverLetter":
+        """Read a saved letter: JSON of a CoverLetter, or plain text from before."""
+        if value.lstrip().startswith("{"):
+            try:
+                return cls.model_validate_json(value)
+            except ValidationError:
+                pass  # plain text that happens to start with "{"
+        return cls.from_text(value)
+
+    @property
+    def text(self) -> str:
+        """Salutation to signature as plain text (for the fact-checker, edit diffs and .txt)."""
+        sign_off = "\n".join(p.strip() for p in (self.closing, self.sender_name) if p.strip())
+        parts = [self.salutation, *self.body_paragraphs, sign_off]
+        return "\n\n".join(p.strip() for p in parts if p.strip())
+
+
 class Drafts(BaseModel):
     """CV bullets and cover letter. Also the structured output of the drafting prompt."""
 
     cv_bullets: list[str] = Field(description="3-6 CV bullet points, each starting with a verb")
-    cover_letter: str = Field(
-        description="The full cover letter, paragraphs separated by a blank line"
-    )
+    cover_letter: CoverLetter
     used_claim_ids: list[str] = Field(description="Ids of the approved claims the drafts use")
+
+    @field_validator("cover_letter", mode="before")
+    @classmethod
+    def _accept_plain_text(cls, value: object) -> object:
+        # Old database rows and checkpoints hold the letter as one string.
+        return CoverLetter.from_stored(value) if isinstance(value, str) else value
 
 
 class StyleRule(BaseModel):
@@ -480,6 +548,7 @@ CHECKPOINT_TYPES: list[type] = [
     RedFlag,
     FitReport,
     Claim,
+    CoverLetter,
     Drafts,
     UnsupportedStatement,
     InterviewSetup,

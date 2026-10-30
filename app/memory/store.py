@@ -39,6 +39,11 @@ class Profile(BaseModel):
     work_authorisation: str = ""  # e.g. "EU citizen", "Needs visa sponsorship"
     languages: list[str] = Field(default_factory=list)  # e.g. ["English C1", "German A2"]
     salary_expectations: str | None = None
+    # Contact details for the cover letter header (never written by the LLM).
+    email: str = ""
+    phone: str = ""
+    linkedin: str = ""
+    city: str = ""  # e.g. "Berlin, Germany"
 
 
 class Preferences(BaseModel):
