@@ -45,8 +45,9 @@ posting, extracting requirements, searching my documents, grading, scoring. That
 `stream_mode='updates'`."
 
 **On the Fit tab, say:**
-- "Each requirement is ✅ / ⚠️ / ❌ with the **exact snippet and file** that proves it. Open an
-  expander." *(click one)*
+- "The summary says how many must-haves I meet. Gaps come first and open; each row has the
+  **exact snippet and file** that proves it behind a button." *(click 📄 Evidence on a met
+  requirement, then switch the filter to **Gaps only**)*
 - "The LLM only decides met, partial or missing. **Python computes the score**: must-haves weigh
   3, nice-to-haves 1, met counts 1, partial half. So the same assessment always gives the same
   number, and I can explain where it came from."

@@ -468,7 +468,7 @@ Thumbs up/down ratings with optional comments also go to `Feedback`. Repeated ne
 3. **Job workspace** (per job), with tabs:
    - **Fit**:
      - Score gauge and red flags
-     - Requirement table with ✅ / ⚠️ / ❌, expandable evidence snippets with doc names, and honest positioning tips
+     - Requirements: summary ("Must-have met: X / Y" + progress bar + met / partial / missing counts), filter (All / Gaps only / Must-have only), one expander per status group (Missing and Partial open, Met closed), compact rows with a popover for evidence snippets (with doc names) and honest positioning tips (D83)
      - Buttons: *Continue to application* / *Add context* (text box → re-run evidence) / *Not a fit*
    - **Claim check**:
      - A list of claims, each with a supported/unsupported badge, the evidence and Approve / Edit / Remove controls

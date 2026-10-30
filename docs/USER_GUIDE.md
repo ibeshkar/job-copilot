@@ -36,8 +36,12 @@ browse saved data, but AI features don't run, and a banner explains what to do.
 4. The **🎯 Fit** tab of the **Job workspace** shows the **fit card**:
    - a **score from 0 to 100**,
    - **red flags** such as "German C1 required" (a blocking flag caps the score at 40),
-   - every requirement with ✅ met, ⚠️ partial or ❌ missing, the **evidence** quoted from your
-     documents, and a tip on how to address a gap honestly.
+   - the **requirements**: first a summary (**Must-have met: X / Y** and how many are met,
+     partial and missing), then the requirements grouped by status. **❌ Missing** and
+     **⚠️ Partial** are open, **✅ Met** is closed. Use **All / Gaps only / Must-have only** to
+     filter. Each row shows the requirement, MUST or nice, and one sentence why; click
+     **📄 Evidence**, **💡 Tip** or **📄 Details** for the quotes from your documents and a tip on
+     how to address a gap honestly.
 5. Then choose:
    - **Continue to application ▶** to write the application,
    - **➕ Add context and re-check** if you have experience your documents don't mention

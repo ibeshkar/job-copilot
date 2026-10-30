@@ -97,3 +97,33 @@ net, fixed exchange rates. Approximate on purpose; shown per data point in the t
 
 **What does it cost?** 2–3 Tavily searches plus two small LLM calls: about $0.0006 in tokens
 per estimate, cached until Refresh.
+
+## Follow-up: requirements list redesign on the Fit tab (UI only)
+- **What changed:** the requirement list was one expander per requirement, a long wall of boxes
+  where the status was only an emoji and every detail needed a click. Now: a summary ("Must-have
+  met: X / Y", progress bar, met / partial / missing badges), a filter (All / Gaps only /
+  Must-have only), one expander per status group (Missing and Partial open, Met closed, empty
+  groups hidden) and one compact row per requirement with a details popover for evidence and
+  the honest tip. D83.
+- **UX reasoning:** prioritise gaps (that's where the decision is), progressive disclosure
+  (decide from the row, open details only when needed), fewer clicks (no click to see the
+  overall picture or the gaps).
+- **Files:** `app/ui/components.py` (`requirements_section`, `requirements_summary`,
+  `group_requirements`, `requirement_row`, `status_badge`, `importance_badge`; `fit_card` takes
+  a `key`), `app/ui/pages/2_job_workspace.py` (passes `key=f"fit_{job_id}"`),
+  `tests/test_ui_components.py` (new: grouping, filters, sort order, badges),
+  `tests/test_ui_pages.py` (group labels, summary, filter).
+- **Problem I hit:** with four columns per row, a phone screen stacked them into four blocks
+  per requirement (icon, text, badge, button on separate lines). Two non-wrapping columns
+  (`st.columns(..., wrap=False)`) keep each row on one line.
+- **Not changed:** score, evidence, data, and the Continue / Add context / Not a fit actions.
+- **Try it:** add the 3 sample jobs (Board → ➕ Add job → sample) and open each 🎯 Fit tab:
+  - *Good fit*: almost everything met; ✅ Met is the big group but closed, so the few gaps
+    are what you see first. "📄 Evidence" shows quotes with file names.
+  - *Partial fit*: ❌ Missing and ⚠️ Partial open with "💡 Tip" / "📄 Details" buttons;
+    **Gaps only** hides ✅ Met.
+  - *Poor fit*: the blocking German C1 flag above, a low "Must-have met" bar, **Must-have
+    only** hides the nice-to-haves.
+- **Known follow-up:** the screenshots `docs/assets/fit_good.png` and `fit_poor.png` still show
+  the old list; retake them with the D78 throwaway-runtime script.
+

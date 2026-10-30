@@ -261,6 +261,16 @@ now" with `{"action": "stop"}`. The thread is `interview-<job id>` in the same c
 so a refresh shows the same question. Code: `app/services/interview.py` → `get_view()`.
 
 ### UI
+**Why did you redesign the requirements list?**
+It was one expander per requirement: a long wall of identical boxes, the status only an emoji in
+the label, and every explanation behind a click. The user's real question is "how close am I,
+and what's missing?", so the new list answers that first: a summary ("Must-have met: 2 / 4"
+with a progress bar and met / partial / missing counts), a filter (All / Gaps only / Must-have
+only), and groups by status with **Missing and Partial open, Met closed**. Each requirement is
+one row (icon, text, MUST / nice, one-line explanation); evidence and the honest tip are in a
+popover. Three ideas: prioritise gaps, progressive disclosure, fewer clicks. UI only: the score,
+evidence and actions are unchanged (`app/ui/components.py` → `requirements_section()`, D83).
+
 **How does `interrupt()` work with Streamlit, which reruns the whole script on every click?**
 Nothing important lives in Streamlit's memory. The graph's state is saved in SQLite under
 `thread_id = job-<id>`. On every rerun, `app/services/applications.py` → `get_workflow_view()`

@@ -773,3 +773,33 @@ writer and the guard.
 - **Trade-off:** one more table and a join-like lookup for the board (one query for all
   estimates, `repo.salary_estimates()`).
 
+## D83. The Fit tab's requirements list: summary, filter, status groups, compact rows (Phase 11)
+- **What:** instead of one `st.expander` per requirement (sorted must-first), the Fit tab now
+  shows (1) a summary: "Must-have met: X / Y" with a progress bar and coloured met / partial /
+  missing counts; (2) a filter (`st.segmented_control`): All / Gaps only / Must-have only;
+  (3) one expander per status group: ❌ Missing and ⚠️ Partial open, ✅ Met closed, empty groups
+  hidden, must-haves first inside a group; (4) one compact row per requirement: icon, text,
+  MUST / nice badge, the one-line explanation, and a details popover ("📄 Evidence" for met,
+  "💡 Tip" for missing, "📄 Details" with both for partial). The pieces live in
+  `app/ui/components.py` (`requirements_summary`, `group_requirements`, `requirement_row`,
+  `status_badge`); `group_requirements` is a pure function with its own tests.
+- **Why (UX):**
+  - **Prioritise gaps:** the decision "apply or not" depends on what's missing, so missing and
+    partial come first and open; met items are reassurance and start closed.
+  - **Progressive disclosure:** the row shows what you need to decide (status, importance, one
+    sentence); evidence quotes and tips are one click away in a popover, not in the way.
+  - **Fewer clicks:** before, reading 10 requirements took 10 clicks and the status was only an
+    emoji in a long list of identical boxes. Now the summary answers "how close am I?" with no
+    click, and the gaps are readable without any.
+- **Layout detail:** a row is two columns with `wrap=False` (text block | details button). The
+  first version used four columns (icon | text | badge | button); on a phone they stacked into
+  four blocks per requirement, so the icon and badge moved into the text line. Colours are
+  Streamlit's badge colours, which adapt to the light and dark theme. Checked with screenshots
+  at 1,100 px (light) and 390 px (dark).
+- **Not changed:** the data, the score, the evidence and the Continue / Add context / Not a fit
+  actions. It is a UI-only change.
+- **Alternative:** a table (`st.dataframe`) with one row per requirement. Compact, but cells
+  can't hold evidence quotes or tips, and long requirement texts get cut off.
+- **Trade-off:** a popover hides the evidence for one click; printing the page no longer shows
+  all evidence at once.
+

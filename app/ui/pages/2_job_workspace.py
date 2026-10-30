@@ -139,7 +139,14 @@ def _fit_tab(view: WorkflowView) -> None:
         st.info("No fit analysis yet.")
         return
 
-    fit_card(view.job, view.requirements, view.fit, view.warnings, view.extra_context)
+    fit_card(
+        view.job,
+        view.requirements,
+        view.fit,
+        view.warnings,
+        view.extra_context,
+        key=f"fit_{view.job_id}",
+    )
 
     if view.stage == "fit_review":
         _fit_review_actions(view.job_id)

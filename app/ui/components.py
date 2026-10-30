@@ -1,4 +1,5 @@
-# What: reusable Streamlit widgets: status/fit/salary badges, the fit card, claim
+# What: reusable Streamlit widgets: status/fit/salary badges, the fit card with its
+#       requirements summary, filter and compact requirement rows, claim
 #       badges and the reviewed-claims list, the fact-check warning, draft history, and the
 #       profile and preferences forms.
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
@@ -12,6 +13,7 @@ from app.agent.state import (
     FitReport,
     JobPosting,
     Requirement,
+    RequirementMatch,
     SalaryEstimate,
     UnsupportedStatement,
 )
@@ -25,6 +27,11 @@ STATUS_LABELS = {
     "rejected": "✖️ Rejected",
 }
 MATCH_ICONS = {"met": "✅", "partial": "⚠️", "missing": "❌"}
+MATCH_NAMES = {"met": "Met", "partial": "Partial", "missing": "Missing"}
+MATCH_COLORS = {"met": "green", "partial": "orange", "missing": "red"}
+# Gaps first and open, met last and closed: the user's attention goes where the work is.
+STATUS_GROUPS = [("missing", True), ("partial", True), ("met", False)]  # (status, expanded)
+REQUIREMENT_FILTERS = {"all": "All", "gaps": "Gaps only", "must": "Must-have only"}
 DECISION_ICONS = {"approved": "✅", "edited": "✏️", "removed": "🗑️", "pending": "⏳"}
 SENIORITIES = ["intern", "junior", "mid", "senior", "lead"]
 TONES = ["formal", "friendly", "concise"]
@@ -98,8 +105,12 @@ def fit_card(
     fit: FitReport,
     warnings: list[str],
     extra_context: str | None = None,
+    key: str = "fit",
 ) -> None:
-    """Draw the fit card: score, red flags, and the requirement list with evidence."""
+    """Draw the fit card: score, red flags, and the requirements (summary, filter, groups).
+
+    `key` makes the widget keys unique per job, e.g. "fit_3".
+    """
     left, right = st.columns([1, 3])
     with left:
         st.metric("Fit score", f"{fit.score}/100")
@@ -109,11 +120,6 @@ def fit_card(
         st.markdown(f"#### {job.title} · {job.company}")
         st.caption(_job_facts(job))
         st.write(fit.strengths_summary)
-        counts = {s: sum(1 for m in fit.matches if m.status == s) for s in MATCH_ICONS}
-        st.markdown(
-            f"✅ {counts['met']} met · ⚠️ {counts['partial']} partial · "
-            f"❌ {counts['missing']} missing"
-        )
 
     for flag in fit.red_flags:
         if flag.blocking:
@@ -130,24 +136,7 @@ def fit_card(
             icon="🔎",
         )
 
-    st.markdown("##### Requirements")
-    by_id = {m.requirement_id: m for m in fit.matches}
-    ordered = sorted(requirements, key=lambda r: (r.importance != "must", r.id))
-    for req in ordered:
-        match = by_id.get(req.id)
-        if match is None:
-            continue
-        label = f"{MATCH_ICONS[match.status]} {req.text} · {req.importance}"
-        with st.expander(label):
-            st.write(match.explanation)
-            if match.evidence:
-                for ev in match.evidence:
-                    st.markdown(f"**📄 {ev.doc_name}** · relevance {ev.relevance:.0%}")
-                    st.markdown(f"> {ev.snippet}")
-            else:
-                st.caption("No evidence found in your documents.")
-            if match.honest_positioning:
-                st.info(match.honest_positioning, icon="💡")
+    requirements_section(requirements, fit, key=key)
 
     if extra_context:
         with st.expander("📝 Context you added"):
@@ -165,6 +154,122 @@ def fit_card(
             "The AI only decides met / partial / missing; the arithmetic is plain Python, so "
             "the same assessment always gives the same score."
         )
+
+
+# ---------------------------------------------------------------- requirements
+
+Row = tuple[Requirement, RequirementMatch]
+
+
+def match_rows(requirements: list[Requirement], fit: FitReport) -> list[Row]:
+    """Each requirement with its match, in the posting's order; unmatched ones are skipped."""
+    by_id = {m.requirement_id: m for m in fit.matches}
+    return [(r, by_id[r.id]) for r in requirements if r.id in by_id]
+
+
+def group_requirements(rows: list[Row], view: str = "all") -> dict[str, list[Row]]:
+    """Filter the rows and group them by status: missing → partial → met.
+
+    view: "all", "gaps" (missing + partial) or "must" (must-haves only). Inside a group
+    must-haves come first, otherwise the posting's order is kept. Empty groups are left out.
+    """
+    if view == "gaps":
+        rows = [(r, m) for r, m in rows if m.status != "met"]
+    elif view == "must":
+        rows = [(r, m) for r, m in rows if r.importance == "must"]
+    groups = {}
+    for status, _ in STATUS_GROUPS:
+        members = [(r, m) for r, m in rows if m.status == status]
+        if members:
+            groups[status] = sorted(members, key=lambda row: row[0].importance != "must")
+    return groups
+
+
+def status_badge(status: str, count: int | None = None) -> str:
+    """A coloured status badge, e.g. ':red-badge[❌ 2 missing]' or ':green-badge[✅ Met]'."""
+    text = f"{count} {MATCH_NAMES[status].lower()}" if count is not None else MATCH_NAMES[status]
+    return f":{MATCH_COLORS[status]}-badge[{MATCH_ICONS[status]} {text}]"
+
+
+def importance_badge(importance: str) -> str:
+    return ":violet-badge[MUST]" if importance == "must" else ":gray-badge[nice]"
+
+
+def requirements_summary(rows: list[Row]) -> None:
+    """ "Must-have met: X / Y" with a progress bar, and the met / partial / missing counts."""
+    musts = [m for r, m in rows if r.importance == "must"]
+    met = sum(m.status == "met" for m in musts)
+    partial = sum(m.status == "partial" for m in musts)
+    if musts:
+        extra = f" (+{partial} partial)" if partial else ""
+        st.markdown(f"**Must-have met: {met} / {len(musts)}**{extra}")
+        st.progress(met / len(musts))
+    else:
+        st.caption("The posting lists no must-have requirements.")
+    counts = {status: sum(m.status == status for _, m in rows) for status in MATCH_ICONS}
+    st.markdown(" ".join(status_badge(s, counts[s]) for s in ("met", "partial", "missing")))
+
+
+def _details(req: Requirement, match: RequirementMatch, key: str) -> None:
+    """The row's details button: evidence (met / partial) and the honest tip (missing / partial)."""
+    show_evidence = match.status in ("met", "partial")
+    show_tip = match.status in ("missing", "partial")
+    label = {"met": "📄 Evidence", "missing": "💡 Tip", "partial": "📄 Details"}[match.status]
+    has_content = (show_evidence and match.evidence) or (show_tip and match.honest_positioning)
+    with st.popover(label, key=key, disabled=not has_content, width="stretch"):
+        st.markdown(f"**{req.text}**")
+        if show_evidence:
+            for ev in match.evidence:
+                st.markdown(f"**📄 {ev.doc_name}** · relevance {ev.relevance:.0%}")
+                st.markdown(f"> {ev.snippet}")
+            if not match.evidence:
+                st.caption("No evidence found in your documents.")
+        if show_tip and match.honest_positioning:
+            st.info(match.honest_positioning, icon="💡")
+
+
+def requirement_row(req: Requirement, match: RequirementMatch, key: str) -> None:
+    """One compact row: "icon requirement MUST/nice" with the explanation below, and a details
+    button on the right.
+
+    Two columns that don't wrap (`wrap=False`), so on a phone the button stays next to the
+    text instead of the row breaking into four stacked blocks.
+    """
+    text, details = st.columns([5, 1.6], vertical_alignment="center", wrap=False)
+    with text:
+        st.markdown(f"{MATCH_ICONS[match.status]} {req.text} {importance_badge(req.importance)}")
+        st.caption(match.explanation)
+    with details:
+        _details(req, match, key)
+
+
+def requirements_section(requirements: list[Requirement], fit: FitReport, key: str) -> None:
+    """Summary, a filter, then one expander per status group with compact rows (no nesting)."""
+    st.markdown("##### Requirements")
+    rows = match_rows(requirements, fit)
+    if not rows:
+        st.caption("No requirements found in the posting.")
+        return
+    requirements_summary(rows)
+    view = st.segmented_control(
+        "Show",
+        list(REQUIREMENT_FILTERS),
+        default="all",
+        required=True,
+        format_func=REQUIREMENT_FILTERS.get,
+        key=f"{key}_req_filter",
+        label_visibility="collapsed",
+    )
+    groups = group_requirements(rows, view or "all")
+    if not groups:
+        st.caption("Nothing to show with this filter.")
+    for status, expanded in STATUS_GROUPS:
+        if status not in groups:
+            continue
+        label = f"{MATCH_ICONS[status]} {MATCH_NAMES[status]} ({len(groups[status])})"
+        with st.expander(label, expanded=expanded, key=f"{key}_req_group_{status}"):
+            for req, match in groups[status]:
+                requirement_row(req, match, key=f"{key}_req_{req.id}")
 
 
 # ---------------------------------------------------------------- claims and drafts

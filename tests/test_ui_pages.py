@@ -74,12 +74,32 @@ def test_workspace_shows_fit_card_and_survives_refresh(fake_app) -> None:
     at = _open_workspace(_app(job_id))
     assert not at.exception
     assert at.metric[0].value == "86/100"
-    assert any(e.label.startswith("❌ Kubernetes") for e in at.expander)
+    # Requirements: summary, then one expander per status group (gaps first and open).
+    text = " ".join(m.value for m in at.markdown)
+    assert "Must-have met: 2 / 2" in text
+    groups = [e.label for e in at.expander if e.label[0] in "❌⚠✅"]
+    assert groups == ["❌ Missing (1)", "✅ Met (2)"]
+    assert "Kubernetes" in text and ":gray-badge[nice]" in text
 
     # A browser refresh is a brand-new session with the same URL.
     refreshed = _open_workspace(_app(job_id))
     assert refreshed.metric[0].value == "86/100"
     assert _button(refreshed, "Continue to application ▶")
+
+
+def test_requirements_filter_hides_met_and_nice_to_have(fake_app) -> None:
+    save_profile(Profile(name="Alex"))
+    job_id = applications.add_job(POSTING).job_id
+    at = _open_workspace(_app(job_id))
+    control = at.segmented_control(key=f"fit_{job_id}_req_filter")
+    assert control.value == "all"
+
+    control.set_value("gaps").run()
+    assert [e.label for e in at.expander if e.label[0] in "❌⚠✅"] == ["❌ Missing (1)"]
+
+    at.segmented_control(key=f"fit_{job_id}_req_filter").set_value("must").run()
+    assert [e.label for e in at.expander if e.label[0] in "❌⚠✅"] == ["✅ Met (2)"]
+    assert not at.exception
 
 
 def test_not_a_fit_button_resumes_the_graph(fake_app) -> None:
