@@ -10,13 +10,14 @@ import pytest
 from langgraph.types import Command
 
 from app.agent.application_graph import build_application_graph, make_checkpointer, thread_config
-from app.agent.nodes.ingest import EMPTY_KB_MESSAGE, NOT_A_JOB_MESSAGE
+from app.agent.nodes.ingest import NOT_A_JOB_MESSAGE
 from app.agent.state import (
     ExtractedRequirement,
     FitAssessment,
     JobPostingExtraction,
     RequirementList,
 )
+from app.services.readiness import NO_DOCUMENTS_MESSAGE, NO_PROFILE_MESSAGE, NOT_READY_MESSAGE
 from app.utils.errors import FetchError
 from tests.graph_fakes import (
     EXTRACTION,
@@ -102,7 +103,29 @@ def test_empty_knowledge_base_stops_before_any_llm_call() -> None:
 
     state = graph.get_state(config)
     assert state.next == ()
-    assert state.values["errors"] == [EMPTY_KB_MESSAGE]
+    assert state.values["errors"] == [NO_DOCUMENTS_MESSAGE]
+    assert llm.calls == []
+
+
+def test_missing_profile_stops_before_any_llm_call() -> None:
+    llm = make_llm()
+    deps = make_deps(llm)
+    deps.get_profile = lambda: None
+    graph, config = run(deps)
+
+    state = graph.get_state(config)
+    assert state.next == ()
+    assert state.values["errors"] == [NO_PROFILE_MESSAGE]
+    assert llm.calls == []
+
+
+def test_no_profile_and_no_documents_gives_one_combined_message() -> None:
+    llm = make_llm()
+    deps = make_deps(llm, kb_size=0)
+    deps.get_profile = lambda: None
+    graph, config = run(deps)
+
+    assert graph.get_state(config).values["errors"] == [NOT_READY_MESSAGE]
     assert llm.calls == []
 
 

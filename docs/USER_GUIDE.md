@@ -21,6 +21,20 @@ answers from.
      of your letters, and deal-breakers (for example "no relocation").
 3. When it says "Your knowledge base: … chunks from … documents ✔", you're ready.
 
+**First run on the Board.** Until you have a profile and at least one document, the
+**🗂️ Board** shows a "Let's get you set up" checklist instead of the job columns:
+
+- **① Create your profile**: **Get started →** opens the profile step.
+- **② Add your CV / documents**: **Upload documents →** opens the documents step. When it's
+  done, the checklist shows how many chunks your knowledge base has.
+- **③ Add your first job**: locked until ① and ② are done.
+
+Only the next step has a button. **🧪 Use demo persona** is the quick start: it fills in
+whatever is missing with the fictional Alex Novak, and keeps anything you've already saved.
+**➕ Add job** stays greyed out until setup is complete (hover over it to see why), because
+the fit analysis needs your profile and documents to compare against. When both are there,
+the checklist disappears, you see "Setup complete!" once, and **➕ Add job** works.
+
 ![Step 1 of the Get started wizard, filled in with the demo persona](assets/onboarding.png)
 
 You need an OpenRouter API key in the `.env` file (`OPENROUTER_API_KEY`). Without it you can

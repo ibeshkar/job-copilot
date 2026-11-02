@@ -18,7 +18,7 @@ from app.rag import retriever
 from app.rag.ingest import ingest_file
 from app.services.onboarding import demo_persona_files
 from app.tools import company, job_search, registry
-from app.tools.experience import search_my_experience
+from app.tools.experience import NO_DOCUMENTS_RESULT, search_my_experience
 from app.tools.job_posting import read_job_posting
 from app.tools.tracker import apply_update, describe_update, get_applications, update_tracker
 from app.utils.errors import ConfigError, ExternalServiceError, GuardBlockedError, NotFoundError
@@ -74,7 +74,18 @@ def test_search_my_experience_returns_cited_quotes(vectorstore, monkeypatch) -> 
     assert "[project_documind_readme.md]" in result
 
 
-def test_search_my_experience_with_empty_knowledge_base(vectorstore, monkeypatch) -> None:
+def test_search_my_experience_with_empty_knowledge_base(app_db, vectorstore, monkeypatch) -> None:
+    monkeypatch.setattr(retriever, "get_vectorstore", lambda: vectorstore)
+
+    # No documents at all: the copilot is told to send the user to Get started.
+    assert search_my_experience.invoke({"query": "Kubernetes"}) == NO_DOCUMENTS_RESULT
+
+
+def test_search_my_experience_without_a_match(app_db, vectorstore, monkeypatch) -> None:
+    from app.db import repo
+
+    with repo.session_scope() as session:
+        repo.upsert_document(session, "cv.md", "cv", 3)  # documents exist, nothing matches
     monkeypatch.setattr(retriever, "get_vectorstore", lambda: vectorstore)
 
     assert "No evidence found" in search_my_experience.invoke({"query": "Kubernetes"})

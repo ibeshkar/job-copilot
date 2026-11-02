@@ -297,6 +297,19 @@ libraries, LibreOffice is a 300 MB install) and reports the page count, so the e
 shrinks spacing, then font size, until the letter fits on one page. An embedded Liberation Sans
 font makes umlauts work everywhere. Old plain-text drafts still load as body paragraphs (D85).
 
+**What happens if a user tries to analyse a job without a profile?**
+They can't get that far by accident, and if they do, no tokens are spent. One function,
+`get_setup_status()` in `app/services/readiness.py`, answers "profile saved? documents in the
+knowledge base?". The Board uses it to show a "Let's get you set up" checklist with one primary
+button for the next step, and disables **➕ Add job** with a tooltip ("Set up your profile and
+upload your CV first."). That's prevention, not a warning after the fact. Behind it are two
+more layers (defence in depth): the "Add a job" dialog checks again and disables "Analyse fit"
+if it was opened some other way, and the graph's first node, `input_guard`, builds the same
+`SetupStatus` from its deps and ends the run with a friendly message before any LLM call. The
+service then deletes the empty job card, so nothing is left on the board. Tests:
+`tests/test_readiness.py`, `test_missing_profile_stops_before_any_llm_call` in
+`tests/test_application_graph.py`, and the Board tests in `tests/test_ui_pages.py` (D90).
+
 **How does `interrupt()` work with Streamlit, which reruns the whole script on every click?**
 Nothing important lives in Streamlit's memory. The graph's state is saved in SQLite under
 `thread_id = job-<id>`. On every rerun, `app/services/applications.py` → `get_workflow_view()`

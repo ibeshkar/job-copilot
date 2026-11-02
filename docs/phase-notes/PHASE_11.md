@@ -248,3 +248,25 @@ per estimate, cached until Refresh.
   "⏳ … (4/5) …" text stays), no horizontal scroll, the box stays open while running and
   collapses to "✅ Fit analysis done".
 
+
+## Follow-up: first-run setup checklist instead of two warnings
+- **What changed:** with no profile and/or no documents, the Board used to show two warnings
+  and two red buttons, and "➕ Add job" still let you start an analysis that could only fail.
+  Now one "Let's get you set up" card lists ① profile, ② CV / documents (chunk count when
+  done) and ③ first job (locked), with one primary button for the next step and a secondary
+  "🧪 Use demo persona". "➕ Add job" is disabled with a tooltip until setup is complete; the
+  empty status columns appear with the first job. The dialog and the graph's `input_guard`
+  check again (no LLM call without a profile and documents), and the copilot chat explains
+  what's missing. D90.
+- **Files:** `app/services/readiness.py` (new), `app/services/onboarding.py`
+  (`use_demo_persona`, `is_onboarded` removed), `app/ui/components.py` (`setup_steps`,
+  `setup_checklist`), `app/ui/state.py` (`open_onboarding`, `ONBOARDING_STEP_KEY`),
+  `app/ui/pages/0_onboarding.py`, `1_board.py`, `3_copilot_chat.py`,
+  `app/agent/nodes/ingest.py`, `app/tools/experience.py`; tests `tests/test_readiness.py`
+  (new), `test_application_graph.py`, `test_ui_pages.py`, `test_tools.py`; docs
+  `DECISIONS.md`, `USER_GUIDE.md`, `REVIEW_GUIDE.md`.
+- **How to try it:** delete `data/runtime/` (or use "Delete all my data"), start the app,
+  open 🗂️ Board: one card, "Get started →" is the only primary button, "➕ Add job" is greyed
+  out with a tooltip. Save a profile → ② becomes the next step. Upload a CV (or click
+  "🧪 Use demo persona") → the card disappears, "✅ Setup complete!" shows once, and
+  "➕ Add job" works as before.

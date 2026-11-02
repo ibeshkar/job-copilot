@@ -976,3 +976,47 @@ writer and the guard.
 - **Alternative:** *make the field optional (`str | None`)*: every `f"{job.company}"` would need
   a None check, and old checkpoints store a string.
 
+
+
+## D90. Prevent the "no profile / no documents" dead end instead of warning about it (Phase 11)
+- **Problem:** on a fresh start the Board showed two separate alerts ("Set up your profile
+  first", "Your knowledge base is empty") and two red primary buttons ("Get started →" and
+  "➕ Add job"). "Add job" still opened the dialog, so a user could paste a posting and click
+  "Analyse fit", which could only fail: fit analysis compares the job with the profile and the
+  documents.
+- **What:**
+  - **One readiness check** in `app/services/readiness.py`: `get_setup_status()` →
+    `SetupStatus(has_profile, has_documents, chunk_count)` with `is_ready` and a friendly
+    `message` for what's missing. It reads the memory store and the `Document` table (no API
+    key, no cost). Every place that asks "is the user set up?" uses it.
+  - **Prevent, don't warn after:** while setup is incomplete, the Board shows one "Let's get
+    you set up" checklist card (`setup_checklist()` in `app/ui/components.py`): ① profile,
+    ② CV / documents (with the chunk count when done), ③ first job, locked until ① and ②. A
+    secondary "🧪 Use demo persona" fills in whatever is missing (it never overwrites a saved
+    profile or adds documents to a non-empty knowledge base). "➕ Add job" is disabled with the
+    tooltip "Set up your profile and upload your CV first." The empty status columns are
+    hidden until the first job exists. When setup is done the card disappears and "✅ Setup
+    complete!" shows once.
+  - **A single next-step CTA:** only the next step to do has a button, and it's the only
+    primary button on the page ("➕ Add job" is secondary while locked). One obvious action
+    beats two competing red buttons.
+  - **Defence in depth:** the UI is not the only gate. The "Add a job" dialog checks again (a
+    warning with "Get started →", "Analyse fit" disabled) in case it is opened another way.
+    The application graph's `input_guard` node builds the same `SetupStatus` from its deps
+    (`get_profile`, `knowledge_base_size`) and stops with the friendly message *before any
+    LLM call*, so a script, a test or a future entry point can't spend tokens on an analysis
+    that can't work. The copilot chat shows a note with "Get started →", and its
+    `search_my_experience` tool tells the model "no documents yet, send the user to Get
+    started" instead of returning an empty search.
+- **Not blocked:** the Salary tab already works without a profile (it only skips the
+  comparison with the expected salary and says where to add it), and the mock interview is
+  built from a finished fit analysis, not the profile. Both are only reachable for analysed
+  jobs, which passed the check.
+- **Alternatives:** *keep the warnings, let the analysis fail with an error*: the user finds
+  out after pasting a posting and waiting; prevention costs nothing. *Hide "Add job" entirely*:
+  a disabled button with a tooltip explains what unlocks it; a missing one just confuses.
+  *Check only in the UI*: the graph is also run by scripts and tests, and the guard is a
+  one-line check that saves tokens.
+- **Trade-off:** the UI reads the `Document` table while the graph counts Chroma chunks. They
+  agree in normal use (both are written by `add_documents`); if they ever drift, the graph's
+  check is the one that protects the LLM calls.

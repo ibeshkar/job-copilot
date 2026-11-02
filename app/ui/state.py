@@ -4,8 +4,8 @@
 # Why: Streamlit forgets st.session_state when the browser is refreshed, but the URL survives.
 #      Keeping ids in the URL means a refresh reopens the same job or chat, and the link can be
 #      bookmarked.
-# Used by: app/main.py (tool toggles), app/ui/pages/1_board.py, 2_job_workspace.py,
-#          3_copilot_chat.py.
+# Used by: app/main.py (tool toggles), app/ui/pages/0_onboarding.py, 1_board.py,
+#          2_job_workspace.py, 3_copilot_chat.py.
 
 import re
 from datetime import UTC, datetime
@@ -24,6 +24,8 @@ _CHAT_ID_RE = re.compile(r"^chat-[0-9a-f]{12}$")
 WORKSPACE_PAGE = "ui/pages/2_job_workspace.py"  # relative to app/main.py
 BOARD_PAGE = "ui/pages/1_board.py"
 ONBOARDING_PAGE = "ui/pages/0_onboarding.py"
+ONBOARDING_STEP_KEY = "onboarding_step"  # 1 profile, 2 documents, 3 preferences, 4 done
+ONBOARDING_DOCUMENTS_STEP = 2
 
 
 def current_job_id() -> int | None:
@@ -43,6 +45,12 @@ def select_job(job_id: int) -> None:
 def open_job(job_id: int) -> None:
     """Go to the Job workspace for this job."""
     st.switch_page(WORKSPACE_PAGE, query_params={JOB_PARAM: str(job_id)})
+
+
+def open_onboarding(step: int = 1) -> None:
+    """Go to the Get started wizard at a given step (e.g. straight to the documents)."""
+    st.session_state[ONBOARDING_STEP_KEY] = step
+    st.switch_page(ONBOARDING_PAGE)
 
 
 def current_chat_id(new_id: str) -> str:

@@ -3,7 +3,7 @@
 #       badges, the fit card with its requirements summary, filter and compact requirement
 #       rows, the claim check list (group headers, compact claim rows, evidence popovers, edit
 #       on demand), the reviewed-claims list, the fact-check warning, the company news line,
-#       and the profile and preferences forms.
+#       the "Let's get you set up" checklist card, and the profile and preferences forms.
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
 #      share the forms. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
@@ -26,6 +26,7 @@ from app.agent.state import (
     UnsupportedStatement,
 )
 from app.memory.store import Preferences, Profile
+from app.services.readiness import SetupStatus
 from app.tools.company import WebResult
 from app.utils.errors import friendly_message
 
@@ -104,6 +105,92 @@ def input_with_action(
         button_label, key=f"{key}_action", disabled=disabled, use_container_width=True
     )
     return text, clicked
+
+
+# ---------------------------------------------------------------- setup checklist
+# Shown on the Board until the user has a profile and documents. One card instead of separate
+# warnings, and only the next step to do gets a (primary) button, so there is one clear CTA.
+
+SetupStepState = str  # "done" | "next" | "todo" | "locked"
+SETUP_ICONS = {"done": "✅", "next": "👉", "todo": "⬜", "locked": "🔒"}
+
+
+class SetupStep(NamedTuple):
+    """One line of the setup checklist."""
+
+    key: str  # "profile" | "documents" | "job": what the step's button returns
+    title: str
+    state: SetupStepState
+    detail: str
+    button: str = ""  # label of the step's button ("" = no button)
+
+
+def setup_steps(status: SetupStatus) -> list[SetupStep]:
+    """The three setup steps and their state: ① profile → ② documents → ③ first job.
+
+    Exactly one step is "next" while setup is incomplete; ③ stays locked until ① and ② are done.
+    """
+    profile_state = "done" if status.has_profile else "next"
+    docs_state = "done" if status.has_documents else "next" if status.has_profile else "todo"
+    docs_detail = (
+        f"{status.chunk_count} chunks in your knowledge base"
+        if status.has_documents
+        else "Your CV, project READMEs or a brag doc: the evidence I compare jobs with."
+    )
+    return [
+        SetupStep(
+            "profile",
+            "① Create your profile",
+            profile_state,
+            "Saved" if status.has_profile else "Target roles, languages, location, salary.",
+            "Get started →" if profile_state == "next" else "",
+        ),
+        SetupStep(
+            "documents",
+            "② Add your CV / documents",
+            docs_state,
+            docs_detail,
+            "Upload documents →" if docs_state == "next" else "",
+        ),
+        SetupStep(
+            "job",
+            "③ Add your first job",
+            "next" if status.is_ready else "locked",
+            "Paste a job posting and I'll check your fit."
+            if status.is_ready
+            else "Unlocks after steps ① and ②.",
+        ),
+    ]
+
+
+def setup_checklist(status: SetupStatus) -> str | None:
+    """Draw the "Let's get you set up" card.
+
+    Returns:
+        "profile" or "documents" when that step's button was clicked, "demo" for "Use demo
+        persona", otherwise None. The page decides where to go.
+    """
+    clicked = None
+    with st.container(border=True):
+        st.markdown("#### 👋 Let's get you set up")
+        st.caption("Two quick steps before I can compare jobs with your experience.")
+        for step in setup_steps(status):
+            text_col, button_col = st.columns([4, 1.4], vertical_alignment="center")
+            title = f"**{step.title}**" if step.state != "locked" else f":gray[{step.title}]"
+            detail = step.detail if step.state != "locked" else f":gray[{step.detail}]"
+            text_col.markdown(f"{SETUP_ICONS[step.state]} {title}  \n{detail}")
+            if step.button and button_col.button(
+                step.button, key=f"setup_{step.key}", type="primary", use_container_width=True
+            ):
+                clicked = step.key
+        st.divider()
+        if st.button("🧪 Use demo persona", key="setup_demo"):
+            clicked = "demo"
+        st.caption(
+            "Quick start: fills in what's missing with Alex Novak's profile and CV. "
+            "Anything you've already saved is kept."
+        )
+    return clicked
 
 
 # ---------------------------------------------------------------- progress box

@@ -10,11 +10,21 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
+from app.db import repo
 from app.memory.store import Profile, save_profile
 from app.services import applications
 from tests.graph_fakes import POSTING, UNSUPPORTED_CLAIM
 
 MAIN = str(Path(__file__).resolve().parent.parent / "app" / "main.py")
+
+
+def _set_up(profile: bool = True, documents: bool = True) -> None:
+    """Give the user a profile and/or a document row, like finishing Get started."""
+    if profile:
+        save_profile(Profile(name="Alex"))
+    if documents:
+        with repo.session_scope() as session:
+            repo.upsert_document(session, "cv.md", "cv", 12)
 
 
 def _app(job_id: int | None = None) -> AppTest:
@@ -34,7 +44,7 @@ def _button(at: AppTest, label: str):
 
 
 def test_empty_board_explains_what_to_do(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
 
     at = _app().run()
 
@@ -42,8 +52,72 @@ def test_empty_board_explains_what_to_do(fake_app) -> None:
     assert any("No jobs yet" in info.value for info in at.info)
 
 
+def _board() -> AppTest:
+    """The Board page (without a profile the app would open Get started by default)."""
+    at = _app()
+    at.switch_page("ui/pages/1_board.py")
+    return at
+
+
+def _add_job_button(at: AppTest):
+    return _button(at, "➕ Add job")
+
+
+def test_fresh_start_shows_one_checklist_and_locks_add_job(fake_app) -> None:
+    at = _board().run()
+
+    assert not at.exception
+    text = " ".join(m.value for m in at.markdown)
+    assert "Let's get you set up" in text
+    assert "Unlocks after steps ① and ②" in text
+    assert not at.warning  # one card, not separate warnings
+    assert [b.label for b in at.button if b.proto.type == "primary"] == ["Get started →"]
+    assert _add_job_button(at).disabled
+    assert "Saved ·" not in text  # no empty columns before the first job
+
+
+def test_profile_only_makes_documents_the_next_step(fake_app) -> None:
+    _set_up(documents=False)
+
+    at = _board().run()
+
+    assert [b.label for b in at.button if b.proto.type == "primary"] == ["Upload documents →"]
+    assert "✅ **① Create your profile**" in " ".join(m.value for m in at.markdown)
+    assert _add_job_button(at).disabled
+
+
+def test_documents_only_still_needs_a_profile(fake_app) -> None:
+    _set_up(profile=False)
+
+    at = _board().run()
+
+    text = " ".join(m.value for m in at.markdown)
+    assert "12 chunks in your knowledge base" in text
+    assert [b.label for b in at.button if b.proto.type == "primary"] == ["Get started →"]
+    assert _add_job_button(at).disabled
+
+
+def test_setup_complete_hides_the_checklist_and_unlocks_add_job(fake_app) -> None:
+    _set_up()
+
+    at = _board().run()
+
+    assert "Let's get you set up" not in " ".join(m.value for m in at.markdown)
+    assert not _add_job_button(at).disabled
+
+
+def test_dialog_blocks_analysis_when_setup_is_incomplete(fake_app) -> None:
+    at = _board()
+    at.session_state["add_job_dialog_open"] = True  # opened some other way
+    at.run()
+
+    assert any("Before I can analyse a job" in w.value for w in at.warning)
+    assert _button(at, "Analyse fit").disabled
+    assert applications.list_board()["saved"] == []
+
+
 def test_add_job_dialog_runs_the_analysis(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     at = _app().run()
 
     _button(at, "➕ Add job").click().run()
@@ -56,7 +130,7 @@ def test_add_job_dialog_runs_the_analysis(fake_app) -> None:
 
 
 def test_board_card_shows_score_and_review_badge(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     applications.add_job(POSTING)
 
     at = _app().run()
@@ -68,7 +142,7 @@ def test_board_card_shows_score_and_review_badge(fake_app) -> None:
 
 
 def test_workspace_shows_fit_card_and_survives_refresh(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
 
     at = _open_workspace(_app(job_id))
@@ -88,7 +162,7 @@ def test_workspace_shows_fit_card_and_survives_refresh(fake_app) -> None:
 
 
 def test_requirements_filter_hides_met_and_nice_to_have(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     at = _open_workspace(_app(job_id))
     control = at.segmented_control(key=f"fit_{job_id}_req_filter")
@@ -103,7 +177,7 @@ def test_requirements_filter_hides_met_and_nice_to_have(fake_app) -> None:
 
 
 def test_not_a_fit_button_resumes_the_graph(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     at = _open_workspace(_app(job_id))
 
@@ -115,7 +189,7 @@ def test_not_a_fit_button_resumes_the_graph(fake_app) -> None:
 
 
 def test_add_context_button_rechecks(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     at = _open_workspace(_app(job_id))
 
@@ -127,7 +201,7 @@ def test_add_context_button_rechecks(fake_app) -> None:
 
 
 def test_workspace_without_jobs_points_to_board(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
 
     at = _open_workspace(_app())
 
@@ -138,7 +212,7 @@ def test_workspace_without_jobs_points_to_board(fake_app) -> None:
 
 
 def _at_claim_check() -> int:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     applications.submit_fit_review(job_id, "continue")
     return job_id
@@ -244,7 +318,7 @@ def test_claim_check_to_accepted_drafts(fake_app) -> None:
 
 
 def test_notes_are_saved(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     at = _open_workspace(_app(job_id))
 
@@ -269,7 +343,7 @@ def test_sidebar_switches_off_tools_without_keys(fake_app, monkeypatch) -> None:
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "tavily_api_key", None)
-    save_profile(Profile(name="Alex"))
+    _set_up()
 
     at = _app().run()
 
@@ -284,7 +358,7 @@ def test_chat_starter_prompt_gets_an_answer_with_tool_expander(copilot_app) -> N
 
     from tests.copilot_fakes import calls, two_jobs
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     two_jobs()
     copilot_app([calls(("get_applications", {})), AIMessage("You applied to nothing yet.")])
     at = _open_chat(_app())
@@ -300,7 +374,7 @@ def test_chat_starter_prompt_gets_an_answer_with_tool_expander(copilot_app) -> N
 def test_chat_approval_card_moves_the_job(copilot_app) -> None:
     from tests.copilot_fakes import research_and_move_script, two_jobs
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     _, new = two_jobs()
     copilot_app(research_and_move_script(new))
     at = _open_chat(_app())
@@ -321,7 +395,7 @@ def test_company_tab_without_tavily_key(fake_app, monkeypatch) -> None:
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "tavily_api_key", None)
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
 
     at = _open_workspace(_app(job_id))
@@ -339,7 +413,7 @@ def test_company_tab_without_recent_news_says_so(fake_app) -> None:
     from app.services import company
     from app.tools.company import WebResult
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     brief = CompanyBrief(
         summary="Lumen builds AI for clinics.",
@@ -375,7 +449,7 @@ def _open(at: AppTest, page: str) -> AppTest:
 def test_sidebar_shows_session_usage_and_last_action(fake_app) -> None:
     from app.db import repo
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     at = _app().run()
     assert any("This session: **0 tokens" in m.value for m in at.sidebar.markdown)
 
@@ -391,7 +465,7 @@ def test_memory_page_edits_and_deletes(fake_app) -> None:
     from app.memory import store
     from app.memory.store import Fact
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     key = store.add_fact(Fact(text="Led a 3-person team"))
     at = _open(_app(), "4_memory.py")
     assert not at.exception
@@ -408,7 +482,7 @@ def test_memory_page_edits_and_deletes(fake_app) -> None:
 def test_memory_page_delete_all_needs_the_confirm_word(fake_app) -> None:
     from app.services import my_data
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     at = _open(_app(), "4_memory.py")
     delete = _button(at, "Delete everything")
     assert delete.disabled
@@ -432,7 +506,7 @@ def test_dev_settings_need_the_password(fake_app, monkeypatch) -> None:
     from app.config import get_settings
 
     monkeypatch.setattr(get_settings(), "app_dev_password", SecretStr("s3cret"))
-    save_profile(Profile(name="Alex"))
+    _set_up()
     at = _open(_app(), "9_dev_settings.py")
     assert not at.exception
     assert not at.tabs  # nothing visible before unlocking
@@ -456,7 +530,7 @@ def test_chat_shows_retry_after_a_network_error(copilot_app) -> None:
     def offline(messages):
         raise LLMServiceError("down", user_message=NETWORK_MESSAGE)
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     copilot_app([offline, AIMessage("Back online.")])
     at = _open(_app(), "3_copilot_chat.py")
 
@@ -473,7 +547,7 @@ def test_chat_shows_retry_after_a_network_error(copilot_app) -> None:
 def test_page_crash_shows_a_friendly_error(fake_app, monkeypatch) -> None:
     from app.services import applications as apps
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
 
     def broken():
         raise RuntimeError("database file is locked: /secret/path")
@@ -491,7 +565,7 @@ def test_page_crash_shows_a_friendly_error(fake_app, monkeypatch) -> None:
 def test_sidebar_tone_selector_saves_the_preference(fake_app) -> None:
     from app.memory.store import get_preferences
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     at = _app().run()
     assert at.sidebar.selectbox(key="sidebar_tone").value == "friendly"
 
@@ -513,7 +587,7 @@ def test_help_page_explains_and_answers_from_the_guide(fake_app, monkeypatch) ->
         sections=['Use case 1: "Is this job a fit for me?"'],
     )
     monkeypatch.setattr(help_bot, "get_llm", lambda: FakeStructuredLLM({HelpAnswer: answer}))
-    save_profile(Profile(name="Alex"))
+    _set_up()
     at = _open(_app(), "5_help.py")
     assert not at.exception
     assert any("Will the app invent experience" in e.label for e in at.expander)
@@ -526,7 +600,7 @@ def test_help_page_explains_and_answers_from_the_guide(fake_app, monkeypatch) ->
 
 
 def test_interview_tab_start_answer_and_feedback(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     at = _open_workspace(_app(job_id))
     assert not at.exception
@@ -578,7 +652,7 @@ def test_memory_page_shows_rule_sources_and_adds_a_rule(fake_app) -> None:
     from app.agent.state import StyleRule
     from app.memory import store
 
-    save_profile(Profile(name="Alex"))
+    _set_up()
     store.add_style_rule(
         StyleRule(
             rule="Avoid the word 'passionate'", source="edit_diff", avoid_phrases=["passionate"]
@@ -629,7 +703,7 @@ def _save_estimate(job_id: int, **fields) -> None:
 
 
 def test_salary_tab_and_board_badge_show_the_saved_estimate(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     _save_estimate(job_id)
 
@@ -648,7 +722,7 @@ def test_salary_tab_and_board_badge_show_the_saved_estimate(fake_app) -> None:
 
 
 def test_salary_tab_says_when_there_is_not_enough_data(fake_app) -> None:
-    save_profile(Profile(name="Alex"))
+    _set_up()
     job_id = applications.add_job(POSTING).job_id
     _save_estimate(job_id, status="not_enough_data", low=None, typical=None, high=None)
 

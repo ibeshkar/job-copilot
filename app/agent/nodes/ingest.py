@@ -1,6 +1,8 @@
 # What: the first two graph steps: `input_guard` (is this input usable?) and `ingest_job`
 #       (download the URL if needed, then extract a structured JobPosting with the LLM).
 # Why: bad input should stop early with a clear message, before we spend money on LLM calls.
+#      The setup check (profile + documents, app/services/readiness.py) runs here too, as the
+#      last line of defence behind the disabled "➕ Add job" button.
 #      Everything later in the graph works on the clean JobPosting, not on raw text.
 # Used by: app/agent/application_graph.py.
 
@@ -15,12 +17,9 @@ from app.agent.state import (
     JobPostingExtraction,
 )
 from app.guards.input_guard import check_job_text, looks_like_url
+from app.services.readiness import setup_status
 from app.utils.errors import AppError
 
-EMPTY_KB_MESSAGE = (
-    "Your knowledge base is empty, so I have no evidence to compare with. Upload your CV on "
-    "the Get started page, or use the demo persona."
-)
 NOT_A_JOB_MESSAGE = (
     "This doesn't look like a job posting. Please paste the posting's title, tasks and "
     "requirements."
@@ -30,10 +29,12 @@ NOT_A_JOB_MESSAGE = (
 def input_guard(state: ApplicationState, deps: GraphDeps) -> dict:
     """Stop early if there is nothing to compare against or the input is unusable.
 
-    URLs are only checked for safety later, when `ingest_job` downloads them.
+    No profile or no documents → a friendly error and no LLM call at all. URLs are only
+    checked for safety later, when `ingest_job` downloads them.
     """
-    if deps.knowledge_base_size() == 0:
-        return {"errors": [EMPTY_KB_MESSAGE]}
+    status = setup_status(deps.get_profile(), deps.knowledge_base_size())
+    if not status.is_ready:
+        return {"errors": [status.message]}
 
     raw = state.get("raw_input", "")
     if looks_like_url(raw):

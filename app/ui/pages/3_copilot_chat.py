@@ -13,8 +13,15 @@ import streamlit as st
 from app.guards.input_guard import MAX_CHAT_CHARS
 from app.services import copilot
 from app.services.copilot import ChatEvent, ChatTurn, PendingAction
+from app.services.readiness import get_setup_status
 from app.tools.registry import TOOL_REGISTRY
-from app.ui.state import current_chat_id, enabled_toggles, select_chat
+from app.ui.state import (
+    ONBOARDING_DOCUMENTS_STEP,
+    current_chat_id,
+    enabled_toggles,
+    open_onboarding,
+    select_chat,
+)
 
 ERROR_KEY = "chat_error"  # an error from the last run, shown once after the rerun
 
@@ -76,6 +83,19 @@ info_col.caption(
 if new_col.button("🆕 New chat", use_container_width=True):
     select_chat(copilot.new_thread_id())
     st.rerun()
+
+# The chat still works without a profile or documents (company research, job search), but
+# questions about the user's own experience can't be answered yet, so say so up front.
+setup = get_setup_status()
+if not setup.is_ready:
+    note_col, go_col = st.columns([4, 1], vertical_alignment="center")
+    note_col.info(
+        "I don't know your profile or experience yet, so I can only help with companies and "
+        "job ads. Set up your profile and CV to get answers about you.",
+        icon="👋",
+    )
+    if go_col.button("Get started →", use_container_width=True):
+        open_onboarding(1 if not setup.has_profile else ONBOARDING_DOCUMENTS_STEP)
 
 history = copilot.get_history(thread_id)
 pending = copilot.pending_approval(thread_id)

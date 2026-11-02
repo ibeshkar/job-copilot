@@ -45,13 +45,15 @@ Input to the graph:
 Config: `{"configurable": {"thread_id": "job-3"}, "recursion_limit": 25}` (`thread_config()`).
 
 ### Step 3. `input_guard`: `app/agent/nodes/ingest.py` → `input_guard()`
-Free Python checks, no LLM: is the knowledge base empty? Is the text 200–30,000 characters? Does
+Free Python checks, no LLM: is the user set up (a profile and at least one document, via
+`setup_status()` in `app/services/readiness.py`, D90)? Is the text 200–30,000 characters? Does
 it contain phrases like "ignore previous instructions"? (Those are **flagged**, not blocked: the
 posting is data, D20.)
 ```json
 {"warnings": []}
 ```
-If the knowledge base were empty: `{"errors": ["Your knowledge base is empty…"]}`, and the edge
+Without a profile or documents: `{"errors": ["Before I can analyse a job, …"]}` (or the
+message for whichever is missing), and the edge
 rule `_stop_on_errors` sends the run to END.
 
 ### Step 4. `ingest_job`: `app/agent/nodes/ingest.py` → `ingest_job()`

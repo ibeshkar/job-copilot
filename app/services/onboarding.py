@@ -2,7 +2,8 @@
 #       them in the database), load the demo persona, and report what the knowledge base holds.
 # Why: the Streamlit page should only draw widgets. Keeping this logic here makes it testable
 #      without a browser and reusable by the Memory page and the copilot later.
-# Used by: app/ui/pages/0_onboarding.py, app/main.py, tests/test_onboarding_service.py.
+# Used by: app/ui/pages/0_onboarding.py, app/ui/pages/1_board.py (demo quick start),
+#          app/services/readiness.py, tests/test_onboarding_service.py.
 
 from dataclasses import dataclass, field
 
@@ -10,7 +11,7 @@ from langchain_chroma import Chroma
 
 from app.config import PROJECT_ROOT
 from app.db import repo
-from app.memory.store import Preferences, Profile, get_profile
+from app.memory.store import Preferences, Profile, get_profile, save_preferences, save_profile
 from app.rag.ingest import guess_doc_type, ingest_file
 from app.utils.errors import AppError, friendly_message
 from app.utils.logging import get_logger, log_exception
@@ -113,9 +114,18 @@ def list_knowledge_base_files() -> list[tuple[str, str, int]]:
         return [(d.filename, d.doc_type, d.chunk_count) for d in repo.list_documents(session)]
 
 
-def is_onboarded() -> bool:
-    """True once the user has saved a profile (then the wizard is no longer shown first)."""
-    return get_profile() is not None
+def use_demo_persona(vectorstore: Chroma | None = None) -> IngestReport:
+    """Quick start from the Board: fill in whatever is still missing with the demo persona.
+
+    A profile the user already saved is kept, and documents are only added to an empty
+    knowledge base, so this never overwrites the user's own data.
+    """
+    if get_profile() is None:
+        save_profile(DEMO_PROFILE)
+        save_preferences(DEMO_PREFERENCES)
+    if knowledge_base_summary()[1] > 0:
+        return IngestReport()
+    return load_demo_documents(vectorstore=vectorstore)
 
 
 def demo_file_names() -> list[str]:

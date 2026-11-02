@@ -16,8 +16,8 @@ from app.memory.store import (
 from app.services import onboarding
 from app.services.onboarding import IngestReport
 from app.ui.components import preferences_form, profile_form, progress_status
+from app.ui.state import ONBOARDING_STEP_KEY as STEP_KEY
 
-STEP_KEY = "onboarding_step"
 PROFILE_DRAFT_KEY = "onboarding_profile_draft"
 
 
