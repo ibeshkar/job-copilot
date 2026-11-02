@@ -42,6 +42,7 @@ def configure_tracing(settings: Settings | None = None) -> bool:
     if enabled:
         os.environ["LANGSMITH_API_KEY"] = settings.langsmith_api_key.get_secret_value()
         os.environ["LANGSMITH_PROJECT"] = settings.langsmith_project
+        os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
         hide = "true" if settings.langsmith_hide_inputs else "false"
         os.environ["LANGSMITH_HIDE_INPUTS"] = hide
         os.environ["LANGSMITH_HIDE_OUTPUTS"] = hide

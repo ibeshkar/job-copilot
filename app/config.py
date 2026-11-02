@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     langsmith_tracing: bool = False
     langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "job-copilot"
+    # EU accounts need https://eu.api.smith.langchain.com; a key from the other region gets 403
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
     # True = LangSmith traces show the run structure, tokens and timing but not the texts
     # (CV data, job postings). PROJECT_PLAN.md §9.
     langsmith_hide_inputs: bool = False
