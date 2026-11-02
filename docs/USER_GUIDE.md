@@ -31,8 +31,11 @@ browse saved data, but AI features don't run, and a banner explains what to do.
 1. Go to **🗂️ Board** and click **➕ Add job**.
 2. Paste the job ad's text, or its link. Many sites (LinkedIn, for example) block reading,
    so pasting the text is the most reliable way. You can also pick a sample job.
-3. Click **Analyse fit**. A status box shows each step: reading the posting, extracting the
-   requirements, searching your documents, scoring.
+3. Click **Analyse fit**. A progress box shows each step: reading the posting, extracting the
+   requirements, searching your documents, scoring. Its header always says which step runs
+   (for example "(3/5) Extracting the requirements…"), even when the box is closed.
+   If the posting doesn't name the company, the card says "Unknown company"; set the real name
+   with **✏️** next to the job title in the Job workspace.
 4. The **🎯 Fit** tab of the **Job workspace** shows the **fit card**:
    - a **score from 0 to 100**,
    - **red flags** such as "German C1 required" (a blocking flag caps the score at 40),

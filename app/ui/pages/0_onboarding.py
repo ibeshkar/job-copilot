@@ -15,7 +15,7 @@ from app.memory.store import (
 )
 from app.services import onboarding
 from app.services.onboarding import IngestReport
-from app.ui.components import preferences_form, profile_form
+from app.ui.components import preferences_form, profile_form, progress_status
 
 STEP_KEY = "onboarding_step"
 PROFILE_DRAFT_KEY = "onboarding_profile_draft"
@@ -62,12 +62,14 @@ def _step_documents() -> None:
     )
     col_add, col_demo = st.columns(2)
     if col_add.button("Add to my knowledge base", disabled=not uploads, type="primary"):
-        with st.spinner("Reading and indexing your documents…"):
+        with progress_status("Indexing your documents", done="Documents indexed") as progress:
+            progress(f"Reading and indexing {len(uploads)} file(s)…")
             report = onboarding.add_documents([(f.name, f.getvalue()) for f in uploads])
         _show_report(report)
 
     if col_demo.button("🧪 Use the demo persona"):
-        with st.spinner("Loading Alex Novak's CV, project READMEs and brag doc…"):
+        with progress_status("Loading the demo persona", done="Demo persona loaded") as progress:
+            progress("Indexing Alex Novak's CV, project READMEs and brag doc…")
             report = onboarding.load_demo_documents()
         _show_report(report)
     col_demo.caption("Files: " + ", ".join(onboarding.demo_file_names()))

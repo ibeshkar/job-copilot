@@ -7,7 +7,13 @@ import streamlit as st
 
 from app.db.models import JobStatus
 from app.services import applications, onboarding
-from app.ui.components import STATUS_LABELS, fit_badge, salary_badge, stage_badge
+from app.ui.components import (
+    STATUS_LABELS,
+    fit_badge,
+    run_with_progress,
+    salary_badge,
+    stage_badge,
+)
 from app.ui.state import ONBOARDING_PAGE, open_job
 
 STATUSES = [s.value for s in JobStatus]
@@ -38,17 +44,15 @@ def add_job_dialog() -> None:
     if not st.button("Analyse fit", type="primary", disabled=not text.strip()):
         return
 
-    with st.status("Analysing fit…", expanded=True) as status:
-        result = applications.add_job(text, on_progress=status.write)
-        if result.ok:
-            status.update(label="Fit analysis ready ✔", state="complete")
-        else:
-            status.update(label="Couldn't finish the analysis", state="error")
-
+    result = run_with_progress(
+        "Analysing fit",
+        lambda progress: applications.add_job(text, on_progress=progress),
+        steps=applications.FIT_ANALYSIS_STEPS,
+        done="Fit analysis done",
+    )
     if result.ok:
         _close_dialog()
         open_job(result.job_id)
-    st.error(result.message)
     if result.job_id is not None:
         st.caption("The job is on your board; open it there to retry the analysis.")
 

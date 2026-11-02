@@ -309,14 +309,15 @@ They see the same fit card and buttons. The open job is in the URL (`?job=3`, se
 this with a fresh `AppTest` session on the same URL.
 
 **How does the user see progress during a 20-second analysis?**
-`add_job()` uses `graph.stream(..., stream_mode="updates")`. After each node it sends a short
-message ("Extracted 8 requirements", "Scored the fit: 84/100") to `st.status`'s `write`, so the
-user sees the agent work step by step.
+`add_job()` uses `graph.stream(..., stream_mode=["tasks", "updates"])`. When a node starts, the
+progress box's header says what runs now ("⏳ Analysing fit… (4/5) Searching your documents…");
+when it ends, a line like "Extracted 8 requirements" is added. A search retry updates its line
+instead of adding one. Every long action uses the same box (`progress_status`, D88).
 
 **What are the empty, loading and error states?**
 Empty: the board says "No jobs yet…" and points to the sample jobs; the workspace without jobs
-points to the board; an empty knowledge base shows a warning. Loading: `st.status` with step
-messages. Error: friendly messages in the dialog (input problems), or "⏳ analysis not finished"
+points to the board; an empty knowledge base shows a warning. Loading: the shared progress box
+(`st.status` with the current step and "(3/5)" in its header). Error: friendly messages in the dialog (input problems), or "⏳ analysis not finished"
 with **🔁 Retry** (outages). Never a stack trace: a last `try/except` in `app/main.py` catches
 anything unexpected (D57).
 

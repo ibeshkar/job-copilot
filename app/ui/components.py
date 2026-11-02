@@ -1,4 +1,5 @@
-# What: reusable Streamlit widgets: the bottom-aligned "input + button" row, status/fit/salary
+# What: reusable Streamlit widgets: the bottom-aligned "input + button" row, the progress box
+#       for every long-running action (`progress_status`), status/fit/salary
 #       badges, the fit card with its requirements summary, filter and compact requirement
 #       rows, the claim check list (group headers, compact claim rows, evidence popovers, edit
 #       on demand), the reviewed-claims list, the fact-check warning, the company news line,
@@ -7,8 +8,10 @@
 #      share the forms. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import date
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import streamlit as st
 
@@ -24,6 +27,10 @@ from app.agent.state import (
 )
 from app.memory.store import Preferences, Profile
 from app.tools.company import WebResult
+from app.utils.errors import friendly_message
+
+if TYPE_CHECKING:
+    from app.services.applications import RunResult
 
 STATUS_LABELS = {
     "saved": "🔖 Saved",
@@ -97,6 +104,118 @@ def input_with_action(
         button_label, key=f"{key}_action", disabled=disabled, use_container_width=True
     )
     return text, clicked
+
+
+# ---------------------------------------------------------------- progress box
+# Streamlit's st.status spinner is a small, thin ring, and on hover Streamlit swaps it for the
+# expand arrow. So the progress must never depend on it: the header label says what runs now
+# and how far it is ("⏳ Analysing fit… (3/5) Searching your documents…").
+
+
+def step_topic(message: str) -> str:
+    """What a progress message is about: the text before ": " (or the whole message).
+
+    A newer message with the same topic updates that line instead of adding one, e.g.
+    "Searched your documents: evidence for 9 requirements" after a retry replaces the
+    earlier "Searched your documents: evidence for 7 requirements".
+    """
+    return message.split(": ", 1)[0].removesuffix("…").strip()
+
+
+def progress_label(title: str, now: str, position: int, total: int | None) -> str:
+    """The status header while work runs, e.g. "⏳ Analysing fit… (3/5) Searching your documents…".
+
+    `now` is the step that runs (ends with "…") or, between steps, the last finished one;
+    `position` is that step's number.
+    """
+    counter = f"({min(max(position, 1), total)}/{total}) " if total else ""
+    return f"⏳ {title}… {counter}{now}".rstrip()
+
+
+class ProgressBox:
+    """The open `st.status` box of `progress_status`. Pass it as a service's `on_progress`.
+
+    A message ending in "…" says what runs now (it only changes the header). Any other message
+    reports a finished step: it adds a ✅ line, or updates the line with the same topic. A
+    running message with the topic of a finished line is a retry of that step, so the step
+    counter doesn't move.
+    """
+
+    def __init__(self, status, title: str, steps: int | None) -> None:
+        self._status = status
+        self._title = title
+        self._steps = steps
+        self._bar = status.progress(0.0) if steps else None
+        self._lines: dict[str, object] = {}  # topic → its st.empty() line
+        self.failed = False
+
+    def __call__(self, message: str) -> None:
+        topic = step_topic(message)
+        running = message.endswith("…")
+        if not running:
+            if topic not in self._lines:
+                self._lines[topic] = self._status.empty()
+            self._lines[topic].markdown(f"✅ {message}")
+        finished = len(self._lines)
+        if self._bar is not None:
+            self._bar.progress(min(finished / self._steps, 1.0))
+        position = finished + (1 if running and topic not in self._lines else 0)
+        # `expanded` must be repeated: Streamlit collapses the box whenever its label changes.
+        label = progress_label(self._title, message, position, self._steps)
+        self._status.update(label=label, expanded=True)
+
+    def complete(self, label: str) -> None:
+        if self._bar is not None:
+            self._bar.progress(1.0)
+        self._status.update(label=f"✅ {label}", state="complete", expanded=False)
+
+    def fail(self, message: str) -> None:
+        """Show a friendly error in the box (no stack trace) and keep it open."""
+        self.failed = True
+        self._status.error(message, icon="😕")
+        self._status.update(label=f"❌ {self._title}: didn't finish", state="error", expanded=True)
+
+
+@contextmanager
+def progress_status(
+    title: str, *, steps: int | None = None, done: str | None = None
+) -> Iterator[ProgressBox]:
+    """A status box for one long-running action. Use it for every AI or indexing step.
+
+    While it runs, the header shows the current step (and "(3/5)" if `steps` is given, with a
+    progress bar inside). On success it collapses to "✅ <done>"; after `box.fail(message)` or
+    an exception it turns red with a friendly message. Exceptions are re-raised.
+
+    Example:
+        with progress_status("Analysing fit", steps=5, done="Fit analysis done") as box:
+            result = applications.add_job(text, on_progress=box)
+            if not result.ok:
+                box.fail(result.message)
+    """
+    with st.status(f"⏳ {title}…", expanded=True, state="running") as status:
+        box = ProgressBox(status, title, steps)
+        try:
+            yield box
+        except Exception as exc:
+            box.fail(friendly_message(exc))
+            raise
+        if not box.failed:
+            box.complete(done or f"{title}: done")
+
+
+def run_with_progress(
+    title: str,
+    action: Callable[[ProgressBox], "RunResult"],
+    *,
+    steps: int | None = None,
+    done: str | None = None,
+) -> "RunResult":
+    """Run a service call that takes `on_progress` and returns a RunResult, in a progress box."""
+    with progress_status(title, steps=steps, done=done) as box:
+        result = action(box)
+        if not result.ok:
+            box.fail(result.message)
+    return result
 
 
 def thousands(amount: int) -> str:

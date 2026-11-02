@@ -15,12 +15,17 @@ The user is Alex Novak (demo persona). They paste the "Junior AI Engineer at Lum
 posting (`data/samples/jobs/01_good_fit_junior_ai_engineer.md`) into the Add-job dialog.
 
 ### Step 1. The dialog: `app/ui/pages/1_board.py` → `add_job_dialog()`
-The page only draws widgets. On **Analyse fit** it opens a status box and hands the text to
-the service, with the status box's `write` as the progress callback:
+The page only draws widgets. On **Analyse fit** it opens the shared progress box
+(`run_with_progress` in `app/ui/components.py`) and hands the text to the service, with the box
+as the progress callback:
 
 ```python
-with st.status("Analysing fit…", expanded=True) as status:
-    result = applications.add_job(text, on_progress=status.write)
+result = run_with_progress(
+    "Analysing fit",
+    lambda progress: applications.add_job(text, on_progress=progress),
+    steps=applications.FIT_ANALYSIS_STEPS,
+    done="Fit analysis done",
+)
 ```
 
 ### Step 2. The service: `app/services/applications.py` → `add_job()`
@@ -28,9 +33,10 @@ with st.status("Analysing fit…", expanded=True) as status:
 2. Creates a placeholder `Job` row ("New job / Analysis not finished") through `repo.create_job()`.
    The row gets `thread_id = "job-<id>"`; that id names this job's saved workflow run.
 3. Calls `_stream()`, which wraps the run in `track_run("analyse_fit", job_id=…)` (cost tracking
-   + LangSmith metadata) and runs `graph.stream(payload, config, stream_mode="updates")`.
-   After every node, `_progress_message()` turns the update into a line like "Extracted 8
-   requirements", and the status box shows it.
+   + LangSmith metadata) and runs `graph.stream(payload, config, stream_mode=["tasks",
+   "updates"])`. When a node starts, `_running_message()` puts "Searching your documents…" in the
+   box's header; when it ends, `_progress_message()` turns the update into a line like
+   "Extracted 8 requirements".
 
 Input to the graph:
 ```json

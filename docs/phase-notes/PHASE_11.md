@@ -217,3 +217,34 @@ per estimate, cached until Refresh.
   12 months.
 - **Known follow-up:** research cached before this change shows "Research again to load news
   from the last 12 months" until it is refreshed.
+
+
+## Follow-up: one progress box for every loading state, and no empty company name
+- **What changed:** the running indicator of `st.status` boxes was hard to see and vanished on
+  hover (Streamlit swaps the small spinner for the expand arrow; no CSS of ours involved). Now
+  one helper, `progress_status` / `run_with_progress` (`app/ui/components.py`), shows every
+  long-running action: the header says what runs now and how far it is ("⏳ Analysing fit…
+  (4/5) Searching your documents…"), a progress bar for fixed runs, "✅ Fit analysis done" and
+  collapsed on success, red with a friendly message on error. A search retry updates the
+  "Searched your documents" line instead of adding new ones. A posting without a company name
+  now gets "Unknown company" (prompt rule + fallback), and **✏️** in the workspace header fixes
+  title or company. D88, D89.
+- **Switched to the helper:** Board → Add job (fit analysis); Job workspace → continue / not a
+  fit / re-check with context / retry analysis (🎯 Fit), claim check → drafts (✅ Claim check),
+  accept, regenerate, save + learn from edits (📝 Documents), company research (🏢), salary
+  estimate (💰), interview start / answer / end / retry (🎤); Get started → upload documents and
+  demo persona; Help → help-bot answer. Not switched: Copilot chat (streams its answer).
+- **Files:** `app/ui/components.py`, `app/ui/pages/0_onboarding.py`, `1_board.py`,
+  `2_job_workspace.py`, `5_help.py`, `app/services/applications.py` (`_running_message`,
+  `tasks` stream, `rename_job`, `save_analysis_to_job`), `app/services/interview.py`,
+  `app/services/export.py`, `app/agent/state.py` (`UNKNOWN_COMPANY`, `UNKNOWN_TITLE`),
+  `app/agent/prompts.py` (`PROMPT_VERSION` 2026-11-02.1), `app/agent/nodes/ingest.py`,
+  `app/agent/nodes/drafting.py`
+  (`letter_subject`), tests in `tests/test_applications_service.py`, `test_ui_components.py`,
+  `test_export.py`, `test_interview.py`; docs `DECISIONS.md`, `CODE_TOUR.md`, `REVIEW_GUIDE.md`,
+  `USER_GUIDE.md`.
+- **Checked:** Playwright + Chrome on a demo page with the helper: light theme at 1100 px and
+  dark theme at 360 px, header readable while hovered (the arrow replaces the spinner, the
+  "⏳ … (4/5) …" text stays), no horizontal scroll, the box stays open while running and
+  collapses to "✅ Fit analysis done".
+

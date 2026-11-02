@@ -17,6 +17,7 @@ from app.agent.deps import GraphDeps
 from app.agent.llm import invoke_structured
 from app.agent.prompts import draft_writer_messages, output_guard_messages
 from app.agent.state import (
+    UNKNOWN_COMPANY,
     ApplicationState,
     Claim,
     CoverLetter,
@@ -93,6 +94,20 @@ def _normalised(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+UNNAMED_COMPANY = "a company the posting doesn't name"  # for the writer prompt only
+
+
+def letter_subject(job_title: str, company: str) -> str:
+    """The default subject, e.g. "Application: Data Engineer – Acme" (no dash without a company)."""
+    company = "" if company == UNKNOWN_COMPANY else company.strip()
+    return f"Application: {job_title} – {company}" if company else f"Application: {job_title}"
+
+
+def _named_company(job: JobPosting) -> str:
+    """The company's name, or "" if the posting doesn't name it (never "Unknown company")."""
+    return "" if job.company == UNKNOWN_COMPANY else job.company
+
+
 def finalise_letter(letter: CoverLetter, job: JobPosting, profile: Profile | None) -> CoverLetter:
     """Fix the letter's header fields in Python instead of trusting the model with them.
 
@@ -109,11 +124,11 @@ def finalise_letter(letter: CoverLetter, job: JobPosting, profile: Profile | Non
         german = _looks_german(" ".join(body))
         salutation = FALLBACK_SALUTATION_DE if german else FALLBACK_SALUTATION
     return CoverLetter(
-        recipient_company=letter.recipient_company.strip() or job.company,
+        recipient_company=letter.recipient_company.strip() or _named_company(job),
         recipient_department=(letter.recipient_department or "").strip() or None,
         recipient_city_country=(letter.recipient_city_country or "").strip() or None,
         recipient_name=name or None,
-        subject=letter.subject.strip() or f"Application: {job.title} – {job.company}",
+        subject=letter.subject.strip() or letter_subject(job.title, job.company),
         salutation=salutation,
         body_paragraphs=body,
         closing=letter.closing.strip() or FALLBACK_CLOSING,
@@ -148,7 +163,8 @@ def draft_materials(state: ApplicationState, deps: GraphDeps) -> dict:
         deps.llm,
         Drafts,
         draft_writer_messages(
-            job_summary=f"{job.title} at {job.company} ({job.location or 'location not stated'}). "
+            job_summary=f"{job.title} at {_named_company(job) or UNNAMED_COMPANY} "
+            f"({job.location or 'location not stated'}). "
             f"{job.summary}\n\n{job.raw_text[:6000]}",
             claims_block=claims_block(claims),
             basics_block=basics_block(profile),

@@ -32,11 +32,17 @@ class LanguageRequirement(BaseModel):
         return f"{self.language}{level}{'' if self.required else ' (nice to have)'}"
 
 
+# Stored when a posting doesn't name its company (or job title), so no message or letter ever
+# shows an empty value. The user can set the real name in the Job workspace (✏️).
+UNKNOWN_COMPANY = "Unknown company"
+UNKNOWN_TITLE = "Untitled job"
+
+
 class JobPostingExtraction(BaseModel):
     """What the LLM extracts from a posting. Code adds the raw text and URL afterwards."""
 
-    title: str
-    company: str
+    title: str = Field(description="The job title as written, without gender tags like (m/w/d)")
+    company: str = Field(description="The hiring company's name, or \"\" if it isn't stated")
     location: str | None
     remote_policy: Literal["onsite", "hybrid", "remote", "unknown"]
     seniority: Literal["intern", "junior", "mid", "senior", "lead", "unknown"]

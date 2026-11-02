@@ -251,7 +251,7 @@ def test_service_flow_answers_end_and_restart(fake_app) -> None:
     progress: list[str] = []
 
     assert interview.start(job_id, on_progress=progress.append).ok
-    assert progress == ["Wrote the next question"]
+    assert progress == ["Writing the next question…", "Wrote the next question"]
     view = interview.get_view(job_id)
     assert (view.stage, view.number, view.total) == ("question", 1, 5)
 

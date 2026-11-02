@@ -14,7 +14,9 @@ from app.ui.components import (
     group_requirements,
     match_rows,
     news_line,
+    progress_label,
     status_badge,
+    step_topic,
 )
 
 
@@ -132,4 +134,23 @@ def test_news_line_shows_month_or_date_unknown() -> None:
     assert news_line(dated) == "[Lumen opens Vienna office](https://news.example/v) · Sep 2026"
     assert news_line(undated) == (
         "[https://news.example/u](https://news.example/u) · :gray[date unknown]"
+    )
+
+
+def test_step_topic_groups_repeated_steps() -> None:
+    assert step_topic("Searched your documents: evidence for 7 requirements") == (
+        "Searched your documents"
+    )
+    assert step_topic("Checked your input") == "Checked your input"
+    assert step_topic("Fact check: passed") == step_topic("Fact check: found 2 problems")
+
+
+def test_progress_label_shows_the_step_number() -> None:
+    running = progress_label("Analysing fit", "Searching your documents…", 4, 5)
+    assert running == "⏳ Analysing fit… (4/5) Searching your documents…"
+    assert progress_label("Writing your drafts", "Writing the drafts…", 1, None) == (
+        "⏳ Writing your drafts… Writing the drafts…"
+    )
+    assert progress_label("Analysing fit", "Scoring the fit…", 7, 5).startswith(
+        "⏳ Analysing fit… (5/5)"
     )

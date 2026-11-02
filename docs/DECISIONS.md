@@ -929,3 +929,50 @@ writer and the guard.
   talking points is coarse: "their 2025 launch" is kept in October 2026 even if it was in
   January 2025; a point about an old event that doesn't name a year can still slip through.
   The chat tool `research_company` is unchanged apart from showing a date when a result has one.
+
+
+## D88. One progress helper for every long-running action (Phase 11)
+- **Problem:** the spinner of `st.status` boxes ("Analysing fit…") was hard to see and
+  disappeared on hover. The cause is in Streamlit 1.66, not in our CSS (the app has none for
+  expanders): the running icon is a small ring (0.8 × 1 rem) whose track is 10 % opaque, and the
+  expander shows *either* its icon *or* the expand arrow, so on hover the spinner is replaced by
+  the arrow. The box itself also said little: the header never changed, and repeated steps
+  (search retries) added a new line each time.
+- **What:** `progress_status(title, steps=…, done=…)` and `run_with_progress(...)` in
+  `app/ui/components.py`. The header carries the progress, so it doesn't depend on the spinner:
+  "⏳ Analysing fit… (4/5) Searching your documents…". With `steps` a progress bar is shown
+  inside. Success: "✅ <done>", collapsed. Failure: red, open, with the friendly message (no
+  stack trace). Services keep the plain `on_progress(str)` callback: a message ending in "…"
+  says what starts now (from LangGraph's `tasks` stream), other messages are finished steps. A
+  finished step with the same topic (text before ": ") updates its line, so "Searched your
+  documents: …" appears once even after two retries, with "(after retry 2/2)".
+- **Used by:** add job (Board), all workflow resumes, retries, drafts and interview steps,
+  company research, salary estimate, learning from edits, document indexing (Get started) and
+  the help-bot. The Copilot chat is the exception: it streams its answer token by token and
+  shows "🔧 Using …" lines, which already show progress.
+- **Streamlit detail:** changing an expander's label resets it to the `expanded` value of the
+  update, so every running update passes `expanded=True`; otherwise the box closes after the
+  first step.
+- **Alternatives:** *CSS to enlarge or recolour the spinner*: targets Streamlit's internal test
+  ids, can't stop the hover swap (the spinner leaves the DOM), and needs light/dark variants.
+  *`st.spinner` for short calls*: a second loading style; one helper keeps them consistent.
+- **Trade-off:** the step count is known only for fixed runs (fit analysis 5, re-check 2);
+  other actions show the current step without "(n/m)".
+
+
+## D89. A posting without a company name gets "Unknown company", and the user can fix it (Phase 11)
+- **Problem:** "Read the posting: Android Developer at" — the extraction returned an empty
+  company when the posting didn't state one plainly, and the message, card and letter showed
+  the gap.
+- **What:** the extraction prompt now says where to look (header, "About us", sign-off, email
+  domain, page title) and to return "" rather than invent a name. `ingest_job` stores
+  `UNKNOWN_COMPANY` ("Unknown company") for an empty company and `UNKNOWN_TITLE` for an empty
+  title. The progress line then says "(the company isn't named; add it with ✏️ later)". The
+  Job workspace header has **✏️** to correct title and company (`rename_job`); a correction
+  survives later workflow steps, because `save_analysis_to_job` keeps a name that differs from
+  the one the last analysis saved. The letter never prints "Unknown company": the recipient
+  stays empty (filled from the corrected card at export) and the subject drops the
+  "– company" part; Company research asks for the name first.
+- **Alternative:** *make the field optional (`str | None`)*: every `f"{job.company}"` would need
+  a None check, and old checkpoints store a string.
+

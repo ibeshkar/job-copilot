@@ -28,7 +28,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate
 
-from app.agent.state import CoverLetter, Drafts
+from app.agent.nodes.drafting import letter_subject
+from app.agent.state import UNKNOWN_COMPANY, CoverLetter, Drafts
 from app.config import PROJECT_ROOT
 from app.memory.store import Profile
 from app.utils.logging import get_logger, log_exception
@@ -127,10 +128,12 @@ def format_date(day: date) -> str:
 def fill_missing(letter: CoverLetter, job_title: str, company: str) -> CoverLetter:
     """Give letters saved as plain text (before structured letters) a company and subject."""
     company_name = letter.recipient_company.strip() or company
+    if company_name == UNKNOWN_COMPANY:
+        company_name = ""  # the posting named no company and the user hasn't set one yet
     return letter.model_copy(
         update={
             "recipient_company": company_name,
-            "subject": letter.subject.strip() or f"Application: {job_title} – {company_name}",
+            "subject": letter.subject.strip() or letter_subject(job_title, company_name),
         }
     )
 
@@ -175,8 +178,9 @@ def cover_letter_to_text(
 def drafts_to_text(drafts: Drafts, job_title: str, company: str) -> str:
     """The drafts as plain text (for the copy box)."""
     bullets = "\n".join(f"- {b}" for b in drafts.cv_bullets)
+    at = f" at {company}" if company != UNKNOWN_COMPANY else ""
     return (
-        f"Application: {job_title} at {company}\n\n"
+        f"Application: {job_title}{at}\n\n"
         f"CV BULLETS\n{bullets}\n\n"
         f"COVER LETTER\n{drafts.cover_letter.text}\n"
     )

@@ -87,9 +87,10 @@ def build_setup(job_id: int) -> InterviewSetup | None:
         notes = "\n".join(
             [research.brief.summary, *research.brief.tech_stack, *research.brief.culture]
         )
+    card = applications.get_job_summary(job_id)  # the names the user may have corrected
     return InterviewSetup(
-        job_title=view.job.title,
-        company=view.job.company,
+        job_title=card.title,
+        company=card.company,
         job_summary=view.job.summary,
         requirements=view.requirements,
         gaps=gaps,
@@ -136,6 +137,14 @@ def get_view(job_id: int) -> InterviewView:
     return view
 
 
+# A message ending in "…" says which step runs now (see components.progress_status).
+_RUNNING = {
+    "generate_question": "Writing the next question…",
+    "evaluate_answer": "Scoring your answer…",
+    "summarise": "Writing your summary…",
+}
+
+
 def _progress_message(node: str, update: dict | None) -> str | None:
     update = update or {}
     if node == "generate_question" and update.get("current"):
@@ -154,11 +163,14 @@ def _run(job_id: int, payload: object, on_progress: ProgressFn | None) -> RunRes
         if not get_settings().has_llm_key:
             raise ConfigError("OPENROUTER_API_KEY is not set")
         with track_run("interview", job_id=job_id):
-            for update in get_graph().stream(
-                payload, interview_config(job_id), stream_mode="updates"
+            for mode, chunk in get_graph().stream(
+                payload, interview_config(job_id), stream_mode=["tasks", "updates"]
             ):
-                for node, values in update.items():
-                    message = _progress_message(node, values)
+                if mode == "tasks":  # a step starting has "input"; a finished one has "result"
+                    messages = [_RUNNING.get(chunk["name"])] if "input" in chunk else []
+                else:
+                    messages = [_progress_message(node, v) for node, v in chunk.items()]
+                for message in messages:
                     if message and on_progress:
                         on_progress(message)
     except AppError as exc:

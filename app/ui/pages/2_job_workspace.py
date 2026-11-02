@@ -15,7 +15,7 @@ import re
 
 import streamlit as st
 
-from app.agent.state import CoverLetter, Drafts, InterviewTurn
+from app.agent.state import UNKNOWN_COMPANY, CoverLetter, Drafts, InterviewTurn
 from app.config import get_settings
 from app.db.models import JobStatus
 from app.guards.input_guard import MAX_ANSWER_CHARS
@@ -39,7 +39,9 @@ from app.ui.components import (
     input_with_action,
     kept_claim_text,
     news_line,
+    progress_status,
     reviewed_claims,
+    run_with_progress,
     set_claims_kept,
 )
 from app.ui.state import BOARD_PAGE, current_job_id, select_job
@@ -75,21 +77,10 @@ RECIPIENT_FIELDS = [
 PX_PER_PT = 1.2  # the preview's "paper" is a bit smaller than the printed page
 
 
-def _run_with_status(label: str, action) -> RunResult:
-    """Run a service call inside an st.status box that lists each finished step."""
-    with st.status(label, expanded=True) as status:
-        result = action(status.write)
-        status.update(
-            label="Done ✔" if result.ok else "Something went wrong",
-            state="complete" if result.ok else "error",
-        )
-    return result
-
-
 def _after(result: RunResult) -> None:
+    """Show the new state after a successful run (a failed run's box shows the error)."""
     if result.ok:
         st.rerun()
-    st.error(result.message)
 
 
 def _fit_review_actions(job_id: int) -> None:
@@ -98,16 +89,18 @@ def _fit_review_actions(job_id: int) -> None:
     col_continue, col_stop = st.columns(2)
     if col_continue.button("Continue to application ▶", type="primary", use_container_width=True):
         _after(
-            _run_with_status(
-                "Saving your decision…",
+            run_with_progress(
+                "Planning claims about you",
                 lambda p: applications.submit_fit_review(job_id, "continue", on_progress=p),
+                done="Claims ready to check",
             )
         )
     if col_stop.button("🚫 Not a fit", use_container_width=True):
         _after(
-            _run_with_status(
-                "Saving your decision…",
+            run_with_progress(
+                "Saving your decision",
                 lambda p: applications.submit_fit_review(job_id, "stop", on_progress=p),
+                done="Saved as not a fit",
             )
         )
 
@@ -120,11 +113,13 @@ def _fit_review_actions(job_id: int) -> None:
         note = st.text_area("Your context", key=f"context_{job_id}", max_chars=2000)
         if st.button("Re-check with this context", disabled=not note.strip()):
             _after(
-                _run_with_status(
-                    "Re-checking your fit…",
+                run_with_progress(
+                    "Re-checking your fit",
                     lambda p: applications.submit_fit_review(
                         job_id, "add_context", text=note, on_progress=p
                     ),
+                    steps=applications.RECHECK_STEPS,
+                    done="Fit re-checked",
                 )
             )
 
@@ -139,9 +134,10 @@ def _fit_tab(view: WorkflowView) -> None:
         )
         if st.button("🔁 Retry", type="primary"):
             _after(
-                _run_with_status(
-                    "Continuing…",
+                run_with_progress(
+                    "Continuing the analysis",
                     lambda p: applications.retry_analysis(view.job_id, on_progress=p),
+                    done="Analysis continued",
                 )
             )
         return
@@ -242,9 +238,10 @@ def _claim_review(view: WorkflowView) -> None:
             continue
         action = "approve" if text == claim.text else "edit"
         decisions.append({"id": claim.id, "action": action, "text": text})
-    result = _run_with_status(
-        "Writing your drafts…",
+    result = run_with_progress(
+        "Writing your drafts",
         lambda p: applications.submit_claim_review(view.job_id, decisions, on_progress=p),
+        done="Drafts ready",
     )
     if result.ok:
         clear_claim_state(claims, scope)
@@ -472,11 +469,12 @@ def _draft_review(view: WorkflowView) -> None:
 
     if st.button("✅ Accept & save", type="primary", use_container_width=True):
         _after(
-            _run_with_status(
-                "Saving your drafts…",
+            run_with_progress(
+                "Saving your drafts",
                 lambda p: applications.submit_draft_review(
                     view.job_id, "accept", edited=edited, on_progress=p
                 ),
+                done="Drafts saved",
             )
         )
     with st.expander("🔄 Regenerate a section"):
@@ -496,8 +494,8 @@ def _draft_review(view: WorkflowView) -> None:
         st.caption("Your edits to the other section are kept.")
         if st.button("Regenerate"):
             _after(
-                _run_with_status(
-                    "Rewriting…",
+                run_with_progress(
+                    "Rewriting the section",
                     lambda p: applications.submit_draft_review(
                         view.job_id,
                         "regenerate",
@@ -506,6 +504,7 @@ def _draft_review(view: WorkflowView) -> None:
                         instruction=instruction,
                         on_progress=p,
                     ),
+                    done="Section rewritten",
                 )
             )
     _export_copy_rate(view.job_id, edited, prefix)
@@ -522,7 +521,7 @@ def _accepted_drafts(view: WorkflowView) -> None:
         saved = applications.save_edited_drafts(view.job_id, edited)
         st.toast("Saved as a new version." if saved else "Nothing changed.")
         if saved:
-            with st.spinner("Learning from your edits…"):
+            with progress_status("Learning from your edits", done="Style check done"):
                 _remember_learned(
                     view.job_id, learning.learn_from_edit(view.job_id, latest.drafts, edited)
                 )
@@ -572,6 +571,13 @@ def _company_tab(job_id: int) -> None:
             "`TAVILY_API_KEY` in `.env` and restart the app.",
             icon="🔑",
         )
+    if card.company == UNKNOWN_COMPANY:
+        st.info(
+            "The posting doesn't name the company. Add its name with **✏️** next to the job "
+            "title above, then research it here.",
+            icon="🏢",
+        )
+        return
     focus, clicked = input_with_action(
         "Focus (optional)",
         "🔄 Research again" if research else f"🔎 Research {card.company}",
@@ -581,11 +587,14 @@ def _company_tab(job_id: int) -> None:
         disabled=not (settings.has_tavily_key and settings.has_llm_key),
     )
     if clicked:
-        with st.spinner(f"Searching the web for {card.company}…"):
+        with progress_status(
+            f"Researching {card.company}", done="Company research done"
+        ) as progress:
+            progress("Searching the web and summarising what I find…")
             fresh, message = company.run_research(job_id, focus)
-        if fresh is None:
-            st.error(message)
-        else:
+            if fresh is None:
+                progress.fail(message)
+        if fresh is not None:
             st.rerun()
 
     if research is None:
@@ -653,11 +662,12 @@ def _salary_tab(job_id: int) -> None:
         type="secondary" if estimate else "primary",
         disabled=not (settings.has_tavily_key and settings.has_llm_key),
     ):
-        with st.spinner("Searching salary data and computing the range…"):
+        with progress_status("Estimating the salary", done="Salary estimate done") as progress:
+            progress("Searching salary data and computing the range…")
             fresh, message = salary.run_estimate(job_id)
-        if fresh is None:
-            st.error(message)
-        else:
+            if fresh is None:
+                progress.fail(message)
+        if fresh is not None:
             st.rerun()
 
     if estimate is None:
@@ -769,15 +779,18 @@ def _interview_question(view: InterviewView) -> None:
         stop = stop_col.form_submit_button("End interview now", use_container_width=True)
     if send:
         _after(
-            _run_with_status(
-                "Scoring your answer…",
+            run_with_progress(
+                "Scoring your answer",
                 lambda p: interview.answer(view.job_id, text, on_progress=p),
+                done="Answer scored",
             )
         )
     if stop:
         _after(
-            _run_with_status(
-                "Summarising…", lambda p: interview.end_early(view.job_id, on_progress=p)
+            run_with_progress(
+                "Summarising your interview",
+                lambda p: interview.end_early(view.job_id, on_progress=p),
+                done="Summary ready",
             )
         )
 
@@ -820,9 +833,10 @@ def _past_interviews(job_id: int) -> None:
 def _start_interview(job_id: int, label: str, primary: bool = True) -> None:
     if st.button(label, type="primary" if primary else "secondary", key=f"start_iv_{job_id}"):
         _after(
-            _run_with_status(
-                "Preparing your first question…",
+            run_with_progress(
+                "Preparing your first question",
                 lambda p: interview.start(job_id, on_progress=p),
+                done="First question ready",
             )
         )
 
@@ -851,7 +865,11 @@ def _interview_tab(job_id: int) -> None:
         )
         if st.button("🔁 Retry", key=f"retry_iv_{job_id}"):
             _after(
-                _run_with_status("Continuing…", lambda p: interview.retry(job_id, on_progress=p))
+                run_with_progress(
+                    "Continuing the interview",
+                    lambda p: interview.retry(job_id, on_progress=p),
+                    done="Interview continued",
+                )
             )
 
     if view.stage == "finished":
@@ -927,12 +945,26 @@ card = applications.get_job_summary(job_id)
 head, controls = st.columns([4, 3])
 head.markdown(f"### {card.title}\n{card.company}")
 with controls:
-    status_col, delete_col = action_row(2, 1)
+    status_col, rename_col, delete_col = action_row(4, 1, 1)
 new_status = status_col.selectbox(
     "Board column", STATUSES, index=STATUSES.index(card.status), format_func=STATUS_LABELS.get
 )
 if new_status != card.status:
     applications.change_status(job_id, new_status)
+    st.rerun()
+with (
+    rename_col.popover("✏️", help="Correct the job title or company"),
+    st.form(f"rename_{job_id}", border=False),
+):
+    new_title = st.text_input("Job title", value=card.title)
+    unknown = card.company == UNKNOWN_COMPANY
+    new_company = st.text_input(
+        "Company",
+        value="" if unknown else card.company,
+        placeholder="The posting doesn't name it" if unknown else None,
+    )
+    saved = st.form_submit_button("Save", type="primary")
+if saved and applications.rename_job(job_id, new_title, new_company):
     st.rerun()
 with delete_col.popover("🗑️", help="Delete this job"):
     st.write("Delete this job and its analysis? This can't be undone.")

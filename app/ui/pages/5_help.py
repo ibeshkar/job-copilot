@@ -7,6 +7,7 @@
 import streamlit as st
 
 from app.services import help as help_bot
+from app.ui.components import progress_status
 
 HISTORY_KEY = "help_history"  # [(question, answer, sections)] of this browser session
 
@@ -91,12 +92,17 @@ for question, answer, sections in history:
 
 if question := st.chat_input("e.g. How do I undo a learned style rule?"):
     st.chat_message("user").write(question)
-    with st.chat_message("assistant", avatar="❓"), st.spinner("Looking it up…"):
+    with (
+        st.chat_message("assistant", avatar="❓"),
+        progress_status("Looking it up", done="Answer ready") as progress,
+    ):
+        progress("Searching the user guide and writing an answer…")
         reply = help_bot.ask(question, [(q, a) for q, a, _ in history])
+        if not reply.ok:
+            progress.fail(reply.answer)
     if reply.ok:
         history.append((question, reply.answer, reply.sections))
         st.rerun()
-    st.error(reply.answer)
 
 if history and st.button("🧹 Clear the conversation"):
     st.session_state[HISTORY_KEY] = []

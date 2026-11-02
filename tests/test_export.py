@@ -14,7 +14,7 @@ from docx.shared import Pt
 from pypdf import PdfReader
 
 from app.agent.nodes.drafting import FALLBACK_SALUTATION, FALLBACK_SALUTATION_DE, finalise_letter
-from app.agent.state import CoverLetter, Drafts, JobPosting
+from app.agent.state import UNKNOWN_COMPANY, CoverLetter, Drafts, JobPosting
 from app.memory.store import Profile
 from app.services import export
 
@@ -244,6 +244,20 @@ def test_finalise_fills_sender_subject_and_closing_in_python() -> None:
     assert letter.closing == "Kind regards,"
     assert letter.recipient_company == "Lumen Health"
     assert letter.body_paragraphs == ["First.", "Second."]
+
+
+def test_unknown_company_never_appears_in_the_letter() -> None:
+    blank = LETTER.model_copy(update={"subject": "", "recipient_company": ""})
+    job = _job("...").model_copy(update={"company": UNKNOWN_COMPANY})
+
+    letter = finalise_letter(blank, job, PROFILE)
+    assert (letter.recipient_company, letter.subject) == ("", "Application: Junior AI Engineer")
+
+    # At export the company the user set on the card (✏️) fills the gap.
+    named = export.fill_missing(letter, "Junior AI Engineer", "Lumen Health")
+    assert named.recipient_company == "Lumen Health"
+    still_unknown = export.fill_missing(letter, "Junior AI Engineer", UNKNOWN_COMPANY)
+    assert still_unknown.recipient_company == ""
 
 
 def test_german_letter_gets_a_german_fallback_salutation() -> None:

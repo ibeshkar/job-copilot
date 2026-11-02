@@ -21,7 +21,9 @@ from langgraph.types import Command
 
 from app.agent.application_graph import get_application_graph, thread_config
 from app.agent.interview_graph import interview_thread_id
+from app.agent.nodes.evidence import MAX_REWRITES
 from app.agent.state import (
+    UNKNOWN_COMPANY,
     Claim,
     ClaimReviewDecision,
     CoverLetter,
@@ -134,8 +136,42 @@ def job_config(job_id: int) -> dict:
         return thread_config(repo.get_job(session, job_id).thread_id)
 
 
-# Shown in the st.status box while each step runs (§7: "Reading posting… Scoring fit…").
-def _progress_message(node: str, update: dict | None) -> str | None:
+# Shown in the progress box (app/ui/components.progress_status). A message ending in "…" says
+# which step runs now; the others report a finished step. Steps without an entry are quick.
+_RUNNING = {
+    "input_guard": "Checking your input…",
+    "ingest_job": "Reading the posting…",
+    "extract_requirements": "Extracting the requirements…",
+    "retrieve_evidence": "Searching your documents…",
+    "assess_fit": "Scoring the fit…",
+    "plan_claims": "Planning claims about you…",
+    "remember_confirmed_facts": "Saving the facts you confirmed…",
+    "draft_materials": "Writing the drafts…",
+    "output_guard": "Fact-checking the drafts…",
+    "learn_from_edits": "Learning from your edits…",
+    "save_to_tracker": "Saving to your board…",
+}
+FIT_ANALYSIS_STEPS = 5  # input check, read posting, requirements, search documents, score
+RECHECK_STEPS = 2  # search documents, score
+
+
+def _running_message(node: str, state: dict) -> str | None:
+    if node == "rewrite_queries":
+        attempt = state.get("rag_iterations", 0) + 1
+        # Same topic as the "Searched your documents" line: it's a retry, not a new step.
+        return (
+            "Searched your documents: nothing found for some requirements, trying other "
+            f"search words ({attempt}/{MAX_REWRITES})…"
+        )
+    return _RUNNING.get(node)
+
+
+def _progress_message(node: str, update: dict | None, retries: int = 0) -> str | None:
+    """The finished-step line for a node's update (None = nothing worth a line).
+
+    Lines share a topic (the text before ": ") when a step repeats, so the progress box
+    updates the line instead of adding one (see components.step_topic).
+    """
     update = update or {}
     if update.get("errors"):
         return None
@@ -143,14 +179,15 @@ def _progress_message(node: str, update: dict | None) -> str | None:
         return "Checked your input"
     if node == "ingest_job" and update.get("job"):
         job = update["job"]
+        if job.company == UNKNOWN_COMPANY:
+            return f"Read the posting: {job.title} (the company isn't named; add it with ✏️ later)"
         return f"Read the posting: {job.title} at {job.company}"
     if node == "extract_requirements":
         return f"Extracted {len(update.get('requirements', []))} requirements"
     if node == "retrieve_evidence":
         found = sum(1 for chunks in (update.get("evidence") or {}).values() if chunks)
-        return f"Searched your documents: evidence for {found} requirements so far"
-    if node == "rewrite_queries":
-        return "Nothing found for some requirements, trying other search words…"
+        after = f" (after retry {retries}/{MAX_REWRITES})" if retries else ""
+        return f"Searched your documents: evidence for {found} requirements{after}"
     if node == "assess_fit" and update.get("fit"):
         return f"Scored the fit: {update['fit'].score}/100"
     if node == "plan_claims":
@@ -164,8 +201,8 @@ def _progress_message(node: str, update: dict | None) -> str | None:
     if node == "output_guard":
         issues = update.get("guard_issues", [])
         if not issues:
-            return "Fact check passed: every statement is backed by an approved claim"
-        return f"Fact check found {len(issues)} unsupported statement(s)"
+            return "Fact check: passed, every statement is backed by an approved claim"
+        return f"Fact check: found {len(issues)} unsupported statement(s)"
     if node == "learn_from_edits" and update.get("learned_rules"):
         return f"Learned {len(update['learned_rules'])} style rule(s) from your edits"
     if node == "save_to_tracker":
@@ -176,16 +213,26 @@ def _progress_message(node: str, update: dict | None) -> str | None:
 def _stream(
     payload: object, config: dict, on_progress: ProgressFn | None, action: str, job_id: int
 ) -> None:
-    """Run the graph until it pauses or ends, reporting each finished step.
+    """Run the graph until it pauses or ends, reporting each step as it starts and finishes.
 
     `action` names the run for cost tracking and LangSmith (e.g. "analyse_fit", "draft").
     """
+    retries = 0  # search rewrites so far, shown on the "Searched your documents" line
     with track_run(action, job_id=job_id):
-        for update in get_graph().stream(payload, config, stream_mode="updates"):
-            for node, values in update.items():
+        for mode, chunk in get_graph().stream(payload, config, stream_mode=["tasks", "updates"]):
+            if mode == "tasks":
+                # A task event with "input" is a step starting (the finish event has "result").
+                starting = "input" in chunk
+                message = starting and _running_message(chunk["name"], chunk["input"] or {})
+                if message and on_progress:
+                    on_progress(message)
+                continue
+            for node, values in chunk.items():
                 if node == "__interrupt__":
                     continue
-                message = _progress_message(node, values)
+                if node == "rewrite_queries":
+                    retries = (values or {}).get("rag_iterations", retries)
+                message = _progress_message(node, values, retries)
                 if message and on_progress:
                     on_progress(message)
 
@@ -247,13 +294,19 @@ def get_workflow_view(job_id: int) -> WorkflowView:
 
 
 def save_analysis_to_job(job_id: int, job: JobPosting, fit: FitReport | None) -> None:
-    """Copy the posting and fit score onto the job's row, so the board card shows them."""
+    """Copy the posting and fit score onto the job's row, so the board card shows them.
+
+    A title or company the user corrected (`rename_job`) differs from the one the last analysis
+    saved; it is kept, so a later step of the workflow doesn't undo the correction.
+    """
     with repo.session_scope() as session:
+        row = repo.get_job(session, job_id)
+        saved = JobPosting.model_validate_json(row.posting_json) if row.posting_json else None
         repo.update_job(
             session,
             job_id,
-            title=job.title,
-            company=job.company,
+            title=row.title if saved and row.title != saved.title else job.title,
+            company=row.company if saved and row.company != saved.company else job.company,
             url=job.source_url,
             raw_text=job.raw_text,
             posting_json=job.model_dump_json(),
@@ -567,6 +620,21 @@ def change_status(job_id: int, status: str) -> None:
     """Move a job to another board column."""
     with repo.session_scope() as session:
         repo.update_job(session, job_id, status=status)
+
+
+def rename_job(job_id: int, title: str, company: str) -> bool:
+    """Correct the job's title and company (e.g. when the posting didn't name the company).
+
+    Empty values keep the current ones. Returns False if nothing changed. The new names show
+    on the board, in company research, interview prep and the exported cover letter.
+    """
+    with repo.session_scope() as session:
+        row = repo.get_job(session, job_id)
+        title, company = title.strip() or row.title, company.strip() or row.company
+        if (title, company) == (row.title, row.company):
+            return False
+        repo.update_job(session, job_id, title=title, company=company)
+    return True
 
 
 def save_notes(

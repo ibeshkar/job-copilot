@@ -7,7 +7,13 @@
 from app.agent.deps import GraphDeps
 from app.agent.llm import invoke_structured
 from app.agent.prompts import job_extraction_messages
-from app.agent.state import ApplicationState, JobPosting, JobPostingExtraction
+from app.agent.state import (
+    UNKNOWN_COMPANY,
+    UNKNOWN_TITLE,
+    ApplicationState,
+    JobPosting,
+    JobPostingExtraction,
+)
 from app.guards.input_guard import check_job_text, looks_like_url
 from app.utils.errors import AppError
 
@@ -65,5 +71,11 @@ def ingest_job(state: ApplicationState, deps: GraphDeps) -> dict:
     if not extraction.is_job_posting:
         return {"errors": [NOT_A_JOB_MESSAGE]}
 
-    job = JobPosting(**extraction.model_dump(), raw_text=text, source_url=url)
+    job = JobPosting(
+        **extraction.model_dump(exclude={"title", "company"}),
+        title=extraction.title.strip() or UNKNOWN_TITLE,
+        company=extraction.company.strip() or UNKNOWN_COMPANY,
+        raw_text=text,
+        source_url=url,
+    )
     return {"job": job, "warnings": warnings}

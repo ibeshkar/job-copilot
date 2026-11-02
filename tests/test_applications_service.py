@@ -5,11 +5,12 @@
 
 import pytest
 
-from app.agent.state import RequirementList
+from app.agent.state import UNKNOWN_COMPANY, JobPostingExtraction, RequirementList
 from app.db import repo
 from app.services import applications
+from app.ui.components import step_topic
 from app.utils.errors import LLMServiceError
-from tests.graph_fakes import POSTING, make_llm
+from tests.graph_fakes import EXTRACTION, POSTING, make_llm
 
 
 def _jobs() -> list:
@@ -34,6 +35,44 @@ def test_add_job_runs_to_fit_review_and_updates_the_card(fake_app) -> None:
         86,
         "fit_review",
     )
+
+
+def test_progress_says_what_runs_now_and_merges_the_search_retries(fake_app) -> None:
+    progress: list[str] = []
+
+    applications.add_job(POSTING, on_progress=progress.append)
+
+    running = [p for p in progress if p.endswith("…")]
+    finished = [p for p in progress if not p.endswith("…")]
+    assert running[:3] == [
+        "Checking your input…",
+        "Reading the posting…",
+        "Extracting the requirements…",
+    ]
+    # The fake search finds nothing for one requirement, so the agent retries twice.
+    retry = "Searched your documents: nothing found for some requirements, trying other search"
+    assert f"{retry} words (2/2)…" in running
+    assert finished[-2] == "Searched your documents: evidence for 2 requirements (after retry 2/2)"
+    # Each retry updates the "Searched your documents" line: one line per step, 5 in total.
+    assert len({step_topic(p) for p in finished}) == applications.FIT_ANALYSIS_STEPS
+
+
+def test_unnamed_company_gets_a_fallback_the_user_can_correct(fake_app) -> None:
+    no_company = EXTRACTION.model_copy(update={"company": "  "})
+    fake_app.llm.responders[JobPostingExtraction] = no_company
+    progress: list[str] = []
+
+    job_id = applications.add_job(POSTING, on_progress=progress.append).job_id
+
+    assert applications.get_job_summary(job_id).company == UNKNOWN_COMPANY
+    read = next(p for p in progress if p.startswith("Read the posting"))
+    assert " at " not in read and "isn't named" in read
+    assert applications.rename_job(job_id, "", "Lumen Health")
+    assert not applications.rename_job(job_id, "", "Lumen Health")  # nothing changed
+    # Later steps copy the posting onto the card again; the correction must survive that.
+    applications.submit_fit_review(job_id, "continue")
+    card = applications.get_job_summary(job_id)
+    assert (card.title, card.company) == ("Junior AI Engineer", "Lumen Health")
 
 
 def test_rejected_input_removes_the_card(fake_app) -> None:
@@ -160,7 +199,7 @@ def test_full_flow_from_claim_check_to_saved_versions(fake_app) -> None:
     applications.submit_claim_review(job_id, KEEP_TWO, on_progress=progress.append)
     view = applications.get_workflow_view(job_id)
     assert view.stage == "draft_review"
-    assert any(p.startswith("Fact check passed") for p in progress)
+    assert any(p.startswith("Fact check: passed") for p in progress)
     assert [v.version for v in applications.list_draft_versions(job_id)] == [1]
 
     edited = view.drafts.model_copy(update={"cv_bullets": ["My own bullet."]})
