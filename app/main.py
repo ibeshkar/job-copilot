@@ -18,6 +18,7 @@ from app.ui.components import TONE_LABELS, TONES
 from app.ui.state import TONE_KEY, session_started_at, tool_toggle_key
 from app.utils.errors import friendly_message
 from app.utils.logging import configure_logging, get_logger, log_exception
+from app.validation.sanitize import md
 
 st.set_page_config(page_title="Job Application Copilot", page_icon="🧭", layout="wide")
 
@@ -64,7 +65,7 @@ nav = st.navigation(pages)
 with st.sidebar:
     st.caption("Job Application Copilot")
     if profile:
-        st.markdown(f"👤 **{profile.name}**")
+        st.markdown(f"👤 **{md(profile.name)}**")
     st.caption(f"Model: `{settings.default_model}`")
 
     # Tone selector (C5). The saved preference is copied into the widget on every run, so a

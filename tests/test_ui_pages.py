@@ -21,7 +21,7 @@ MAIN = str(Path(__file__).resolve().parent.parent / "app" / "main.py")
 def _set_up(profile: bool = True, documents: bool = True) -> None:
     """Give the user a profile and/or a document row, like finishing Get started."""
     if profile:
-        save_profile(Profile(name="Alex"))
+        save_profile(Profile(name="Alex", email="alex@example.com", target_roles=["AI Engineer"]))
     if documents:
         with repo.session_scope() as session:
             repo.upsert_document(session, "cv.md", "cv", 12)
@@ -513,7 +513,7 @@ def test_dev_settings_need_the_password(fake_app, monkeypatch) -> None:
 
     at.text_input[0].input("wrong")
     _button(at, "Unlock").click().run()
-    assert any("Wrong password" in e.value for e in at.error)
+    assert any("Wrong password" in m.value for m in at.markdown)  # under the field
 
     at.text_input[0].input("s3cret")
     _button(at, "Unlock").click().run()
@@ -609,7 +609,7 @@ def test_interview_tab_start_answer_and_feedback(fake_app) -> None:
     assert not at.exception
     assert any("Q1 of 5" in m.value for m in at.markdown)
 
-    next(t for t in at.text_area if t.label == "Your answer").input(
+    next(t for t in at.text_area if t.label == "Your answer *").input(
         "I built a RAG chatbot with LangChain and ChromaDB that 40 classmates used."
     )
     _button(at, "Send answer ▶").click().run()
@@ -730,3 +730,113 @@ def test_salary_tab_says_when_there_is_not_enough_data(fake_app) -> None:
 
     assert not at.exception
     assert any("Not enough data" in w.value for w in at.warning)
+
+
+# ---------------------------------------------------------------- input validation in forms
+
+
+def _get_started() -> AppTest:
+    at = _app()
+    at.switch_page("ui/pages/0_onboarding.py")
+    return at.run()
+
+
+def _text_input(at: AppTest, label: str):
+    return next(t for t in at.text_input if t.label == label)
+
+
+def _red_messages(at: AppTest) -> list[str]:
+    return [m.value for m in at.markdown if m.value.startswith(":red[")]
+
+
+def test_profile_form_shows_errors_under_fields_and_keeps_the_input(fake_app) -> None:
+    from app.memory.store import get_profile
+
+    at = _get_started()
+    _text_input(at, "Your name *").input("Zoë 2000")
+    _text_input(at, "Email *").input("zoe-at-example")
+    _text_input(at, "Phone").input("12")
+    _button(at, "Save and continue →").click().run()
+
+    assert not at.exception
+    assert get_profile() is None  # nothing saved
+    messages = " ".join(_red_messages(at))
+    assert "only contain letters" in messages
+    assert "valid email like name@example.com" in messages
+    assert "valid phone number" in messages
+    assert "Please enter your target roles" in messages
+    assert any("Please fix 4 fields" in e.value for e in at.error)  # one summary at the top
+    assert _text_input(at, "Email *").value == "zoe-at-example"  # what the user typed is kept
+
+
+def test_profile_form_saves_normalised_values_and_optional_fields_may_stay_empty(fake_app):
+    from app.memory.store import get_profile
+
+    at = _get_started()
+    _text_input(at, "Your name *").input("  Zoë   O'Brien ")
+    _text_input(at, "Email *").input("Zoe@Example.COM")
+    _text_input(at, "Target roles * (comma-separated)").input("AI Engineer")
+    _text_input(at, "Phone").input("0151 12345678")
+    _button(at, "Save and continue →").click().run()
+
+    assert not at.exception
+    saved = get_profile()
+    assert (saved.name, saved.email, saved.phone, saved.city) == (
+        "Zoë O'Brien",
+        "zoe@example.com",
+        "+4915112345678",
+        "",
+    )
+
+
+def test_memory_page_warns_about_an_old_invalid_profile(fake_app) -> None:
+    from app.memory.store import get_store
+
+    # Saved before the validation rules existed (bypasses save_profile's checks).
+    get_store().put(("local", "profile"), "main", {"name": "Bob1", "email": "bob@"})
+    at = _open(_app(), "4_memory.py")
+
+    assert not at.exception
+    assert any("don't match the current rules" in w.value for w in at.warning)
+    assert any("valid email" in m for m in _red_messages(at))
+
+
+def test_add_job_dialog_explains_a_too_short_posting(fake_app) -> None:
+    _set_up()
+    at = _app().run()
+
+    _button(at, "➕ Add job").click().run()
+    at.text_area[0].input("Junior AI Engineer").run()
+    _button(at, "Analyse fit").click().run()
+
+    assert not at.exception
+    assert any("too short to be a job posting" in m for m in _red_messages(at))
+    assert at.text_area[0].value == "Junior AI Engineer"
+    assert applications.list_board()["saved"] == []
+
+
+def test_board_shows_a_markdown_job_title_as_plain_text(fake_app) -> None:
+    _set_up()
+    job_id = applications.add_job(POSTING).job_id
+    applications.rename_job(job_id, "![pixel](https://evil.example/x.png) :red[Hacked]", "")
+
+    at = _board().run()
+
+    assert not at.exception
+    card = next(m.value for m in at.markdown if "pixel" in m.value)
+    assert "\\[pixel\\]" in card and "\\:red\\[" in card
+
+
+def test_notes_tab_warns_about_a_past_due_date(fake_app) -> None:
+    from datetime import date, timedelta
+
+    _set_up()
+    job_id = applications.add_job(POSTING).job_id
+    at = _open_workspace(_app(job_id))
+
+    at.date_input[0].set_value(date.today() - timedelta(days=2))
+    _button(at, "Save notes").click().run()
+
+    assert not at.exception
+    assert any("in the past" in t.value for t in at.toast)
+    assert applications.get_job_summary(job_id).next_action_date is not None

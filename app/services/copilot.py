@@ -22,6 +22,7 @@ from app.services.observability import track_run
 from app.tools.registry import TOOL_LABELS, enabled_tool_names
 from app.utils.errors import ConfigError, friendly_message
 from app.utils.logging import get_logger, log_exception
+from app.validation.validators import clean_multiline
 
 logger = get_logger(__name__)
 
@@ -161,8 +162,10 @@ def send_message(thread_id: str, text: str, toggles: Iterable[str]) -> Iterator[
     if not get_settings().has_llm_key:
         yield ChatEvent("error", ConfigError.user_message)
         return
+    # Control characters and stray whitespace go before the text is saved in the chat history;
+    # the graph's guard node then checks length and injection (app/guards/input_guard.py).
     payload = {
-        "messages": [HumanMessage(text)],
+        "messages": [HumanMessage(clean_multiline(text))],
         "enabled_tools": enabled_tool_names(toggles),
     }
     yield from _safely(_events(payload, thread_id), thread_id)

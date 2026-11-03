@@ -9,12 +9,18 @@
 
 import streamlit as st
 
+from app.config import JOB_TEXT_MAX_CHARS, JOB_TEXT_MIN_CHARS
 from app.db.models import JobStatus
 from app.services import applications, onboarding
 from app.services.readiness import ADD_JOB_LOCKED_HELP, get_setup_status
 from app.ui.components import (
     STATUS_LABELS,
+    busy_button,
+    clear_form_errors,
+    fail_form,
+    field_error,
     fit_badge,
+    form_errors,
     progress_status,
     run_with_progress,
     salary_badge,
@@ -22,15 +28,19 @@ from app.ui.components import (
     stage_badge,
 )
 from app.ui.state import ONBOARDING_DOCUMENTS_STEP, open_job, open_onboarding
+from app.validation.models import JobInput, check_input
+from app.validation.sanitize import md
 
 STATUSES = [s.value for s in JobStatus]
 DIALOG_OPEN = "add_job_dialog_open"
 # Set while the checklist is on screen, so "✅ Setup complete" shows once when it's done.
 SETUP_PENDING = "board_setup_pending"
+FORM = "add_job"  # scope of the dialog's validation errors
 
 
 def _close_dialog() -> None:
     st.session_state[DIALOG_OPEN] = False
+    clear_form_errors(FORM)
 
 
 # The dialog's open/closed state lives in session_state, so it stays open across reruns
@@ -52,16 +62,24 @@ def add_job_dialog() -> None:
     samples = applications.sample_jobs()
     choice = st.selectbox("Or try a sample job", ["(none)", *samples])
     text = st.text_area(
-        "Job posting text or link",
+        "Job posting text or link *",
         value=samples.get(choice, ""),
         height=260,
         key=f"add_job_text_{choice}",  # a new key per sample, so picking one refills the box
-        placeholder="https://… or paste the posting here",
+        max_chars=JOB_TEXT_MAX_CHARS,
+        placeholder="https://jobs.example.com/ai-engineer … or paste the whole posting here",
+        help=f"A link (http or https), or the posting text: at least {JOB_TEXT_MIN_CHARS} "
+        "characters with the title, tasks and requirements.",
     )
-    if not st.button(
-        "Analyse fit", type="primary", disabled=not (text.strip() and status.is_ready)
+    field_error(form_errors(FORM), "raw_input")
+    if not busy_button(
+        "Analyse fit", key="add_job_submit", type="primary", disabled=not status.is_ready
     ):
         return
+    job, errors = check_input(JobInput, {"raw_input": text})
+    if job is None:
+        fail_form(FORM, errors)  # reruns; the text stays in the box
+    clear_form_errors(FORM)
 
     result = run_with_progress(
         "Analysing fit",
@@ -87,14 +105,14 @@ def _draw_columns(board: dict) -> None:
         column.markdown(f"**{STATUS_LABELS[status]}** · {len(cards)}")
         for card in cards:
             with column.container(border=True):
-                st.markdown(f"**{card.title}**  \n{card.company}")
+                st.markdown(f"**{md(card.title)}**  \n{md(card.company)}")
                 st.markdown(
                     f"{fit_badge(card.fit_score)} {stage_badge(card.stage, card.review_action)} "
                     f"{salary_badge(card.salary)}"
                 )
                 if card.next_action:
                     due = f" · {card.next_action_date:%d %b}" if card.next_action_date else ""
-                    st.caption(f"Next: {card.next_action}{due}")
+                    st.caption(f"Next: {md(card.next_action)}{due}")
                 st.selectbox(
                     "Status",
                     STATUSES,
@@ -114,7 +132,7 @@ def _use_demo_persona() -> None:
         box("Saving Alex Novak's profile and indexing the CV, project READMEs and brag doc…")
         report = onboarding.use_demo_persona()
         if report.errors:
-            box.fail(" ".join(f"{name}: {msg}" for name, msg in report.errors.items()))
+            box.fail(" ".join(f"{md(name)}: {md(msg)}" for name, msg in report.errors.items()))
     if not report.errors:
         st.rerun()
 

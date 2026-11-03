@@ -17,7 +17,7 @@ from app.agent.deps import GraphDeps
 from app.agent.llm import invoke_structured
 from app.agent.prompts import feedback_learner_messages, style_learner_messages
 from app.agent.state import ApplicationState, Drafts, StyleRule, StyleRuleProposal
-from app.utils.errors import AppError
+from app.utils.errors import AppError, InvalidInputError
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -160,5 +160,10 @@ def learn_from_edits(state: ApplicationState, deps: GraphDeps) -> dict:
     except AppError as exc:
         logger.warning("Learning from edits skipped: %s", exc)
         return {"learned_rules": []}
-    learned = [{"key": deps.add_style_rule(rule), "rule": rule.rule} for rule in rules]
+    learned = []
+    for rule in rules:
+        try:
+            learned.append({"key": deps.add_style_rule(rule), "rule": rule.rule})
+        except InvalidInputError as exc:  # e.g. a rule the LLM made far too long
+            logger.warning("Learned rule not saved: %s", exc)
     return {"learned_rules": learned}

@@ -275,7 +275,14 @@ def salary_job(app_db, monkeypatch):
 
     monkeypatch.setattr(salary, "web_search", fake_search)
     monkeypatch.setattr(salary, "_job_skills", lambda job_id: ["Python", "PyTorch"])
-    store.save_profile(store.Profile(name="Alex", salary_expectations="60-68k EUR"))
+    store.save_profile(
+        store.Profile(
+            name="Alex",
+            email="alex@example.com",
+            target_roles=["AI Engineer"],
+            salary_expectations="60-68k EUR",
+        )
+    )
     return job.id, searches
 
 

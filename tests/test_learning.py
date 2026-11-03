@@ -1,3 +1,5 @@
+import pytest
+
 # What: tests for learning the user's writing style (PROJECT_PLAN.md §6.5): the sentence diff,
 #       rule proposals and de-duplication, the Python check for banned words, the
 #       `learn_from_edits` node, learning from 👎 comments, undo, and the Phase 8 "done when":
@@ -5,7 +7,6 @@
 # Why: a learned rule changes every future letter, so it must be general, not duplicated, easy
 #      to undo, and really enforced. All offline, with the scripted LLM from graph_fakes.
 # Used by: pytest.
-
 from langgraph.types import Command
 
 from app.agent.nodes.drafting import find_avoided_phrases
@@ -20,7 +21,7 @@ from app.agent.state import (
 from app.db import repo
 from app.memory import store
 from app.services import applications, learning, my_data
-from app.utils.errors import StructuredOutputError
+from app.utils.errors import InvalidInputError, StructuredOutputError
 from tests.fakes import FakeStructuredLLM
 from tests.graph_fakes import (
     PASSIONATE,
@@ -334,6 +335,8 @@ def test_user_can_add_a_rule_and_set_the_tone(app_db) -> None:
     my_data.set_tone("concise")
 
     assert store.list_style_rules()[key].source == "explicit"
-    assert my_data.add_style_rule("   ") is None
+    with pytest.raises(InvalidInputError):  # blank: rejected, nothing saved
+        my_data.add_style_rule("   ")
+    assert len(store.list_style_rules()) == 1
     prefs = store.get_preferences()
     assert (prefs.tone, prefs.letter_length) == ("concise", "short")  # only the tone changed

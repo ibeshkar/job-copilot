@@ -33,6 +33,7 @@ from app.agent.state import UNKNOWN_COMPANY, CoverLetter, Drafts
 from app.config import PROJECT_ROOT
 from app.memory.store import Profile
 from app.utils.logging import get_logger, log_exception
+from app.validation.validators import display_url, format_phone
 
 logger = get_logger(__name__)
 
@@ -146,7 +147,11 @@ def letter_blocks(
     The sender's name and contact details come from the profile, never from the LLM.
     """
     sender = (profile.name if profile else "") or letter.sender_name
-    contact = [profile.email, profile.phone, profile.linkedin, profile.city] if profile else []
+    contact = (
+        [profile.email, format_phone(profile.phone), display_url(profile.linkedin), profile.city]
+        if profile
+        else []
+    )
     # The contact person only appears in the salutation ("Dear Sylvie,"), as in the reference.
     recipient = [
         letter.recipient_company,

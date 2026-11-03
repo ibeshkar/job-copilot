@@ -18,6 +18,10 @@ from app.agent.state import (
     ClaimReviewDecision,
     Evidence,
 )
+from app.utils.errors import InvalidInputError
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 MAX_CLAIMS = 10
 FACT_ID_PREFIX = "fact-"
@@ -144,7 +148,11 @@ def remember_confirmed_facts(state: ApplicationState, deps: GraphDeps) -> dict:
             continue  # already proven by the documents
         if claim.text.strip().lower() in known:
             continue
-        deps.remember_fact(claim.text, state.get("job_id"))
+        try:
+            deps.remember_fact(claim.text, state.get("job_id"))
+        except InvalidInputError as exc:  # the store's rules said no: skip, don't break the run
+            logger.warning("Fact not remembered: %s", exc)
+            continue
         known.add(claim.text.strip().lower())
         new_facts.append(claim.text)
     return {"new_facts": new_facts}

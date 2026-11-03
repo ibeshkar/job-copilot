@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import streamlit as st
 
+from app import config as C
 from app.agent.state import (
     Claim,
     Evidence,
@@ -29,6 +30,16 @@ from app.memory.store import Preferences, Profile
 from app.services.readiness import SetupStatus
 from app.tools.company import WebResult
 from app.utils.errors import friendly_message
+from app.validation.models import (
+    ClaimEdit,
+    InputModel,
+    PreferencesInput,
+    ProfileInput,
+    check_input,
+    summary,
+)
+from app.validation.sanitize import md
+from app.validation.validators import format_phone
 
 if TYPE_CHECKING:
     from app.services.applications import RunResult
@@ -101,10 +112,78 @@ def input_with_action(
     """
     input_col, button_col = action_row(*widths)
     text = input_col.text_input(label, key=key, placeholder=placeholder, max_chars=max_chars)
-    clicked = button_col.button(
-        button_label, key=f"{key}_action", disabled=disabled, use_container_width=True
-    )
+    with button_col:
+        clicked = busy_button(
+            button_label, key=f"{key}_action", disabled=disabled, use_container_width=True
+        )
     return text, clicked
+
+
+# ---------------------------------------------------------------- validation errors, busy buttons
+# Every form validates on submit with a model from app/validation/models.py. The errors are kept
+# in session_state and the page reruns, so each message is drawn right under its field while
+# the widgets keep what the user typed (their identity doesn't change, so Streamlit keeps it).
+
+
+def _errors_key(scope: str) -> str:
+    return f"_errors_{scope}"
+
+
+def form_errors(scope: str) -> dict[str, str]:
+    """The errors from the last submit of form `scope` ({} if none)."""
+    return st.session_state.get(_errors_key(scope), {})
+
+
+def fail_form(scope: str, errors: dict[str, str]) -> None:
+    """Remember the errors and rerun, so they show under the fields (input is kept)."""
+    st.session_state[_errors_key(scope)] = errors
+    st.rerun()
+
+
+def clear_form_errors(scope: str) -> None:
+    st.session_state.pop(_errors_key(scope), None)
+
+
+def field_error(errors: dict[str, str], field: str) -> None:
+    """The message for one field, in red, right under it (nothing if the field is fine)."""
+    if message := errors.get(field):
+        st.markdown(f":red[⚠️ {md(message)}]")
+
+
+def error_summary(errors: dict[str, str], model: type[InputModel]) -> None:
+    """One short line at the top of a form when several fields are wrong."""
+    if len(errors) > 1:
+        st.error(summary(errors, model), icon="✋")
+    elif "__all__" in errors:
+        st.error(errors["__all__"], icon="✋")
+
+
+def _busy_key(key: str) -> str:
+    return f"_busy_{key}"
+
+
+def _mark_busy(key: str) -> None:
+    st.session_state[_busy_key(key)] = True
+
+
+def busy_button(label: str, *, key: str, disabled: bool = False, form: bool = False, **kwargs):
+    """A submit button that is disabled while its action runs (no double submits).
+
+    The click is recorded by a callback, which runs before the page does. This run then draws
+    the button disabled and returns True, so the caller does the work while it can't be
+    clicked again. The next run draws it enabled again. Works for forms too (`form=True`).
+    """
+    running = bool(st.session_state.pop(_busy_key(key), False))
+    button = st.form_submit_button if form else st.button
+    button(
+        label,
+        key=key,
+        disabled=disabled or running,
+        on_click=_mark_busy,
+        args=(key,),
+        **kwargs,
+    )
+    return running
 
 
 # ---------------------------------------------------------------- setup checklist
@@ -313,7 +392,7 @@ def thousands(amount: int) -> str:
 def news_line(item: WebResult) -> str:
     """One news item, e.g. "[Lumen raises Series B](https://…) · May 2026" or "… · date unknown"."""
     when = date.fromisoformat(item.published).strftime("%b %Y") if item.published else None
-    return f"[{item.title or item.url}]({item.url}) · {when or ':gray[date unknown]'}"
+    return f"[{md(item.title or item.url)}]({item.url}) · {when or ':gray[date unknown]'}"
 
 
 def salary_badge(estimate: SalaryEstimate | None) -> str:
@@ -371,8 +450,8 @@ def fit_card(
         st.progress(fit.score / 100)
         st.markdown(fit_badge(fit.score))
     with right:
-        st.markdown(f"#### {job.title} · {job.company}")
-        st.caption(_job_facts(job))
+        st.markdown(f"#### {md(job.title)} · {md(job.company)}")
+        st.caption(md(_job_facts(job)))
         st.write(fit.strengths_summary)
 
     for flag in fit.red_flags:
@@ -394,7 +473,7 @@ def fit_card(
 
     if extra_context:
         with st.expander("📝 Context you added"):
-            st.write(extra_context)
+            st.markdown(md(extra_context))
     if fit.questions_to_ask_employer:
         with st.expander("❓ Questions to ask the employer"):
             for question in fit.questions_to_ask_employer:
@@ -467,8 +546,8 @@ def requirements_summary(rows: list[Row]) -> None:
 def evidence_quotes(evidence: list[Evidence], empty: str) -> None:
     """Evidence quotes with document names; one look for requirement and claim popovers."""
     for ev in evidence:
-        st.markdown(f"**📄 {ev.doc_name}** · relevance {ev.relevance:.0%}")
-        st.markdown(f"> {ev.snippet}")
+        st.markdown(f"**📄 {md(ev.doc_name)}** · relevance {ev.relevance:.0%}")
+        st.markdown(f"> {md(ev.snippet)}")
     if not evidence:
         st.caption(empty)
 
@@ -480,7 +559,7 @@ def _details(req: Requirement, match: RequirementMatch, key: str) -> None:
     label = {"met": "📄 Evidence", "missing": "💡 Tip", "partial": "📄 Details"}[match.status]
     has_content = (show_evidence and match.evidence) or (show_tip and match.honest_positioning)
     with st.popover(label, key=key, disabled=not has_content, width="stretch"):
-        st.markdown(f"**{req.text}**")
+        st.markdown(f"**{md(req.text)}**")
         if show_evidence:
             evidence_quotes(match.evidence, "No evidence found in your documents.")
         if show_tip and match.honest_positioning:
@@ -496,8 +575,10 @@ def requirement_row(req: Requirement, match: RequirementMatch, key: str) -> None
     """
     text, details = st.columns([5, 1.6], vertical_alignment="center", wrap=False)
     with text:
-        st.markdown(f"{MATCH_ICONS[match.status]} {req.text} {importance_badge(req.importance)}")
-        st.caption(match.explanation)
+        st.markdown(
+            f"{MATCH_ICONS[match.status]} {md(req.text)} {importance_badge(req.importance)}"
+        )
+        st.caption(md(match.explanation))
     with details:
         _details(req, match, key)
 
@@ -624,7 +705,7 @@ def claims_summary(claims: list[Claim]) -> str:
 def claim_markdown(text: str, kept: bool, edited: bool) -> str:
     """The claim as plain markdown: struck through and grey if unticked, tagged if edited."""
     tag = " :blue-badge[edited]" if edited else ""
-    return f"{text}{tag}" if kept else f":gray[~~{text}~~]{tag}"
+    return f"{md(text)}{tag}" if kept else f":gray[~~{md(text)}~~]{tag}"
 
 
 def claim_group_header(supported: bool, count: int) -> None:
@@ -647,7 +728,7 @@ def claim_evidence_popover(claim: Claim, key: str) -> None:
     else:
         label = "📄 sources" if claim.supported else "⚠️ not found"
     with st.popover(label, key=key, width="stretch"):
-        st.markdown(f"**{claim.text}**")
+        st.markdown(f"**{md(claim.text)}**")
         evidence_quotes(
             claim.evidence,
             "The quotes aren't available any more." if claim.supported else NOT_FOUND_HINT,
@@ -660,15 +741,21 @@ def _open_editor(keys: ClaimKeys) -> None:
 
 
 def _save_edit(keys: ClaimKeys) -> None:
-    text = st.session_state[keys.draft].strip()
-    if not text:
-        st.toast("A claim can't be empty. Untick it if you don't want to say it.", icon="✏️")
+    clean, errors = check_input(ClaimEdit, {"text": st.session_state[keys.draft]})
+    if clean is None:
+        # The editor stays open with the user's wording; the message shows under it.
+        message = errors["text"]
+        if message.startswith("Please enter"):
+            message = "A claim can't be empty. Untick it if you don't want to say it."
+        st.session_state[f"{keys.draft}_error"] = message
         return
-    st.session_state[keys.text] = text
+    st.session_state.pop(f"{keys.draft}_error", None)
+    st.session_state[keys.text] = clean.text
     st.session_state[keys.editing] = False
 
 
 def _close_editor(keys: ClaimKeys) -> None:
+    st.session_state.pop(f"{keys.draft}_error", None)
     st.session_state[keys.editing] = False
 
 
@@ -689,8 +776,10 @@ def claim_row(claim: Claim, scope: str) -> None:
                 f"Wording of claim {claim.id}",
                 key=keys.draft,
                 height=68,
+                max_chars=C.CLAIM_MAX_CHARS,
                 label_visibility="collapsed",
             )
+            field_error({"text": st.session_state.get(f"{keys.draft}_error", "")}, "text")
             with st.container(horizontal=True, gap="small"):
                 st.button("Save", key=f"{keys.draft}_save", on_click=_save_edit, args=(keys,))
                 st.button(
@@ -726,12 +815,12 @@ def claim_list(claims: list[Claim], scope: str) -> None:
 def reviewed_claims(claims: list[Claim], new_facts: list[str]) -> None:
     """Read-only list of the claims after the claim check, with the user's decisions."""
     for claim in claims:
-        text = f"~~{claim.text}~~" if claim.user_decision == "removed" else claim.text
+        text = f"~~{md(claim.text)}~~" if claim.user_decision == "removed" else md(claim.text)
         st.markdown(f"{DECISION_ICONS[claim.user_decision]} {text} {claim_badge(claim)}")
     if new_facts:
         st.info(
             "I remembered these as facts you confirmed (see them on the Memory page):\n"
-            + "\n".join(f"- {fact}" for fact in new_facts),
+            + "\n".join(f"- {md(fact)}" for fact in new_facts),
             icon="🧠",
         )
 
@@ -744,7 +833,7 @@ def guard_issues_box(issues: list[UnsupportedStatement]) -> None:
             icon="🔎",
         )
         return
-    lines = "\n".join(f'- "{i.quote}": {i.reason}' for i in issues)
+    lines = "\n".join(f'- "{md(i.quote)}": {md(i.reason)}' for i in issues)
     st.warning(
         "**Please check these.** The fact-checker couldn't match them to a claim you approved, "
         f"or your style rules ban them. Edit or delete them unless they're fine.\n\n{lines}",
@@ -760,15 +849,36 @@ def split_list(text: str) -> list[str]:
     return [part.strip() for part in text.split(",") if part.strip()]
 
 
-def profile_form(profile: Profile, key: str, submit_label: str) -> Profile | None:
-    """The profile form. Returns the new Profile when submitted and valid, else None."""
+def profile_form(
+    profile: Profile, key: str, submit_label: str, problems: dict[str, str] | None = None
+) -> Profile | None:
+    """The profile form. Returns the clean, validated Profile when submitted, else None.
+
+    Invalid input reruns the page with a message under each wrong field and the typed values
+    kept. `problems` are the errors of an already saved profile (old data), shown until the
+    user submits the form.
+    """
+    errors = form_errors(key) or problems or {}
     with st.form(key):
-        name = st.text_input("Your name *", value=profile.name)
+        st.caption("Fields marked * are required.")
+        error_summary(errors, ProfileInput)
+        name = st.text_input(
+            "Your name *",
+            value=profile.name,
+            max_chars=C.NAME_MAX_CHARS,
+            placeholder="e.g. Zoë O'Brien-Müller",
+        )
+        field_error(errors, "name")
+        email = st.text_input("Email *", value=profile.email, placeholder="name@example.com")
+        field_error(errors, "email")
         roles = st.text_input(
-            "Target roles (comma-separated)",
+            "Target roles * (comma-separated)",
             value=", ".join(profile.target_roles),
             placeholder="Junior AI Engineer, Data Analyst",
+            help=f"1–{C.LIST_MAX_ITEMS} roles, each {C.LIST_ITEM_MIN_CHARS}–"
+            f"{C.LIST_ITEM_MAX_CHARS} characters.",
         )
+        field_error(errors, "target_roles")
         seniority = st.selectbox(
             "Seniority", SENIORITIES, index=SENIORITIES.index(profile.seniority)
         )
@@ -777,53 +887,81 @@ def profile_form(profile: Profile, key: str, submit_label: str) -> Profile | Non
             value=", ".join(profile.locations),
             placeholder="Berlin, Remote (EU)",
         )
+        field_error(errors, "locations")
         work_auth = st.text_input(
             "Work authorisation",
             value=profile.work_authorisation,
             placeholder="EU citizen / Blue Card / needs visa sponsorship",
+            max_chars=C.SHORT_TEXT_MAX_CHARS,
         )
+        field_error(errors, "work_authorisation")
         languages = st.text_input(
             "Languages with level (comma-separated)",
             value=", ".join(profile.languages),
             placeholder="English C1, German A2",
         )
+        field_error(errors, "languages")
         salary = st.text_input(
-            "Salary expectations (optional)", value=profile.salary_expectations or ""
+            "Expected salary (yearly gross)",
+            value=profile.salary_expectations or "",
+            placeholder="e.g. 55,000 EUR or 50–60k €",
+            help=f"Between {C.SALARY_MIN_YEARLY:,} and {C.SALARY_MAX_YEARLY:,} a year. "
+            f"Currencies: {', '.join(C.SALARY_CURRENCIES)}. Monthly? Add 'per month'.",
         )
-        st.caption("Contact details for the top of your cover letters (optional)")
-        email_col, phone_col = st.columns(2)
-        email = email_col.text_input("Email", value=profile.email)
-        phone = phone_col.text_input("Phone", value=profile.phone)
-        linkedin_col, city_col = st.columns(2)
-        linkedin = linkedin_col.text_input(
-            "LinkedIn", value=profile.linkedin, placeholder="linkedin.com/in/your-name"
+        field_error(errors, "salary_expectations")
+        st.caption("Contact details for the top of your cover letters")
+        phone_col, linkedin_col = st.columns(2)
+        with phone_col:
+            phone = st.text_input(
+                "Phone",
+                value=format_phone(profile.phone),
+                placeholder="+49 151 12345678",
+                help="German numbers can start with 0 (0151 …); others need +country code.",
+            )
+            field_error(errors, "phone")
+        with linkedin_col:
+            linkedin = st.text_input(
+                "LinkedIn", value=profile.linkedin, placeholder="linkedin.com/in/your-name"
+            )
+            field_error(errors, "linkedin")
+        city = st.text_input(
+            "City",
+            value=profile.city,
+            placeholder="Berlin, Germany",
+            max_chars=C.PLACE_MAX_CHARS,
         )
-        city = city_col.text_input("City", value=profile.city, placeholder="Berlin, Germany")
-        submitted = st.form_submit_button(submit_label, type="primary")
+        field_error(errors, "city")
+        submitted = busy_button(submit_label, key=f"{key}_submit", form=True, type="primary")
 
     if not submitted:
         return None
-    if not name.strip():
-        st.error("Please enter your name.")
-        return None
-    return Profile(
-        name=name.strip(),
-        target_roles=split_list(roles),
-        seniority=seniority,
-        locations=split_list(locations),
-        work_authorisation=work_auth.strip(),
-        languages=split_list(languages),
-        salary_expectations=salary.strip() or None,
-        email=email.strip(),
-        phone=phone.strip(),
-        linkedin=linkedin.strip(),
-        city=city.strip(),
+    clean, new_errors = check_input(
+        ProfileInput,
+        {
+            "name": name,
+            "email": email,
+            "target_roles": roles,
+            "seniority": seniority,
+            "locations": locations,
+            "work_authorisation": work_auth,
+            "languages": languages,
+            "salary_expectations": salary,
+            "phone": phone,
+            "linkedin": linkedin,
+            "city": city,
+        },
     )
+    if clean is None:
+        fail_form(key, new_errors)
+    clear_form_errors(key)
+    return Profile.model_validate(clean.model_dump())
 
 
 def preferences_form(prefs: Preferences, key: str, submit_label: str) -> Preferences | None:
-    """The writing-preferences form. Returns the new Preferences when submitted, else None."""
+    """The writing-preferences form. Returns the validated Preferences when submitted."""
+    errors = form_errors(key)
     with st.form(key):
+        error_summary(errors, PreferencesInput)
         tone = st.radio("Tone", TONES, index=TONES.index(prefs.tone), horizontal=True)
         length = st.radio(
             "Cover letter length",
@@ -831,19 +969,33 @@ def preferences_form(prefs: Preferences, key: str, submit_label: str) -> Prefere
             index=LENGTHS.index(prefs.letter_length),
             horizontal=True,
         )
-        language = st.text_input("Language of letters", value=prefs.letter_language)
+        language = st.text_input(
+            "Language of letters",
+            value=prefs.letter_language,
+            max_chars=C.LETTER_LANGUAGE_MAX_CHARS,
+            placeholder="e.g. English, Deutsch, or Same as the job posting",
+        )
+        field_error(errors, "letter_language")
         deal_breakers = st.text_input(
             "Deal-breakers (comma-separated)",
             value=", ".join(prefs.deal_breakers),
             placeholder="No relocation, no unpaid overtime",
         )
-        submitted = st.form_submit_button(submit_label, type="primary")
+        field_error(errors, "deal_breakers")
+        submitted = busy_button(submit_label, key=f"{key}_submit", form=True, type="primary")
 
     if not submitted:
         return None
-    return Preferences(
-        tone=tone,
-        letter_length=length,
-        letter_language=language.strip() or "Same as the job posting",
-        deal_breakers=split_list(deal_breakers),
+    clean, new_errors = check_input(
+        PreferencesInput,
+        {
+            "tone": tone,
+            "letter_length": length,
+            "letter_language": language,
+            "deal_breakers": deal_breakers,
+        },
     )
+    if clean is None:
+        fail_form(key, new_errors)
+    clear_form_errors(key)
+    return Preferences.model_validate(clean.model_dump())

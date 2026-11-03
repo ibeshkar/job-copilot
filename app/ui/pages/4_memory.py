@@ -7,14 +7,26 @@
 
 import streamlit as st
 
+from app import config as C
 from app.memory.store import Profile
 from app.services import my_data
-from app.ui.components import action_row, preferences_form, profile_form
+from app.ui.components import (
+    action_row,
+    busy_button,
+    clear_form_errors,
+    fail_form,
+    field_error,
+    form_errors,
+    preferences_form,
+    profile_form,
+)
 from app.ui.state import ONBOARDING_PAGE
-from app.utils.errors import friendly_message
+from app.utils.errors import InvalidInputError, friendly_message
+from app.validation.sanitize import md
 
 CONFIRM_WORD = "DELETE"
 FLASH_KEY = "memory_flash"  # a success message shown once after the rerun
+NEW_RULE_VERSION = "memory_new_rule_version"  # bumped after a rule is added: empties the box
 
 
 def _done(message: str) -> None:
@@ -30,17 +42,36 @@ RULE_SOURCES = {
 
 
 def _editable_list(
-    kind: str, items: dict[str, str], on_save, on_delete, captions: dict[str, str] | None = None
+    kind: str,
+    items: dict[str, str],
+    on_save,
+    on_delete,
+    max_chars: int,
+    captions: dict[str, str] | None = None,
 ) -> None:
-    """One row per item: an editable text, 💾 save and 🗑️ delete, and an optional caption."""
+    """One row per item: an editable text, 💾 save and 🗑️ delete, and an optional caption.
+
+    The save goes through the memory store's validation; a wrong wording keeps the typed text
+    and shows the message under the row.
+    """
+    errors = form_errors(f"memory_{kind}")
     for key, text in items.items():
         text_col, save_col, delete_col = action_row(8, 1, 1)
         new_text = text_col.text_input(
-            kind, value=text, key=f"{kind}_{key}", label_visibility="collapsed"
+            kind,
+            value=text,
+            key=f"{kind}_{key}",
+            label_visibility="collapsed",
+            max_chars=max_chars,
         )
         if save_col.button("💾", key=f"save_{kind}_{key}", help="Save the new wording"):
-            on_save(key, new_text)
+            try:
+                on_save(key, new_text)
+            except InvalidInputError as exc:
+                fail_form(f"memory_{kind}", {key: next(iter(exc.errors.values()))})
+            clear_form_errors(f"memory_{kind}")
             _done(f"{kind.capitalize()} updated.")
+        field_error(errors, key)
         if delete_col.button("🗑️", key=f"delete_{kind}_{key}", help="Forget this"):
             on_delete(key)
             _done(f"{kind.capitalize()} deleted.")
@@ -79,10 +110,24 @@ profile_tab, prefs_tab, facts_tab, rules_tab, docs_tab = st.tabs(
 
 with profile_tab:
     st.caption("Used to spot red flags (visa, language, seniority, location) in job postings.")
-    new_profile = profile_form(data.profile or Profile(name=""), "memory_profile", "Save profile")
+    # Saved before today's rules existed? Load it anyway and ask for the fixes (not a crash).
+    problems = my_data.profile_problems(data.profile)
+    if problems:
+        st.warning(
+            f"{len(problems)} saved detail{'s' if len(problems) > 1 else ''} in your profile "
+            "don't match the current rules. Please fix the marked fields and save.",
+            icon="✏️",
+        )
+    new_profile = profile_form(
+        data.profile or Profile(name=""), "memory_profile", "Save profile", problems=problems
+    )
     if new_profile is not None:
-        my_data.save_profile(new_profile)
-        _done("Profile saved.")
+        try:
+            my_data.save_profile(new_profile)
+        except InvalidInputError as exc:
+            st.error(exc.user_message)
+        else:
+            _done("Profile saved.")
     if data.profile and st.button("🗑️ Delete my profile"):
         my_data.delete_profile()
         _done("Profile deleted. The Get started page will ask for it again.")
@@ -91,8 +136,12 @@ with prefs_tab:
     st.caption("How your cover letters and the copilot's answers should sound.")
     new_prefs = preferences_form(data.preferences, "memory_prefs", "Save preferences")
     if new_prefs is not None:
-        my_data.save_preferences(new_prefs)
-        _done("Preferences saved.")
+        try:
+            my_data.save_preferences(new_prefs)
+        except InvalidInputError as exc:
+            st.error(exc.user_message)
+        else:
+            _done("Preferences saved.")
     if st.button("↩️ Reset to defaults"):
         my_data.reset_preferences()
         _done("Preferences reset to the defaults.")
@@ -109,6 +158,7 @@ with facts_tab:
         {key: fact.text for key, fact in data.facts.items()},
         my_data.update_fact,
         my_data.delete_fact,
+        max_chars=C.FACT_MAX_CHARS,
     )
 
 with rules_tab:
@@ -128,18 +178,34 @@ with rules_tab:
         {key: rule.rule for key, rule in data.style_rules.items()},
         my_data.update_style_rule,
         my_data.delete_style_rule,
+        max_chars=C.STYLE_RULE_MAX_CHARS,
         captions={
             key: RULE_SOURCES[rule.source]
-            + (f" · checks for: {', '.join(rule.avoid_phrases)}" if rule.avoid_phrases else "")
+            + (f" · checks for: {md(', '.join(rule.avoid_phrases))}" if rule.avoid_phrases else "")
             for key, rule in data.style_rules.items()
         },
     )
-    with st.form("add_style_rule", clear_on_submit=True):
+    # No clear_on_submit: a rejected rule must stay in the box. After a successful add, a new
+    # widget key gives an empty box instead.
+    version = st.session_state.get(NEW_RULE_VERSION, 0)
+    rule_errors = form_errors("add_style_rule")
+    with st.form("add_style_rule"):
         new_rule = st.text_input(
-            "Add a rule", placeholder="e.g. Keep the cover letter under 200 words", max_chars=200
+            "Add a rule",
+            placeholder="e.g. Keep the cover letter under 200 words",
+            max_chars=C.STYLE_RULE_MAX_CHARS,
+            key=f"new_rule_{version}",
         )
-        if st.form_submit_button("➕ Add rule") and my_data.add_style_rule(new_rule):
-            _done("Style rule added.")
+        field_error(rule_errors, "rule")
+        add = busy_button("➕ Add rule", key="add_style_rule_submit", form=True)
+    if add:
+        try:
+            my_data.add_style_rule(new_rule)
+        except InvalidInputError as exc:
+            fail_form("add_style_rule", exc.errors)
+        clear_form_errors("add_style_rule")
+        st.session_state[NEW_RULE_VERSION] = version + 1
+        _done("Style rule added.")
 
 with docs_tab:
     st.caption("The files fit analysis searches for evidence. Add more on the Get started page.")
@@ -147,14 +213,14 @@ with docs_tab:
         st.info("No documents yet.", icon="📚")
     for doc in data.documents:
         name_col, delete_col = st.columns([9, 1], vertical_alignment="center")
-        name_col.markdown(f"📄 `{doc.filename}` · {doc.doc_type} · {doc.chunk_count} chunks")
+        name_col.markdown(f"📄 {md(doc.filename)} · {doc.doc_type} · {doc.chunk_count} chunks")
         if delete_col.button("🗑️", key=f"delete_doc_{doc.filename}", help="Remove this file"):
             try:
                 my_data.delete_document(doc.filename)
             except Exception as exc:
                 st.error(friendly_message(exc))
             else:
-                _done(f"{doc.filename} removed from your knowledge base.")
+                _done(f"{md(doc.filename)} removed from your knowledge base.")
 
 st.divider()
 with st.expander("⚠️ Delete all my data"):

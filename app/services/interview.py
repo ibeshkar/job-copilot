@@ -29,6 +29,7 @@ from app.services.applications import ProgressFn, RunResult
 from app.services.observability import track_run
 from app.utils.errors import AppError, ConfigError, friendly_message
 from app.utils.logging import get_logger, log_exception
+from app.validation.validators import clean_multiline
 
 logger = get_logger(__name__)
 
@@ -209,7 +210,7 @@ def answer(job_id: int, text: str, on_progress: ProgressFn | None = None) -> Run
     check = check_interview_answer(text)
     if not check.allowed:
         return RunResult(ok=False, job_id=job_id, message=check.reason)
-    return _resume(job_id, {"action": "answer", "text": text.strip()}, on_progress)
+    return _resume(job_id, {"action": "answer", "text": clean_multiline(text)}, on_progress)
 
 
 def end_early(job_id: int, on_progress: ProgressFn | None = None) -> RunResult:

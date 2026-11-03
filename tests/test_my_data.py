@@ -14,7 +14,7 @@ from tests.graph_fakes import POSTING
 
 
 def _remember_things() -> tuple[str, str]:
-    store.save_profile(Profile(name="Alex"))
+    store.save_profile(Profile(name="Alex", email="alex@example.com", target_roles=["AI Engineer"]))
     store.save_preferences(Preferences(tone="formal"))
     fact = store.add_fact(Fact(text="Led a 3-person team", job_id=1))
     rule = store.add_style_rule(

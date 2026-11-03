@@ -22,9 +22,76 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
     "openai/text-embedding-3-small": {"input": 0.02, "output": 0.0},
 }
-# Chat models offered in the developer settings (embedding models can't chat).
+# Chat models offered in the developer settings (embedding models can't chat). Only these can be
+# saved there (app/validation/models.py SettingsInput).
 CHAT_MODELS = [m for m in MODEL_PRICING if "embedding" not in m]
+# The most output tokens each chat model can return in one answer (OpenRouter model pages).
+MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
+    "openai/gpt-4o-mini": 16_384,
+    "openai/gpt-4.1-mini": 32_768,
+    "openai/gpt-4.1-nano": 32_768,
+    "openai/gpt-4o": 16_384,
+}
 DEV_OVERRIDES_FILE = "dev_settings.json"  # in runtime_dir; written by the dev settings page
+
+
+# ---------------------------------------------------------------- input validation limits
+# Every length and range the validators in app/validation/ check. Change them here only; the
+# UI hints ("max 100 characters") and the error messages read the same numbers.
+
+# Profile
+NAME_MIN_CHARS, NAME_MAX_CHARS = 2, 100
+PLACE_MAX_CHARS = 100  # a city, country or location
+LIST_MAX_ITEMS = 10  # target roles, locations, languages, deal-breakers
+LIST_ITEM_MIN_CHARS, LIST_ITEM_MAX_CHARS = 2, 80
+SHORT_TEXT_MAX_CHARS = 200  # work authorisation, next action, a recipient line, a subject
+URL_MAX_CHARS = 2_000
+PHONE_DEFAULT_REGION = "DE"  # numbers without +/00 are read as German numbers
+# Expected salary, as yearly gross after converting monthly / hourly figures.
+SALARY_MIN_YEARLY, SALARY_MAX_YEARLY = 10_000, 500_000
+# Currencies the salary field accepts, with the marks that identify them. The first is the default.
+SALARY_CURRENCIES: dict[str, tuple[str, ...]] = {
+    "EUR": ("€", "eur", "euro"),
+    "USD": ("$", "usd"),
+    "GBP": ("£", "gbp"),
+    "CHF": ("chf",),
+}
+LETTER_LANGUAGE_MAX_CHARS = 50
+
+# Job posting (pasted text or a link)
+JOB_TEXT_MIN_CHARS = 200  # shorter than a few sentences can't be a real posting
+JOB_TEXT_MAX_CHARS = 30_000  # PROJECT_PLAN.md §9
+JOB_TITLE_MAX_CHARS = 200
+COMPANY_MAX_CHARS = 200
+
+# Free text the user writes
+NOTES_MAX_CHARS = 5_000
+TRACKER_NOTE_MAX_CHARS = 500  # one note the copilot adds
+CONTEXT_MIN_CHARS, CONTEXT_MAX_CHARS = 10, 2_000  # "Add context and re-check"
+CLAIM_MIN_CHARS, CLAIM_MAX_CHARS = 5, 500
+FACT_MIN_CHARS, FACT_MAX_CHARS = 5, 500
+STYLE_RULE_MIN_CHARS, STYLE_RULE_MAX_CHARS = 5, 300
+PARAGRAPH_MAX_CHARS = 2_000  # one cover letter paragraph
+LETTER_MAX_PARAGRAPHS = 8
+CLOSING_MAX_CHARS = 100
+CV_BULLET_MAX_CHARS = 400
+CV_MAX_BULLETS = 15
+FEEDBACK_COMMENT_MAX_CHARS = 300  # the 👎 comment
+INSTRUCTION_MAX_CHARS = 500  # "Regenerate a section: what should change?"
+FOCUS_MAX_CHARS = 200  # company research focus
+CHAT_MIN_CHARS, CHAT_MAX_CHARS = 2, 4_000  # PROJECT_PLAN.md §9
+ANSWER_MIN_CHARS, ANSWER_MAX_CHARS = 10, 4_000  # a 3-minute spoken answer ≈ 2,500 characters
+PASSWORD_MAX_CHARS = 200
+
+# Developer settings
+TEMPERATURE_MIN, TEMPERATURE_MAX = 0.0, 2.0
+MAX_TOKENS_MIN = 64
+
+# Uploads
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB per file (PROJECT_PLAN.md §9)
+MAX_FILES_PER_UPLOAD = 10
+UPLOAD_EXTENSIONS = (".pdf", ".docx", ".md", ".txt")
+MIN_DOCUMENT_CHARS = 20  # less than this isn't a document worth searching
 
 
 class LLMOverrides(BaseModel):
@@ -32,7 +99,7 @@ class LLMOverrides(BaseModel):
 
     default_model: str = Field(min_length=3)
     temperature: float = Field(ge=0.0, le=2.0)
-    max_tokens: int = Field(ge=64, le=16_000)
+    max_tokens: int = Field(ge=64, le=max(MODEL_MAX_OUTPUT_TOKENS.values()))
 
 
 class Settings(BaseSettings):

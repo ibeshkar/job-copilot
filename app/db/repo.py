@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import Engine
 from sqlmodel import Session, SQLModel, create_engine, func, select
 
+from app import config as C
 from app.config import get_settings
 from app.db.models import (
     Document,
@@ -26,7 +27,8 @@ from app.db.models import (
     UsageLog,
     utc_now,
 )
-from app.utils.errors import NotFoundError
+from app.utils.errors import InvalidInputError, NotFoundError
+from app.validation import validators as V
 
 # Fields the user (or the copilot's update_tracker tool) may change on a job.
 _EDITABLE_JOB_FIELDS = {
@@ -89,6 +91,56 @@ def _validate_status(status: str) -> str:
         raise ValueError(f"Unknown status {status!r}. Allowed: {allowed}") from exc
 
 
+def _line(limit: int, label: str):
+    def check(value: object) -> str:
+        text = V.clean_line(value)
+        if not text:
+            raise ValueError(f"The {label} can't be empty.")
+        if len(text) > limit:
+            raise ValueError(f"The {label} is too long (max {limit} characters).")
+        return text
+
+    return check
+
+
+def _optional(check):
+    return lambda value: None if value is None or not V.clean_line(value) else check(value)
+
+
+# Defence in depth: whatever path writes a job (the pages, the copilot's update_tracker tool,
+# the workflow), its text fields are cleaned and length-checked here before they are saved.
+_JOB_FIELD_CHECKS = {
+    "title": _line(C.JOB_TITLE_MAX_CHARS, "job title"),
+    "company": _line(C.COMPANY_MAX_CHARS, "company name"),
+    "url": _optional(lambda v: V.url(v, label="job link") or None),
+    "raw_text": lambda v: V.free_text(
+        v, label="the job text", max_chars=C.JOB_TEXT_MAX_CHARS, required=False
+    ),
+    "notes": lambda v: V.free_text(
+        v, label="the notes", max_chars=C.NOTES_MAX_CHARS, required=False
+    ),
+    "next_action": _optional(_line(C.SHORT_TEXT_MAX_CHARS, "next action")),
+}
+
+
+def _check_job_fields(fields: dict[str, Any]) -> dict[str, Any]:
+    """Clean and check the text fields being written.
+
+    Raises:
+        InvalidInputError: {field: message} for every field that breaks a rule.
+    """
+    errors, clean = {}, dict(fields)
+    for name, check in _JOB_FIELD_CHECKS.items():
+        if name in fields:
+            try:
+                clean[name] = check(fields[name])
+            except ValueError as exc:
+                errors[name] = str(exc)
+    if errors:
+        raise InvalidInputError(errors)
+    return clean
+
+
 def create_job(
     session: Session,
     title: str,
@@ -101,7 +153,14 @@ def create_job(
 
     Returns:
         The saved job, with `id` and `thread_id` filled in.
+
+    Raises:
+        InvalidInputError: a text field is empty or too long.
     """
+    checked = _check_job_fields(
+        {"title": title, "company": company, "url": url, "raw_text": raw_text}
+    )
+    title, company, url, raw_text = (checked[k] for k in ("title", "company", "url", "raw_text"))
     job = Job(
         title=title,
         company=company,
@@ -139,10 +198,12 @@ def update_job(session: Session, job_id: int, **fields: Any) -> Job:
     Raises:
         NotFoundError: the job doesn't exist.
         ValueError: an unknown field or an invalid status was given.
+        InvalidInputError: a text field is empty or too long.
     """
     unknown = set(fields) - _EDITABLE_JOB_FIELDS
     if unknown:
         raise ValueError(f"Cannot update fields: {sorted(unknown)}")
+    fields = _check_job_fields(fields)
     if "status" in fields:
         fields["status"] = _validate_status(fields["status"])
 
@@ -330,6 +391,12 @@ def add_feedback(
     target = FeedbackTarget(target).value  # raises ValueError for unknown targets
     if rating not in (1, -1):
         raise ValueError("rating must be +1 or -1")
+    try:
+        comment = V.free_text(
+            comment, label="the comment", max_chars=C.FEEDBACK_COMMENT_MAX_CHARS, required=False
+        )
+    except ValueError as exc:
+        raise InvalidInputError({"comment": str(exc)}) from exc
     row = Feedback(job_id=job_id, target=target, rating=rating, comment=comment)
     session.add(row)
     session.commit()

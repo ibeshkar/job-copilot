@@ -16,9 +16,11 @@ from app.agent.state import (
     JobPosting,
     JobPostingExtraction,
 )
+from app.config import COMPANY_MAX_CHARS, JOB_TITLE_MAX_CHARS
 from app.guards.input_guard import check_job_text, looks_like_url
 from app.services.readiness import setup_status
 from app.utils.errors import AppError
+from app.validation.validators import clean_line, url
 
 NOT_A_JOB_MESSAGE = (
     "This doesn't look like a job posting. Please paste the posting's title, tasks and "
@@ -38,6 +40,10 @@ def input_guard(state: ApplicationState, deps: GraphDeps) -> dict:
 
     raw = state.get("raw_input", "")
     if looks_like_url(raw):
+        try:
+            url(raw, label="job link")  # the format; where it points is checked on download
+        except ValueError as exc:
+            return {"errors": [str(exc)]}
         return {}
     result = check_job_text(raw)
     if not result.allowed:
@@ -74,8 +80,9 @@ def ingest_job(state: ApplicationState, deps: GraphDeps) -> dict:
 
     job = JobPosting(
         **extraction.model_dump(exclude={"title", "company"}),
-        title=extraction.title.strip() or UNKNOWN_TITLE,
-        company=extraction.company.strip() or UNKNOWN_COMPANY,
+        # Capped to the database limits (app/config.py): a run-away title mustn't fail the save.
+        title=clean_line(extraction.title)[:JOB_TITLE_MAX_CHARS] or UNKNOWN_TITLE,
+        company=clean_line(extraction.company)[:COMPANY_MAX_CHARS] or UNKNOWN_COMPANY,
         raw_text=text,
         source_url=url,
     )

@@ -6,8 +6,10 @@
 
 import streamlit as st
 
+from app.config import CHAT_MAX_CHARS
 from app.services import help as help_bot
 from app.ui.components import progress_status
+from app.validation.sanitize import md
 
 HISTORY_KEY = "help_history"  # [(question, answer, sections)] of this browser session
 
@@ -84,14 +86,14 @@ st.caption(
 )
 history = st.session_state.setdefault(HISTORY_KEY, [])
 for question, answer, sections in history:
-    st.chat_message("user").write(question)
+    st.chat_message("user").markdown(md(question))
     with st.chat_message("assistant", avatar="❓"):
         st.write(answer)
         if sections:
             st.caption("📖 From the guide: " + " · ".join(sections))
 
-if question := st.chat_input("e.g. How do I undo a learned style rule?"):
-    st.chat_message("user").write(question)
+if question := st.chat_input("e.g. How do I undo a learned style rule?", max_chars=CHAT_MAX_CHARS):
+    st.chat_message("user").markdown(md(question))
     with (
         st.chat_message("assistant", avatar="❓"),
         progress_status("Looking it up", done="Answer ready") as progress,

@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from langchain_chroma import Chroma
 
-from app.config import PROJECT_ROOT
+from app.config import MAX_FILES_PER_UPLOAD, PROJECT_ROOT
 from app.db import repo
 from app.memory.store import Preferences, Profile, get_profile, save_preferences, save_profile
 from app.rag.ingest import guess_doc_type, ingest_file
@@ -18,7 +18,6 @@ from app.utils.logging import get_logger, log_exception
 
 logger = get_logger(__name__)
 
-MAX_FILES_PER_UPLOAD = 10  # PROJECT_PLAN.md §9
 DEMO_PERSONA_DIR = PROJECT_ROOT / "data" / "samples" / "persona"
 
 # Matches data/samples/persona/alex_novak_cv.md.
@@ -68,6 +67,9 @@ def add_documents(
         An IngestReport with the chunk count per file and any errors.
     """
     report = IngestReport()
+    if not files:
+        report.errors["(upload)"] = "Please choose at least one file."
+        return report
     if len(files) > MAX_FILES_PER_UPLOAD:
         report.errors["(upload)"] = f"Please upload at most {MAX_FILES_PER_UPLOAD} files at once."
         return report

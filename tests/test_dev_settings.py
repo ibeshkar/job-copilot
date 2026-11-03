@@ -5,10 +5,11 @@
 # Used by: pytest.
 
 import pytest
-from pydantic import SecretStr, ValidationError
+from pydantic import SecretStr
 
 from app.config import DEV_OVERRIDES_FILE, get_settings
 from app.services import applications, dev_settings
+from app.utils.errors import InvalidInputError
 from tests.graph_fakes import POSTING
 
 
@@ -44,8 +45,9 @@ def test_overrides_win_over_env_and_rebuild_the_graphs(app_db, monkeypatch) -> N
 
 
 def test_invalid_overrides_are_rejected(app_db) -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises(InvalidInputError) as caught:
         dev_settings.save_llm_overrides("openai/gpt-4o-mini", 5.0, 900)
+    assert set(caught.value.errors) == {"temperature"}
     assert not dev_settings.has_overrides()
 
 

@@ -12,7 +12,7 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Literal
 
@@ -39,14 +39,31 @@ from app.agent.state import (
 from app.config import PROJECT_ROOT, get_settings
 from app.db import repo
 from app.db.models import Draft, Job, JobStatus
-from app.guards.input_guard import looks_like_url
 from app.memory.store import get_profile
 from app.services import export
 from app.services.company import forget_research
 from app.services.export import ExportFile, LetterBlock
 from app.services.observability import track_run
-from app.utils.errors import AppError, ConfigError, NotFoundError, friendly_message
+from app.utils.errors import (
+    AppError,
+    ConfigError,
+    InvalidInputError,
+    NotFoundError,
+    friendly_message,
+)
 from app.utils.logging import get_logger, log_exception
+from app.validation.models import (
+    ClaimEdit,
+    ContextInput,
+    CoverLetterInput,
+    CvBulletsInput,
+    InstructionInput,
+    JobInput,
+    NoteInput,
+    RenameJobInput,
+    check_input,
+    validate_input,
+)
 
 logger = get_logger(__name__)
 
@@ -336,13 +353,19 @@ def add_job(raw_input: str, on_progress: ProgressFn | None = None) -> RunResult:
         raw_input: a job URL or the pasted job text.
         on_progress: called with a short message after each step (for `st.status`).
     """
+    # Checked before the card is created, so a bad input never shows up on the board. The
+    # graph's input_guard checks the text again (defence in depth); links are SSRF-checked
+    # when they're downloaded (app/guards/url_guard.py).
+    job_input, errors = check_input(JobInput, {"raw_input": raw_input})
+    if job_input is None:
+        return RunResult(ok=False, message=errors["raw_input"])
     try:
         _require_llm_key()
     except ConfigError as exc:
         return RunResult(ok=False, message=exc.user_message)
 
-    raw = raw_input.strip()
-    is_url = looks_like_url(raw)
+    raw = job_input.raw_input
+    is_url = job_input.is_url
     with repo.session_scope() as session:
         job = repo.create_job(
             session,
@@ -433,10 +456,17 @@ def submit_fit_review(
         action: "continue" (go on to the claim check), "stop" or "add_context".
         text: the extra context, for "add_context".
     """
+
+    def payload() -> dict:
+        context = (
+            validate_input(ContextInput, {"text": text}).text if action == "add_context" else None
+        )
+        return FitReviewDecision(action=action, text=context).model_dump()
+
     return _resume(
         job_id,
         "fit_review",
-        lambda: FitReviewDecision(action=action, text=text).model_dump(),
+        payload,
         on_progress,
         # Each choice leads to different LLM work: re-scoring, planning claims, or none.
         {"add_context": "analyse_fit", "continue": "plan_claims"}.get(action, "fit_review"),
@@ -454,6 +484,14 @@ def submit_claim_review(
             claim. Claims left out count as removed.
     """
     review = ClaimReviewDecision.model_validate({"decisions": decisions})
+    for decision in review.decisions:
+        if decision.action == "edit":
+            clean, errors = check_input(ClaimEdit, {"text": decision.text})
+            if clean is None:
+                return RunResult(
+                    ok=False, job_id=job_id, message=f"{decision.id}: {errors['text']}"
+                )
+            decision.text = clean.text
     if not any(d.action != "remove" for d in review.decisions):
         return RunResult(
             ok=False,
@@ -474,18 +512,48 @@ def submit_draft_review(
 ) -> RunResult:
     """Resume the draft review: accept the drafts (with the user's edits) or regenerate one
     section ("cover_letter" or "cv_bullets") with an optional instruction."""
+
+    def payload() -> dict:
+        return DraftReviewDecision(
+            action=action,
+            edited=validate_drafts(edited) if edited is not None else None,
+            section=section,
+            instruction=validate_input(InstructionInput, {"instruction": instruction}).instruction
+            or None,
+        ).model_dump(mode="json")
+
     return _resume(
         job_id,
         "draft_review",
-        lambda: DraftReviewDecision(
-            action=action, edited=edited, section=section, instruction=instruction
-        ).model_dump(mode="json"),
+        payload,
         on_progress,
         "redraft" if action == "regenerate" else "accept_drafts",
     )
 
 
 # ---------------------------------------------------------------- drafts
+
+
+def validate_drafts(drafts: Drafts) -> Drafts:
+    """The drafts with cleaned bullets and letter fields.
+
+    Raises:
+        InvalidInputError: {field: message}, e.g. {"cv_bullets": …, "body_paragraphs": …}.
+    """
+    letter = drafts.cover_letter
+    bullets, bullet_errors = check_input(CvBulletsInput, {"cv_bullets": drafts.cv_bullets})
+    fields, letter_errors = check_input(CoverLetterInput, letter.model_dump())
+    if bullets is None or fields is None:
+        raise InvalidInputError({**bullet_errors, **letter_errors})
+    clean = fields.model_dump()
+    for optional in ("recipient_department", "recipient_city_country"):
+        clean[optional] = clean[optional] or None
+    return drafts.model_copy(
+        update={
+            "cv_bullets": bullets.cv_bullets,
+            "cover_letter": letter.model_copy(update=clean),
+        }
+    )
 
 
 def save_draft_version(job_id: int, drafts: Drafts, is_user_edited: bool = False) -> None:
@@ -527,7 +595,12 @@ def latest_drafts(job_id: int) -> Drafts | None:
 
 
 def save_edited_drafts(job_id: int, drafts: Drafts) -> bool:
-    """Save the user's edits as a new version. Returns False if nothing changed."""
+    """Save the user's edits as a new version. Returns False if nothing changed.
+
+    Raises:
+        InvalidInputError: a bullet or letter field breaks a rule; nothing is saved.
+    """
+    drafts = validate_drafts(drafts)
     current = latest_drafts(job_id)
     if current is not None and (current.cv_bullets, current.cover_letter) == (
         drafts.cv_bullets,
@@ -627,10 +700,14 @@ def rename_job(job_id: int, title: str, company: str) -> bool:
 
     Empty values keep the current ones. Returns False if nothing changed. The new names show
     on the board, in company research, interview prep and the exported cover letter.
+
+    Raises:
+        InvalidInputError: a name is too long.
     """
+    names = validate_input(RenameJobInput, {"title": title, "company": company})
     with repo.session_scope() as session:
         row = repo.get_job(session, job_id)
-        title, company = title.strip() or row.title, company.strip() or row.company
+        title, company = names.title or row.title, names.company or row.company
         if (title, company) == (row.title, row.company):
             return False
         repo.update_job(session, job_id, title=title, company=company)
@@ -639,17 +716,31 @@ def rename_job(job_id: int, title: str, company: str) -> bool:
 
 def save_notes(
     job_id: int, notes: str, next_action: str | None, next_action_date: date | None
-) -> None:
-    """Save the job's notes and next action (shown on its board card)."""
-    due = datetime.combine(next_action_date, time()) if next_action_date else None
+) -> list[str]:
+    """Save the job's notes and next action (shown on its board card).
+
+    Returns:
+        Warnings that didn't block saving, e.g. a due date in the past.
+
+    Raises:
+        InvalidInputError: the notes or the next action are too long.
+    """
+    clean = validate_input(
+        NoteInput,
+        {"notes": notes, "next_action": next_action, "next_action_date": next_action_date},
+    )
+    day = clean.next_action_date
+    # SQLModel only stores timezone-aware datetimes; a due date is a day, kept as midnight UTC.
+    due = datetime.combine(day, time(), tzinfo=UTC) if day else None
     with repo.session_scope() as session:
         repo.update_job(
             session,
             job_id,
-            notes=notes.strip(),
-            next_action=(next_action or "").strip() or None,
+            notes=clean.notes,
+            next_action=clean.next_action or None,
             next_action_date=due,
         )
+    return clean.warnings()
 
 
 def delete_job(job_id: int) -> None:

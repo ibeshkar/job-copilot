@@ -63,8 +63,14 @@ def load() -> MyData:
 # Thin wrappers, so the page talks to one service instead of three storage modules.
 
 
-def save_profile(profile: Profile) -> None:
-    store.save_profile(profile)
+def save_profile(profile: Profile) -> Profile:
+    """Validate and save the profile. Raises InvalidInputError (nothing saved) if it's wrong."""
+    return store.save_profile(profile)
+
+
+def profile_problems(profile: Profile | None) -> dict[str, str]:
+    """{field: message} for a saved profile that breaks today's rules (old data)."""
+    return store.profile_problems(profile)
 
 
 def delete_profile() -> None:
@@ -72,6 +78,7 @@ def delete_profile() -> None:
 
 
 def save_preferences(preferences: Preferences) -> None:
+    """Validate and save. Raises InvalidInputError (nothing saved) if a field is wrong."""
     store.save_preferences(preferences)
 
 
@@ -90,7 +97,11 @@ def set_tone(tone: str) -> None:
 
 
 def update_fact(key: str, text: str) -> None:
-    """Reword a fact. Empty text deletes it."""
+    """Reword a fact. Empty text deletes it.
+
+    Raises:
+        InvalidInputError: the new wording is too short or too long (nothing changes).
+    """
     if text.strip():
         store.update_fact(key, text.strip())
     else:
@@ -102,7 +113,11 @@ def delete_fact(key: str) -> None:
 
 
 def update_style_rule(key: str, text: str) -> None:
-    """Reword a style rule. Empty text deletes it."""
+    """Reword a style rule. Empty text deletes it.
+
+    Raises:
+        InvalidInputError: the new wording is too short or too long (nothing changes).
+    """
     if text.strip():
         store.update_style_rule(key, text.strip())
     else:
@@ -113,11 +128,13 @@ def delete_style_rule(key: str) -> None:
     store.delete_style_rule(key)
 
 
-def add_style_rule(text: str) -> str | None:
-    """Add a rule the user typed on the Memory page. Returns its key, or None if empty."""
-    if not text.strip():
-        return None
-    return store.add_style_rule(StyleRule(rule=text.strip(), source="explicit"))
+def add_style_rule(text: str) -> str:
+    """Add a rule the user typed on the Memory page. Returns its key.
+
+    Raises:
+        InvalidInputError: the rule is empty, too short or too long.
+    """
+    return store.add_style_rule(StyleRule(rule=text, source="explicit"))
 
 
 def delete_document(filename: str) -> int:

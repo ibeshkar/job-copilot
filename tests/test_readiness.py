@@ -33,7 +33,7 @@ def test_fresh_start_is_not_ready(app_db) -> None:
 
 
 def test_profile_without_documents_is_not_ready(app_db) -> None:
-    save_profile(Profile(name="Alex"))
+    save_profile(Profile(name="Alex", email="alex@example.com", target_roles=["AI Engineer"]))
 
     status = get_setup_status()
 
@@ -53,7 +53,7 @@ def test_documents_without_profile_is_not_ready(app_db) -> None:
 
 
 def test_profile_and_documents_is_ready(app_db) -> None:
-    save_profile(Profile(name="Alex"))
+    save_profile(Profile(name="Alex", email="alex@example.com", target_roles=["AI Engineer"]))
     _add_document(12)
 
     status = get_setup_status()
@@ -93,7 +93,7 @@ def test_checklist_shows_the_chunk_count_once_documents_exist() -> None:
 
 
 def test_demo_quick_start_keeps_an_existing_profile_and_documents(app_db) -> None:
-    save_profile(Profile(name="Sam"))
+    save_profile(Profile(name="Sam", email="alex@example.com", target_roles=["AI Engineer"]))
     _add_document()
 
     report = onboarding.use_demo_persona()

@@ -18,12 +18,20 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
 from app.agent.llm import get_embeddings
-from app.config import get_settings
+from app.config import (
+    MAX_UPLOAD_BYTES,
+    MIN_DOCUMENT_CHARS,
+    UPLOAD_EXTENSIONS,
+    get_settings,
+)
 from app.utils.errors import DocumentError
+from app.validation.validators import clean_multiline
 
 COLLECTION_NAME = "knowledge_base"
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".md", ".txt"}
-MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB (PROJECT_PLAN.md §9)
+SUPPORTED_EXTENSIONS = set(UPLOAD_EXTENSIONS)
+MAX_FILE_BYTES = MAX_UPLOAD_BYTES  # 5 MB (PROJECT_PLAN.md §9; set in app/config.py)
+# The first bytes of a real file of each type. A renamed .exe or image is caught before parsing.
+_MAGIC = {".pdf": b"%PDF", ".docx": b"PK\x03\x04"}
 
 # ~500 characters is about one paragraph or a few CV bullets: small enough that a match is
 # precise, big enough to keep context. The 80-character overlap stops a sentence that
@@ -53,6 +61,18 @@ def load_text(filename: str, data: bytes) -> str:
         raise DocumentError(f"Unsupported file type: {filename}")
     if len(data) > MAX_FILE_BYTES:
         raise DocumentError(f"File too large: {filename} ({len(data)} bytes)")
+    if not data:
+        raise DocumentError(f"Empty file: {filename}", user_message=f"{filename} is empty.")
+    if ext in _MAGIC and not data.startswith(_MAGIC[ext]):
+        raise DocumentError(
+            f"Wrong content for {ext}: {filename}",
+            user_message=f"{filename} isn't really a {ext[1:].upper()} file. Is it renamed?",
+        )
+    if ext in (".md", ".txt") and b"\x00" in data[:4096]:
+        raise DocumentError(
+            f"Binary data in {filename}",
+            user_message=f"{filename} doesn't look like a text file.",
+        )
 
     try:
         if ext == ".pdf":
@@ -69,7 +89,8 @@ def load_text(filename: str, data: bytes) -> str:
             user_message=f"I couldn't read {filename}. Is the file damaged?",
         ) from exc
 
-    if not text.strip():
+    text = clean_multiline(text)
+    if len(text) < MIN_DOCUMENT_CHARS:
         raise DocumentError(
             f"No text in {filename}",
             user_message=f"{filename} has no readable text (is it a scanned image?).",

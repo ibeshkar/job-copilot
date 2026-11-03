@@ -12,12 +12,13 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from app.agent.prompts import TOOL_DESCRIPTIONS
+from app.config import TRACKER_NOTE_MAX_CHARS as MAX_NOTE_CHARS
 from app.db import repo
 from app.db.models import JobStatus
-from app.utils.errors import GuardBlockedError, NotFoundError
+from app.utils.errors import GuardBlockedError, InvalidInputError, NotFoundError
+from app.validation.models import TrackerUpdateInput, check_input
 
 Status = Literal["saved", "applied", "interview", "offer", "rejected"]
-MAX_NOTE_CHARS = 500
 
 
 class GetApplicationsArgs(BaseModel):
@@ -78,13 +79,19 @@ def apply_update(
 
     Raises:
         GuardBlockedError: nothing to change.
+        InvalidInputError: the note or next action is too long, or the status is unknown.
         NotFoundError: the job doesn't exist.
-        ValueError: invalid status.
     """
-    if not (status or note or next_action):
-        raise GuardBlockedError(
-            "empty update", user_message="Nothing to change: give a status, note or next action."
-        )
+    # The same rules as the Notes tab: the copilot is just another way in (defence in depth).
+    clean, errors = check_input(
+        TrackerUpdateInput,
+        {"job_id": job_id, "status": status, "note": note, "next_action": next_action},
+    )
+    if clean is None:
+        if "__all__" in errors:
+            raise GuardBlockedError("empty update", user_message=errors["__all__"])
+        raise InvalidInputError(errors)
+    status, note, next_action = clean.status, clean.note, clean.next_action
     fields: dict = {}
     with repo.session_scope() as session:
         job = repo.get_job(session, job_id)
@@ -92,7 +99,7 @@ def apply_update(
             fields["status"] = JobStatus(status).value
         if note:
             stamp = datetime.now(UTC).strftime("%Y-%m-%d")
-            entry = f"{stamp}: {note.strip()[:MAX_NOTE_CHARS]}"
+            entry = f"{stamp}: {note}"
             fields["notes"] = f"{job.notes}\n{entry}".strip()
         if next_action:
             fields["next_action"] = next_action.strip()

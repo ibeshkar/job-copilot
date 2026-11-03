@@ -10,15 +10,15 @@
 # Used by: app/main.py (st.navigation). Work is done by app/services/applications.py,
 #          company.py, salary.py, interview.py and learning.py.
 
-import html
 import re
 
 import streamlit as st
 
+from app import config as C
 from app.agent.state import UNKNOWN_COMPANY, CoverLetter, Drafts, InterviewTurn
 from app.config import get_settings
 from app.db.models import JobStatus
-from app.guards.input_guard import MAX_ANSWER_CHARS
+from app.guards.input_guard import check_interview_answer
 from app.services import applications, company, interview, learning, salary
 from app.services.applications import RunResult, WorkflowView
 from app.services.export import LAYOUT, ExportFile, LetterBlock, drafts_to_text
@@ -29,11 +29,17 @@ from app.ui.components import (
     CONFIDENCE_BADGES,
     STATUS_LABELS,
     action_row,
+    busy_button,
     claim_keys,
     claim_list,
     claims_summary,
     clear_claim_state,
+    clear_form_errors,
+    error_summary,
+    fail_form,
+    field_error,
     fit_card,
+    form_errors,
     guard_issues_box,
     init_claim_state,
     input_with_action,
@@ -45,6 +51,15 @@ from app.ui.components import (
     set_claims_kept,
 )
 from app.ui.state import BOARD_PAGE, current_job_id, select_job
+from app.utils.errors import InvalidInputError
+from app.validation.models import (
+    CompanyFocusInput,
+    ContextInput,
+    CoverLetterInput,
+    NoteInput,
+    check_input,
+)
+from app.validation.sanitize import html_text, md
 
 STATUSES = [s.value for s in JobStatus]
 TABS = [
@@ -87,7 +102,16 @@ def _fit_review_actions(job_id: int) -> None:
     st.divider()
     st.markdown("##### What do you want to do?")
     col_continue, col_stop = st.columns(2)
-    if col_continue.button("Continue to application ▶", type="primary", use_container_width=True):
+    with col_continue:
+        go_on = busy_button(
+            "Continue to application ▶",
+            key=f"fit_continue_{job_id}",
+            type="primary",
+            use_container_width=True,
+        )
+    with col_stop:
+        stop = busy_button("🚫 Not a fit", key=f"fit_stop_{job_id}", use_container_width=True)
+    if go_on:
         _after(
             run_with_progress(
                 "Planning claims about you",
@@ -95,7 +119,7 @@ def _fit_review_actions(job_id: int) -> None:
                 done="Claims ready to check",
             )
         )
-    if col_stop.button("🚫 Not a fit", use_container_width=True):
+    if stop:
         _after(
             run_with_progress(
                 "Saving your decision",
@@ -110,8 +134,19 @@ def _fit_review_actions(job_id: int) -> None:
             '"I used Airflow at my last job to schedule daily reports". '
             "I'll search again and use your note as evidence."
         )
-        note = st.text_area("Your context", key=f"context_{job_id}", max_chars=2000)
-        if st.button("Re-check with this context", disabled=not note.strip()):
+        scope = f"context_{job_id}"
+        note = st.text_area(
+            "Your context *",
+            key=f"context_{job_id}",
+            max_chars=C.CONTEXT_MAX_CHARS,
+            placeholder="I used Airflow at my last job to schedule daily reports.",
+        )
+        field_error(form_errors(scope), "text")
+        if busy_button("Re-check with this context", key=f"recheck_{job_id}"):
+            clean, errors = check_input(ContextInput, {"text": note})
+            if clean is None:
+                fail_form(scope, errors)  # reruns; the note stays in the box
+            clear_form_errors(scope)
             _after(
                 run_with_progress(
                     "Re-checking your fit",
@@ -132,7 +167,7 @@ def _fit_tab(view: WorkflowView) -> None:
             "Your progress is saved; retrying continues from the last finished step.",
             icon="⏳",
         )
-        if st.button("🔁 Retry", type="primary"):
+        if busy_button("🔁 Retry", key=f"retry_fit_{view.job_id}", type="primary"):
             _after(
                 run_with_progress(
                     "Continuing the analysis",
@@ -221,12 +256,15 @@ def _claim_review(view: WorkflowView) -> None:
         count_col.caption("✏️ Save or cancel your open edit; unsaved wording isn't used.")
     if not selected:
         count_col.caption("Tick at least one claim: otherwise there's nothing true to write about.")
-    if not button_col.button(
-        "✍️ Write my application →",
-        type="primary",
-        disabled=not selected,
-        use_container_width=True,
-    ):
+    with button_col:
+        write = busy_button(
+            "✍️ Write my application →",
+            key=f"write_application_{scope}",
+            type="primary",
+            disabled=not selected,
+            use_container_width=True,
+        )
+    if not write:
         return
 
     # Same payload as before the redesign: remove, approve (unchanged) or edit (new wording).
@@ -289,25 +327,65 @@ def _letter_from_inputs(prefix: str, letter: CoverLetter) -> CoverLetter:
     )
 
 
+def _drafts_scope(prefix: str) -> str:
+    return f"drafts_{prefix}"
+
+
 def _letter_editor(letter: CoverLetter, prefix: str) -> None:
-    st.caption("Your name and contact details come from your profile (🧠 Memory page).")
+    st.caption(
+        "Your name and contact details come from your profile (🧠 Memory page). Empty "
+        "company, subject, salutation or closing are filled in from the job."
+    )
+    errors = form_errors(_drafts_scope(prefix))
     columns = st.columns(2)
     for i, (name, label) in enumerate(RECIPIENT_FIELDS):
-        columns[i % 2].text_input(
-            label, value=getattr(letter, name) or "", key=_letter_key(prefix, name)
-        )
-    st.text_input("Subject", value=letter.subject, key=_letter_key(prefix, "subject"))
-    st.text_input("Salutation", value=letter.salutation, key=_letter_key(prefix, "salutation"))
+        with columns[i % 2]:
+            st.text_input(
+                label,
+                value=getattr(letter, name) or "",
+                key=_letter_key(prefix, name),
+                max_chars=C.PLACE_MAX_CHARS
+                if name == "recipient_city_country"
+                else C.SHORT_TEXT_MAX_CHARS,
+            )
+            field_error(errors, name)
+    st.text_input(
+        "Subject",
+        value=letter.subject,
+        key=_letter_key(prefix, "subject"),
+        max_chars=C.SHORT_TEXT_MAX_CHARS,
+    )
+    field_error(errors, "subject")
+    st.text_input(
+        "Salutation",
+        value=letter.salutation,
+        key=_letter_key(prefix, "salutation"),
+        max_chars=C.SHORT_TEXT_MAX_CHARS,
+    )
+    field_error(errors, "salutation")
     for i, paragraph in enumerate(letter.body_paragraphs):
         st.text_area(
             f"Paragraph {i + 1}",
             value=paragraph,
             height=110,
             key=_letter_key(prefix, f"p{i}"),
-            help="Empty a paragraph to remove it.",
+            max_chars=C.PARAGRAPH_MAX_CHARS,
+            help="Empty a paragraph to remove it. At least one paragraph must stay.",
         )
-    st.text_area("Add a paragraph (optional)", height=80, key=_letter_key(prefix, "p_new"))
-    st.text_input("Closing", value=letter.closing, key=_letter_key(prefix, "closing"))
+    st.text_area(
+        "Add a paragraph (optional)",
+        height=80,
+        key=_letter_key(prefix, "p_new"),
+        max_chars=C.PARAGRAPH_MAX_CHARS,
+    )
+    field_error(errors, "body_paragraphs")
+    st.text_input(
+        "Closing",
+        value=letter.closing,
+        key=_letter_key(prefix, "closing"),
+        max_chars=C.CLOSING_MAX_CHARS,
+    )
+    field_error(errors, "closing")
 
 
 def _letter_preview(blocks: list[LetterBlock]) -> None:
@@ -322,7 +400,7 @@ def _letter_preview(blocks: list[LetterBlock]) -> None:
             f"line-height:{1.2 if block.kind == 'name' else LAYOUT.line_spacing};"
             f"font-weight:{weight};color:{colour}"
         )
-        text = html.escape(block.text).replace("\n", "<br>")
+        text = html_text(block.text)  # user text inside HTML: always escaped
         lines.append(f'<p style="{style}">{text}</p>')
     st.markdown(
         '<div style="background:#fff;padding:40px 44px;border-radius:4px;'
@@ -334,12 +412,16 @@ def _letter_preview(blocks: list[LetterBlock]) -> None:
 
 def _draft_editors(job_id: int, drafts: Drafts, prefix: str, used_claim_ids: list[str]) -> Drafts:
     """The bullet editor, the letter editor and a live preview. Returns the edited drafts."""
+    errors = form_errors(_drafts_scope(prefix))
+    error_summary(errors, CoverLetterInput)
     st.text_area(
-        "CV bullets (one per line)",
+        "CV bullets * (one per line)",
         value="\n".join(f"- {b}" for b in drafts.cv_bullets),
         height=180,
         key=f"bullets_{prefix}",
+        help=f"1–{C.CV_MAX_BULLETS} bullets, each up to {C.CV_BULLET_MAX_CHARS} characters.",
     )
+    field_error(errors, "cv_bullets")
     st.markdown("##### Cover letter")
     edit_col, preview_col = st.columns(2, gap="large")
     with edit_col:
@@ -375,13 +457,13 @@ def _learned_rules_box(view: WorkflowView) -> None:
     toasted = st.session_state.setdefault(TOASTED_KEY, set())
     for rule in rules:
         if rule.key not in toasted:
-            st.toast(f"🧠 I learned: *{rule.rule}*")
+            st.toast(f"🧠 I learned: *{md(rule.rule)}*")
             toasted.add(rule.key)
     with st.container(border=True):
         st.markdown("🧠 **I learned from your feedback.** New letters will follow:")
         for rule in rules:
             text_col, undo_col = st.columns([6, 1], vertical_alignment="center")
-            text_col.markdown(f"- {rule.rule}")
+            text_col.markdown(f"- {md(rule.rule)}")
             if undo_col.button("↩️ Undo", key=f"undo_rule_{rule.key}"):
                 learning.undo(rule.key)
                 st.toast("Okay, I forgot that rule.")
@@ -408,11 +490,15 @@ def _thumbs_down_form(job_id: int, target: str, key: str) -> None:
         comment = st.text_input(
             f"👎 What should be different about the {TARGET_NAMES[target]}? (optional)",
             placeholder="e.g. too long, too formal, don't start with 'I am writing to…'",
-            max_chars=300,
+            max_chars=C.FEEDBACK_COMMENT_MAX_CHARS,
         )
         if not st.form_submit_button("Send rating"):
             return
-    applications.rate_drafts(job_id, target, -1, comment.strip())
+    try:
+        applications.rate_drafts(job_id, target, -1, comment)
+    except InvalidInputError as exc:
+        st.error(exc.user_message)
+        return
     st.session_state[_why_key(key)] = False
     learned = learning.learn_from_ratings(target) if comment.strip() else []
     _remember_learned(job_id, learned)
@@ -460,6 +546,15 @@ def _export_copy_rate(job_id: int, drafts: Drafts, prefix: str) -> None:
         st.code(drafts_to_text(drafts, card.title, card.company), language=None, wrap_lines=True)
 
 
+def _check_drafts(edited: Drafts, prefix: str) -> None:
+    """Validate the edited drafts; on errors rerun with messages under the fields."""
+    try:
+        applications.validate_drafts(edited)
+    except InvalidInputError as exc:
+        fail_form(_drafts_scope(prefix), exc.errors)
+    clear_form_errors(_drafts_scope(prefix))
+
+
 def _draft_review(view: WorkflowView) -> None:
     versions = applications.list_draft_versions(view.job_id)
     prefix = f"{view.job_id}_{versions[0].version if versions else 0}"
@@ -467,7 +562,10 @@ def _draft_review(view: WorkflowView) -> None:
     guard_issues_box(view.guard_issues)
     edited = _draft_editors(view.job_id, view.drafts, prefix, view.drafts.used_claim_ids)
 
-    if st.button("✅ Accept & save", type="primary", use_container_width=True):
+    if busy_button(
+        "✅ Accept & save", key=f"accept_{prefix}", type="primary", use_container_width=True
+    ):
+        _check_drafts(edited, prefix)
         _after(
             run_with_progress(
                 "Saving your drafts",
@@ -489,10 +587,11 @@ def _draft_review(view: WorkflowView) -> None:
             "What should change? (optional)",
             placeholder="e.g. shorter, more about the RAG project",
             key=f"regen_instruction_{prefix}",
-            max_chars=500,
+            max_chars=C.INSTRUCTION_MAX_CHARS,
         )
         st.caption("Your edits to the other section are kept.")
-        if st.button("Regenerate"):
+        if busy_button("Regenerate", key=f"regenerate_{prefix}"):
+            _check_drafts(edited, prefix)
             _after(
                 run_with_progress(
                     "Rewriting the section",
@@ -517,7 +616,8 @@ def _accepted_drafts(view: WorkflowView) -> None:
     st.success("You accepted these drafts. You can still edit them; each save is a new version.")
     _learned_rules_box(view)
     edited = _draft_editors(view.job_id, latest.drafts, prefix, [])
-    if st.button("💾 Save changes"):
+    if busy_button("💾 Save changes", key=f"save_drafts_{prefix}"):
+        _check_drafts(edited, prefix)
         saved = applications.save_edited_drafts(view.job_id, edited)
         st.toast("Saved as a new version." if saved else "Nothing changed.")
         if saved:
@@ -578,17 +678,23 @@ def _company_tab(job_id: int) -> None:
             icon="🏢",
         )
         return
+    scope = f"company_focus_{job_id}"
     focus, clicked = input_with_action(
         "Focus (optional)",
         "🔄 Research again" if research else f"🔎 Research {card.company}",
         key=f"company_focus_{job_id}",
         placeholder="e.g. tech stack, recent funding, engineering culture",
-        max_chars=200,
+        max_chars=C.FOCUS_MAX_CHARS,
         disabled=not (settings.has_tavily_key and settings.has_llm_key),
     )
+    field_error(form_errors(scope), "focus")
     if clicked:
+        clean, errors = check_input(CompanyFocusInput, {"focus": focus})
+        if clean is None:
+            fail_form(scope, errors)
+        clear_form_errors(scope)
         with progress_status(
-            f"Researching {card.company}", done="Company research done"
+            f"Researching {md(card.company)}", done="Company research done"
         ) as progress:
             progress("Searching the web and summarising what I find…")
             fresh, message = company.run_research(job_id, focus)
@@ -600,7 +706,7 @@ def _company_tab(job_id: int) -> None:
     if research is None:
         st.caption("No research yet. It's saved for this job, so you only pay for it once.")
         return
-    st.markdown(f"#### {research.company}")
+    st.markdown(f"#### {md(research.company)}")
     st.write(research.brief.summary)
     left, right = st.columns(2)
     with left:
@@ -617,7 +723,7 @@ def _company_tab(job_id: int) -> None:
         )
     with st.expander(f"🔗 Sources ({len(research.sources)})"):
         for source in research.sources:
-            st.markdown(f"- [{source.title or source.url}]({source.url})")
+            st.markdown(f"- [{md(source.title or source.url)}]({source.url})")
     st.caption(
         f"Researched {research.researched_at:%d %b %Y %H:%M} UTC from web search results. "
         "Web content can be wrong or out of date; check the sources."
@@ -656,7 +762,7 @@ def _salary_tab(job_id: int) -> None:
             icon="🔑",
         )
     label = "🔄 Refresh" if estimate else "💰 Estimate salary"
-    if st.button(
+    if busy_button(
         label,
         key=f"salary_run_{job_id}",
         type="secondary" if estimate else "primary",
@@ -700,10 +806,10 @@ def _salary_tab(job_id: int) -> None:
         f"{len(estimate.usable)} data points"
     )
     if estimate.posting_salary:
-        st.caption(f"The posting says: {estimate.posting_salary}")
+        st.caption(f"The posting says: {md(estimate.posting_salary)}")
     if estimate.expectation:
         text = POSITION_TEXT.get(estimate.expectation_position, "")
-        st.info(f"Your expectation: **{estimate.expectation}**. {text}", icon="🎯")
+        st.info(f"Your expectation: **{md(estimate.expectation)}**. {text}", icon="🎯")
     else:
         st.caption("Add your expected salary on the Memory page to compare it with the range.")
 
@@ -750,7 +856,7 @@ def _interview_transcript(view: InterviewView) -> None:
     for n, turn in enumerate(view.turns, start=1):
         with st.chat_message("assistant", avatar="🎤"):
             st.markdown(f"**Q{n} · {KIND_LABELS[turn.question.kind]}**  \n{turn.question.question}")
-        st.chat_message("user").write(turn.answer)
+        st.chat_message("user").markdown(md(turn.answer))
         if turn.feedback is not None:
             with st.chat_message("assistant", avatar="🧑‍🏫"):
                 _answer_feedback(turn)
@@ -764,20 +870,35 @@ def _interview_question(view: InterviewView) -> None:
             f"{question.question}"
         )
         st.caption(f"Why they ask: {question.why}")
-    with st.form(f"answer_{view.job_id}_{view.number}"):
+    scope = f"answer_{view.job_id}_{view.number}"
+    errors = form_errors(scope)
+    with st.form(scope):
         text = st.text_area(
-            "Your answer",
+            "Your answer *",
             height=180,
-            max_chars=MAX_ANSWER_CHARS,
+            max_chars=C.ANSWER_MAX_CHARS,
             placeholder="Answer as you would in the interview. Tip: Situation → Task → Action "
             "→ Result, with one number if you have it.",
         )
+        field_error(errors, "text")
         send_col, stop_col = st.columns(2)
-        send = send_col.form_submit_button(
-            "Send answer ▶", type="primary", use_container_width=True
-        )
-        stop = stop_col.form_submit_button("End interview now", use_container_width=True)
+        with send_col:
+            send = busy_button(
+                "Send answer ▶",
+                key=f"{scope}_send",
+                form=True,
+                type="primary",
+                use_container_width=True,
+            )
+        with stop_col:
+            stop = busy_button(
+                "End interview now", key=f"{scope}_stop", form=True, use_container_width=True
+            )
     if send:
+        check = check_interview_answer(text)  # the same check the service runs again
+        if not check.allowed:
+            fail_form(scope, {"text": check.reason})  # reruns; the answer stays in the box
+        clear_form_errors(scope)
         _after(
             run_with_progress(
                 "Scoring your answer",
@@ -831,7 +952,7 @@ def _past_interviews(job_id: int) -> None:
 
 
 def _start_interview(job_id: int, label: str, primary: bool = True) -> None:
-    if st.button(label, type="primary" if primary else "secondary", key=f"start_iv_{job_id}"):
+    if busy_button(label, type="primary" if primary else "secondary", key=f"start_iv_{job_id}"):
         _after(
             run_with_progress(
                 "Preparing your first question",
@@ -863,7 +984,7 @@ def _interview_tab(job_id: int) -> None:
             "Your answers are saved.",
             icon="⏳",
         )
-        if st.button("🔁 Retry", key=f"retry_iv_{job_id}"):
+        if busy_button("🔁 Retry", key=f"retry_iv_{job_id}"):
             _after(
                 run_with_progress(
                     "Continuing the interview",
@@ -892,20 +1013,39 @@ def _interview_tab(job_id: int) -> None:
 
 def _notes_tab(job_id: int) -> None:
     card = applications.get_job_summary(job_id)
-    with st.form(f"notes_{job_id}"):
-        notes = st.text_area("Notes", value=card.notes, height=140)
+    scope = f"notes_{job_id}"
+    errors = form_errors(scope)
+    with st.form(scope):
+        error_summary(errors, NoteInput)
+        notes = st.text_area("Notes", value=card.notes, height=140, max_chars=C.NOTES_MAX_CHARS)
+        field_error(errors, "notes")
         action_col, date_col = st.columns([2, 1])
-        next_action = action_col.text_input(
-            "Next action",
-            value=card.next_action or "",
-            placeholder="e.g. Follow up with the recruiter",
+        with action_col:
+            next_action = st.text_input(
+                "Next action",
+                value=card.next_action or "",
+                placeholder="e.g. Follow up with the recruiter",
+                max_chars=C.SHORT_TEXT_MAX_CHARS,
+            )
+            field_error(errors, "next_action")
+        with date_col:
+            due = st.date_input(
+                "Due",
+                value=card.next_action_date.date() if card.next_action_date else None,
+                format="DD.MM.YYYY",
+            )
+            field_error(errors, "next_action_date")
+        submitted = busy_button("Save notes", key=f"{scope}_save", form=True)
+    if submitted:
+        clean, new_errors = check_input(
+            NoteInput, {"notes": notes, "next_action": next_action, "next_action_date": due}
         )
-        due = date_col.date_input(
-            "Due", value=card.next_action_date.date() if card.next_action_date else None
-        )
-        if st.form_submit_button("Save notes"):
-            applications.save_notes(job_id, notes, next_action, due)
-            st.toast("Notes saved.")
+        if clean is None:
+            fail_form(scope, new_errors)
+        clear_form_errors(scope)
+        for warning in applications.save_notes(job_id, notes, next_action, due):
+            st.toast(warning, icon="📅")
+        st.toast("Notes saved.")
 
     versions = applications.list_draft_versions(job_id)
     st.markdown("##### Draft versions")
@@ -914,7 +1054,7 @@ def _notes_tab(job_id: int) -> None:
     for v in versions:
         who = "your edit" if v.is_user_edited else "AI draft"
         with st.expander(f"Version {v.version} · {who} · {v.created_at:%d %b %Y %H:%M}"):
-            st.markdown("\n".join(f"- {b}" for b in v.drafts.cv_bullets))
+            st.markdown("\n".join(f"- {md(b)}" for b in v.drafts.cv_bullets))
             st.text(v.drafts.cover_letter.text)
 
 
@@ -943,7 +1083,7 @@ if picked != job_id:
 
 card = applications.get_job_summary(job_id)
 head, controls = st.columns([4, 3])
-head.markdown(f"### {card.title}\n{card.company}")
+head.markdown(f"### {md(card.title)}\n{md(card.company)}")
 with controls:
     status_col, rename_col, delete_col = action_row(4, 1, 1)
 new_status = status_col.selectbox(
@@ -956,16 +1096,21 @@ with (
     rename_col.popover("✏️", help="Correct the job title or company"),
     st.form(f"rename_{job_id}", border=False),
 ):
-    new_title = st.text_input("Job title", value=card.title)
+    new_title = st.text_input("Job title", value=card.title, max_chars=C.JOB_TITLE_MAX_CHARS)
     unknown = card.company == UNKNOWN_COMPANY
     new_company = st.text_input(
         "Company",
         value="" if unknown else card.company,
         placeholder="The posting doesn't name it" if unknown else None,
+        max_chars=C.COMPANY_MAX_CHARS,
     )
     saved = st.form_submit_button("Save", type="primary")
-if saved and applications.rename_job(job_id, new_title, new_company):
-    st.rerun()
+if saved:
+    try:
+        if applications.rename_job(job_id, new_title, new_company):
+            st.rerun()
+    except InvalidInputError as exc:
+        st.error(exc.user_message, icon="✏️")
 with delete_col.popover("🗑️", help="Delete this job"):
     st.write("Delete this job and its analysis? This can't be undone.")
     if st.button("Delete", type="primary"):

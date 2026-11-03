@@ -270,3 +270,39 @@ per estimate, cached until Refresh.
   out with a tooltip. Save a profile → ② becomes the next step. Upload a CV (or click
   "🧪 Use demo persona") → the card disappears, "✅ Setup complete!" shows once, and
   "➕ Add job" works as before.
+
+
+## Follow-up: consistent input validation on every page (client + server side)
+- **What changed:** every user input is now checked by one package, `app/validation/`
+  (`validators.py`: name, email, phone, URL, place, list, salary, free text, job input, due
+  date; `models.py`: one Pydantic model per form; `sanitize.py`: escaping). All limits are in
+  `app/config.py`. Pages validate on submit and show a red message under each wrong field,
+  plus a short summary when several are wrong; what the user typed stays in the box. Required
+  fields have `*`, placeholders show examples, optional fields may stay empty. Long actions use
+  `busy_button` (disabled while running, so no double submits). The same models run again in
+  the memory store, the app database, the copilot's `update_tracker` tool, the application
+  services and the graph's guards, so nothing invalid is saved by any path. A profile saved
+  before these rules still loads; the Memory page and Get started say what to fix. User text
+  drawn as Markdown is escaped (`md()`). Names allow any script; emails are stored in lower
+  case, phones in E.164 ("+4915112345678", shown "+49 1511 2345678"). D91, D92.
+- **Also fixed:** saving a due date on the Notes tab crashed (SQLModel needs timezone-aware
+  datetimes); the dev settings temperature slider now goes to 2.0 and the model list is
+  closed; uploads must really be the type their extension says and contain text.
+- **New dependencies:** `email-validator` (syntax only, no DNS, works offline) and
+  `phonenumbers`.
+- **Files:** `app/validation/` (new: `validators.py`, `models.py`, `sanitize.py`),
+  `app/config.py` (limits, `MODEL_MAX_OUTPUT_TOKENS`), `app/utils/errors.py`
+  (`InvalidInputError`), `app/memory/store.py` (validated saves, `profile_problems`),
+  `app/db/repo.py` (`_check_job_fields`), `app/guards/input_guard.py`, `app/tools/tracker.py`,
+  `app/services/applications.py` (`validate_drafts`, `save_notes` returns warnings),
+  `company.py`, `copilot.py`, `interview.py`, `dev_settings.py`, `my_data.py`, `onboarding.py`,
+  `learning.py`, `export.py`, `app/rag/ingest.py`, `app/agent/nodes/ingest.py`, `claims.py`,
+  `learning.py`, `app/ui/components.py` (`field_error`, `error_summary`, `busy_button`, the
+  forms), every page in `app/ui/pages/`, `app/main.py`; tests `tests/test_validation.py`
+  (new), `tests/test_validation_layers.py` (new), `tests/test_ui_pages.py`; docs
+  `DECISIONS.md`, `SECURITY.md`, `REVIEW_GUIDE.md`.
+- **How to try it:** on Get started, enter "R2D2" as name, "zoe-at-example" as email and "12"
+  as phone and click Save: three red messages under the fields, a summary at the top, your
+  text still there. Fix them ("Zoë O'Brien", "Zoe@Example.com", "0151 12345678") and save; the
+  Memory page shows the phone as "+49 1511 2345678". See the full list in the final summary
+  of this change (the chat reply that shipped it).

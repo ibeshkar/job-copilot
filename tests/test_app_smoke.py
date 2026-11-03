@@ -25,7 +25,7 @@ def test_new_user_sees_onboarding(app_db: Path) -> None:
 
 
 def test_onboarded_user_sees_board(app_db: Path) -> None:
-    save_profile(Profile(name="Alex Novak"))
+    save_profile(Profile(name="Alex Novak", email="alex@example.com", target_roles=["AI Engineer"]))
 
     at = _run()
 

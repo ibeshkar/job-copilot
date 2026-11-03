@@ -74,6 +74,21 @@ class ExternalServiceError(AppError):
     user_message = "That service isn't available right now. Please try again later."
 
 
+class InvalidInputError(AppError):
+    """User input (or data about to be saved) broke a validation rule (app/validation/).
+
+    `errors` maps each wrong field to its message, so a form can show it under the field;
+    `user_message` sums them up for places that show one message (a toast, the copilot).
+    """
+
+    user_message = "Some of the details aren't valid. Please check them and try again."
+
+    def __init__(self, errors: dict[str, str], user_message: str | None = None) -> None:
+        self.errors = errors
+        summary = " ".join(errors.values()) if errors else None
+        super().__init__(f"Invalid input: {errors}", user_message or summary)
+
+
 class NotFoundError(AppError):
     """A database record (job, draft, ...) does not exist."""
 

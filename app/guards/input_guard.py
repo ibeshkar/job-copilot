@@ -6,15 +6,28 @@
 #      data (delimiters), so a posting that mentions "system prompt" can still be analysed. In
 #      the chat, the text IS the instruction, so an injection attempt is refused instead.
 #      The second chat layer, the LLM topic classifier, lives in app/agent/copilot_graph.py.
+#      Lengths, empty input and control characters use the central rules in app/validation/.
 # Used by: app/agent/nodes/ingest.py (input_guard node), app/agent/copilot_graph.py,
 #          app/tools/job_posting.py, app/services/interview.py, app/services/help.py.
 
 import re
 from dataclasses import dataclass, field
 
-MAX_JOB_TEXT_CHARS = 30_000  # PROJECT_PLAN.md §9
-MIN_JOB_TEXT_CHARS = 200  # shorter than a few sentences can't be a real posting
-MAX_CHAT_CHARS = 4_000  # PROJECT_PLAN.md §9
+from app.config import ANSWER_MAX_CHARS as MAX_ANSWER_CHARS
+from app.config import CHAT_MAX_CHARS as MAX_CHAT_CHARS
+from app.config import JOB_TEXT_MAX_CHARS as MAX_JOB_TEXT_CHARS
+from app.config import JOB_TEXT_MIN_CHARS as MIN_JOB_TEXT_CHARS
+from app.validation import validators as V
+from app.validation.models import ChatInput, InterviewAnswerInput, check_input
+from app.validation.validators import looks_like_url
+
+__all__ = [
+    "MAX_ANSWER_CHARS",
+    "MAX_CHAT_CHARS",
+    "MAX_JOB_TEXT_CHARS",
+    "MIN_JOB_TEXT_CHARS",
+    "looks_like_url",
+]
 
 # Attempts to override the model's instructions. Flagged in job postings, refused in the chat.
 _OVERRIDE_PATTERNS = [
@@ -49,12 +62,6 @@ class GuardResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def looks_like_url(text: str) -> bool:
-    """True if the input is a single http(s) URL rather than pasted job text."""
-    stripped = text.strip()
-    return stripped.lower().startswith(("http://", "https://")) and " " not in stripped
-
-
 def find_injection_phrases(text: str, *, overrides_only: bool = False) -> list[str]:
     """Return the suspicious phrases found in `text` (empty list if none).
 
@@ -73,21 +80,10 @@ def check_job_text(text: str) -> GuardResult:
         A GuardResult. Too short or too long text is not allowed; injection phrases only
         produce a warning.
     """
-    stripped = text.strip()
-    if not stripped:
-        return GuardResult(False, "Please paste a job posting or a link to one.")
-    if len(stripped) < MIN_JOB_TEXT_CHARS:
-        return GuardResult(
-            False,
-            "This text is too short to be a job posting. Please paste the full posting "
-            "(title, tasks and requirements).",
-        )
-    if len(stripped) > MAX_JOB_TEXT_CHARS:
-        return GuardResult(
-            False,
-            f"This text is too long ({len(stripped):,} characters). Please paste only the job "
-            f"posting (max {MAX_JOB_TEXT_CHARS:,} characters).",
-        )
+    try:
+        stripped = V.job_text(text)  # the same rules as the Add job dialog (app/validation/)
+    except ValueError as exc:
+        return GuardResult(False, str(exc))
 
     warnings = []
     phrases = find_injection_phrases(stripped)
@@ -115,17 +111,15 @@ def check_chat_message(text: str) -> GuardResult:
     Returns:
         A GuardResult; `reason` is the copilot's answer when the message is refused.
     """
-    stripped = text.strip()
-    if not stripped:
-        return GuardResult(False, "Please type a question.")
-    if len(stripped) > MAX_CHAT_CHARS:
-        return GuardResult(False, TOO_LONG_CHAT)
-    if find_injection_phrases(stripped, overrides_only=True):
+    clean, errors = check_input(ChatInput, {"text": text})
+    if clean is None:
+        too_long = len(V.clean_multiline(text)) > MAX_CHAT_CHARS
+        return GuardResult(False, TOO_LONG_CHAT if too_long else errors["text"])
+    if find_injection_phrases(clean.text, overrides_only=True):
         return GuardResult(False, INJECTION_CHAT)
     return GuardResult(True)
 
 
-MAX_ANSWER_CHARS = 4_000  # a 3-minute spoken answer is about 2,500 characters
 EMPTY_ANSWER = "Please type your answer first, or end the interview."
 TOO_LONG_ANSWER = (
     f"That answer is too long (max {MAX_ANSWER_CHARS:,} characters). In a real interview, aim "
@@ -136,11 +130,14 @@ INJECTION_ANSWER = "Please answer the interview question; I can't change my inst
 
 def check_interview_answer(text: str) -> GuardResult:
     """Check a mock interview answer with the chat's Python rules (no LLM)."""
-    stripped = text.strip()
-    if not stripped:
-        return GuardResult(False, EMPTY_ANSWER)
-    if len(stripped) > MAX_ANSWER_CHARS:
-        return GuardResult(False, TOO_LONG_ANSWER)
-    if find_injection_phrases(stripped, overrides_only=True):
+    clean, errors = check_input(InterviewAnswerInput, {"text": text})
+    if clean is None:
+        cleaned = V.clean_multiline(text)
+        if not cleaned:
+            return GuardResult(False, EMPTY_ANSWER)
+        return GuardResult(
+            False, TOO_LONG_ANSWER if len(cleaned) > MAX_ANSWER_CHARS else errors["text"]
+        )
+    if find_injection_phrases(clean.text, overrides_only=True):
         return GuardResult(False, INJECTION_ANSWER)
     return GuardResult(True)

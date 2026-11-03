@@ -28,6 +28,7 @@ from app.tools.company import (
 )
 from app.utils.errors import ExternalServiceError, friendly_message
 from app.utils.logging import get_logger, log_exception
+from app.validation.models import CompanyFocusInput, check_input
 
 logger = get_logger(__name__)
 
@@ -99,6 +100,10 @@ def research_for_job(
 
 def run_research(job_id: int, focus: str | None = None) -> tuple[CompanyResearch | None, str]:
     """Like `research_for_job`, but never raises: returns (research, "") or (None, message)."""
+    clean, errors = check_input(CompanyFocusInput, {"focus": focus})
+    if clean is None:
+        return None, errors["focus"]
+    focus = clean.focus
     try:
         with track_run("company_research", job_id=job_id):
             return research_for_job(job_id, focus or None), ""

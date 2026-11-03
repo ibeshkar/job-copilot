@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.db import repo
 from app.memory import store
 from app.services.observability import track_run
+from app.utils.errors import InvalidInputError
 from app.utils.logging import get_logger, log_exception
 
 logger = get_logger(__name__)
@@ -33,7 +34,13 @@ class LearnedRule:
 
 
 def _save(rules: list[StyleRule]) -> list[LearnedRule]:
-    return [LearnedRule(store.add_style_rule(rule), rule.rule) for rule in rules]
+    saved = []
+    for rule in rules:
+        try:
+            saved.append(LearnedRule(store.add_style_rule(rule), rule.rule))
+        except InvalidInputError as exc:  # the store's rules said no (e.g. far too long)
+            logger.warning("Learned rule not saved: %s", exc)
+    return saved
 
 
 def get_model() -> BaseChatModel | None:

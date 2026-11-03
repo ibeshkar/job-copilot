@@ -25,7 +25,12 @@ def test_profile_is_none_before_onboarding(mem: InMemoryStore) -> None:
 
 
 def test_profile_round_trip(mem: InMemoryStore) -> None:
-    profile = Profile(name="Alex Novak", languages=["English C1", "German A2"])
+    profile = Profile(
+        name="Alex Novak",
+        email="alex@example.com",
+        target_roles=["AI Engineer"],
+        languages=["English C1", "German A2"],
+    )
     memory.save_profile(profile, mem)
 
     assert memory.get_profile(mem) == profile
@@ -52,7 +57,9 @@ def test_facts_add_list_delete(mem: InMemoryStore) -> None:
 
 
 def test_style_rules_and_delete_all(mem: InMemoryStore) -> None:
-    memory.save_profile(Profile(name="Alex"), mem)
+    memory.save_profile(
+        Profile(name="Alex", email="alex@example.com", target_roles=["AI Engineer"]), mem
+    )
     memory.add_style_rule(StyleRule(rule="Avoid the word 'passionate'", source="edit_diff"), mem)
 
     assert [r.rule for r in memory.list_style_rules(mem).values()] == [
@@ -64,7 +71,11 @@ def test_style_rules_and_delete_all(mem: InMemoryStore) -> None:
 
 
 def test_users_are_kept_apart(mem: InMemoryStore) -> None:
-    memory.save_profile(Profile(name="Alex"), mem, user_id="alex")
+    memory.save_profile(
+        Profile(name="Alex", email="alex@example.com", target_roles=["AI Engineer"]),
+        mem,
+        user_id="alex",
+    )
 
     assert memory.get_profile(mem, user_id="sam") is None
 
@@ -78,7 +89,9 @@ def test_profile_survives_restart(tmp_path: Path) -> None:
         return s
 
     first = open_store()
-    memory.save_profile(Profile(name="Alex Novak"), first)
+    memory.save_profile(
+        Profile(name="Alex Novak", email="alex@example.com", target_roles=["AI Engineer"]), first
+    )
     first.conn.close()  # "restart" the app
 
     assert memory.get_profile(open_store()).name == "Alex Novak"

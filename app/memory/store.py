@@ -19,6 +19,14 @@ from pydantic import BaseModel, Field
 
 from app.agent.state import StyleRule
 from app.config import get_settings
+from app.validation.models import (
+    FactInput,
+    PreferencesInput,
+    ProfileInput,
+    StyleRuleInput,
+    check_input,
+    validate_input,
+)
 
 # Single local user for now. Every namespace starts with the user id, so supporting several
 # users later means passing a different id, not redesigning the storage.
@@ -30,7 +38,12 @@ M = TypeVar("M", bound=BaseModel)
 
 
 class Profile(BaseModel):
-    """Who the user is and what they are looking for (onboarding step 1)."""
+    """Who the user is and what they are looking for (onboarding step 1).
+
+    This is the *stored* shape and is deliberately lenient, so a profile saved before the
+    validation rules existed still loads. Every save goes through `ProfileInput`
+    (app/validation/models.py); `profile_problems()` lists what an old profile must fix.
+    """
 
     name: str
     target_roles: list[str] = Field(default_factory=list)
@@ -41,7 +54,7 @@ class Profile(BaseModel):
     salary_expectations: str | None = None
     # Contact details for the cover letter header (never written by the LLM).
     email: str = ""
-    phone: str = ""
+    phone: str = ""  # E.164, e.g. "+4915112345678"; shown with validators.format_phone
     linkedin: str = ""
     city: str = ""  # e.g. "Berlin, Germany"
 
@@ -92,9 +105,25 @@ def get_profile(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) 
 
 def save_profile(
     profile: Profile, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
-) -> None:
-    """Save (or overwrite) the user's profile."""
-    (store or get_store()).put(_ns("profile", user_id), _MAIN_KEY, profile.model_dump(mode="json"))
+) -> Profile:
+    """Validate, normalise and save (or overwrite) the user's profile.
+
+    Returns:
+        The profile as saved (trimmed, email in lower case, phone in E.164, …).
+
+    Raises:
+        InvalidInputError: a field breaks a rule; nothing is saved.
+    """
+    clean = Profile.model_validate(validate_input(ProfileInput, profile.model_dump()).model_dump())
+    (store or get_store()).put(_ns("profile", user_id), _MAIN_KEY, clean.model_dump(mode="json"))
+    return clean
+
+
+def profile_problems(profile: Profile | None) -> dict[str, str]:
+    """{field: message} for a saved profile that breaks today's rules ({} if it's fine)."""
+    if profile is None:
+        return {}
+    return check_input(ProfileInput, profile.model_dump())[1]
 
 
 def delete_profile(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -> None:
@@ -111,9 +140,14 @@ def get_preferences(store: BaseStore | None = None, user_id: str = DEFAULT_USER_
 def save_preferences(
     preferences: Preferences, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
 ) -> None:
-    """Save (or overwrite) the user's preferences."""
+    """Validate and save (or overwrite) the user's preferences.
+
+    Raises:
+        InvalidInputError: a field breaks a rule; nothing is saved.
+    """
+    clean = validate_input(PreferencesInput, preferences.model_dump())
     (store or get_store()).put(
-        _ns("preferences", user_id), _MAIN_KEY, preferences.model_dump(mode="json")
+        _ns("preferences", user_id), _MAIN_KEY, clean.model_dump(mode="json")
     )
 
 
@@ -139,8 +173,13 @@ def _list(kind: str, model: type[M], store: BaseStore | None, user_id: str) -> d
 
 
 def add_fact(fact: Fact, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -> str:
-    """Remember a confirmed fact. Returns its key (needed to delete it)."""
-    return _add("facts", fact, store, user_id)
+    """Remember a confirmed fact. Returns its key (needed to delete it).
+
+    Raises:
+        InvalidInputError: the text is empty, too short or too long.
+    """
+    text = validate_input(FactInput, {"text": fact.text}).text
+    return _add("facts", fact.model_copy(update={"text": text}), store, user_id)
 
 
 def list_facts(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -> dict[str, Fact]:
@@ -151,7 +190,13 @@ def list_facts(store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID) -
 def update_fact(
     key: str, text: str, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
 ) -> None:
-    """Change the wording of a fact; keeps its job and date. Raises KeyError if it's gone."""
+    """Change the wording of a fact; keeps its job and date.
+
+    Raises:
+        KeyError: the fact is gone.
+        InvalidInputError: the new text breaks a rule.
+    """
+    text = validate_input(FactInput, {"text": text}).text
     store = store or get_store()
     item = store.get(_ns("facts", user_id), key)
     if item is None:
@@ -168,8 +213,13 @@ def delete_fact(key: str, store: BaseStore | None = None, user_id: str = DEFAULT
 def add_style_rule(
     rule: StyleRule, store: BaseStore | None = None, user_id: str = DEFAULT_USER_ID
 ) -> str:
-    """Remember a writing style rule. Returns its key (needed to undo or delete it)."""
-    return _add("style_rules", rule, store, user_id)
+    """Remember a writing style rule. Returns its key (needed to undo or delete it).
+
+    Raises:
+        InvalidInputError: the rule is empty, too short or too long.
+    """
+    text = validate_input(StyleRuleInput, {"rule": rule.rule}).rule
+    return _add("style_rules", rule.model_copy(update={"rule": text}), store, user_id)
 
 
 def list_style_rules(
@@ -187,6 +237,7 @@ def update_style_rule(
     Banned words the new wording no longer mentions are dropped, so rewording "Avoid
     'passionate'" into "Keep sentences short" stops the guard from checking "passionate".
     """
+    text = validate_input(StyleRuleInput, {"rule": text}).rule
     store = store or get_store()
     item = store.get(_ns("style_rules", user_id), key)
     if item is None:

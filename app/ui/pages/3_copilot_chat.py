@@ -10,7 +10,7 @@ from collections.abc import Iterable
 
 import streamlit as st
 
-from app.guards.input_guard import MAX_CHAT_CHARS
+from app.config import CHAT_MAX_CHARS
 from app.services import copilot
 from app.services.copilot import ChatEvent, ChatTurn, PendingAction
 from app.services.readiness import get_setup_status
@@ -22,8 +22,16 @@ from app.ui.state import (
     open_onboarding,
     select_chat,
 )
+from app.validation.sanitize import md
 
 ERROR_KEY = "chat_error"  # an error from the last run, shown once after the rerun
+INPUT_KEY = "chat_input"
+SENDING_KEY = "chat_sending"  # the submitted text while its answer streams (input disabled)
+
+
+def _queue_message() -> None:
+    """chat_input callback: keep the text, so this run can disable the box while it answers."""
+    st.session_state[SENDING_KEY] = st.session_state.get(INPUT_KEY)
 
 
 def _stream_answer(events: Iterable[ChatEvent]) -> None:
@@ -54,14 +62,15 @@ def _turn(turn: ChatTurn) -> None:
                 if use.result:
                     st.text(use.result)
         if turn.text:
-            st.markdown(turn.text)
+            # The user's own words are shown literally; the copilot's answer may use Markdown.
+            st.markdown(md(turn.text) if turn.role == "user" else turn.text)
 
 
 def _approval_card(thread_id: str, actions: list[PendingAction]) -> None:
     with st.chat_message("assistant"), st.container(border=True):
         st.markdown("**✋ May I make this change to your tracker?**")
         for action in actions:
-            st.markdown(f"- {action.summary}")
+            st.markdown(f"- {md(action.summary)}")
         approve_col, decline_col = st.columns(2)
         if approve_col.button("✅ Approve", type="primary", use_container_width=True):
             _stream_answer(copilot.answer_approval(thread_id, approved=True))
@@ -124,12 +133,17 @@ if not pending and copilot.can_retry(thread_id):
     if st.button("🔁 Retry", type="primary"):
         _stream_answer(copilot.retry(thread_id))
 
-typed = st.chat_input(
+sending = st.session_state.pop(SENDING_KEY, None)
+st.chat_input(
     "Approve or decline the change above first" if pending else "Ask the copilot…",
-    disabled=bool(pending),
-    max_chars=MAX_CHAT_CHARS,
+    key=INPUT_KEY,
+    disabled=bool(pending or sending),  # no second message while an answer streams
+    max_chars=CHAT_MAX_CHARS,
+    on_submit=_queue_message,
 )
-if text := typed or starter:
+# Length, empty input and injection are checked by the graph's guard node, which answers
+# politely instead of failing (app/guards/input_guard.py check_chat_message).
+if text := sending or starter:
     with st.chat_message("user"):
-        st.markdown(text)
+        st.markdown(md(text))
     _stream_answer(copilot.send_message(thread_id, text, toggles))

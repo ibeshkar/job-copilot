@@ -11,6 +11,7 @@ import json
 from app.agent.prompts import PROMPT_VERSION, all_prompts
 from app.config import DEV_OVERRIDES_FILE, LLMOverrides, get_settings
 from app.utils.logging import get_logger
+from app.validation.models import PasswordInput, SettingsInput, check_input, validate_input
 
 logger = get_logger(__name__)
 
@@ -19,6 +20,8 @@ DEFAULT_PASSWORD = "change-me"  # the value in .env.example
 
 def check_password(attempt: str) -> bool:
     """True if `attempt` matches APP_DEV_PASSWORD (constant-time compare: no timing attacks)."""
+    if check_input(PasswordInput, {"password": attempt})[0] is None:
+        return False  # empty or absurdly long: not worth comparing
     expected = get_settings().app_dev_password.get_secret_value()
     return hmac.compare_digest(attempt.encode(), expected.encode())
 
@@ -42,11 +45,14 @@ def save_llm_overrides(model: str, temperature: float, max_tokens: int) -> LLMOv
     """Save the developer's model choice; it applies to every run from now on (all sessions).
 
     Raises:
-        pydantic.ValidationError: a value is out of range (e.g. temperature 3).
+        InvalidInputError: a value is out of range (e.g. temperature 3), the model isn't in
+            the allowed list, or max tokens is above the model's limit.
     """
-    overrides = LLMOverrides(
-        default_model=model.strip(), temperature=temperature, max_tokens=max_tokens
+    clean = validate_input(
+        SettingsInput,
+        {"default_model": model, "temperature": temperature, "max_tokens": max_tokens},
     )
+    overrides = LLMOverrides(**clean.model_dump())
     path = get_settings().runtime_dir / DEV_OVERRIDES_FILE
     path.write_text(overrides.model_dump_json(indent=2))
     logger.info("Developer settings saved: %s", overrides.model_dump())
