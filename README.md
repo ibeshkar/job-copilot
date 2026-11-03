@@ -82,7 +82,7 @@ Job search uses the free Arbeitnow API and needs no key.
 **Development**
 ```bash
 uv run ruff check .              # lint
-uv run pytest                    # 302 unit tests, no network, ~10 s
+uv run pytest                    # 623 unit tests, no network, ~12 s
 uv run pytest -m live            # end-to-end tests with the real LLM (a few cents)
 uv run python evals/run_evals.py # evaluation report → docs/EVALUATION.md (~$0.06, ~12 min)
 uv run python scripts/analyse_sample_jobs.py   # fit analysis on the 3 sample jobs
@@ -200,11 +200,11 @@ improve.
 
 ## 10. Technical decisions
 
-78 decisions with the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.md). The
+92 decisions with the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.md). The
 top 8 are in [`docs/REVIEW_GUIDE.md`](docs/REVIEW_GUIDE.md) §4.
 
 **More docs:** [`REVIEW_GUIDE.md`](docs/REVIEW_GUIDE.md) (review prep, 80+ Q&As) ·
-[`CONCEPTS.md`](docs/CONCEPTS.md) · [`CODE_TOUR.md`](docs/CODE_TOUR.md) ·
+[`PROJECT_SUMMARY.md`](docs/PROJECT_SUMMARY.md) · [`CONCEPTS.md`](docs/CONCEPTS.md) · [`CODE_TOUR.md`](docs/CODE_TOUR.md) ·
 [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) ·
 [`GLOSSARY.md`](docs/GLOSSARY.md) · [`docs/phase-notes/`](docs/phase-notes/)
 

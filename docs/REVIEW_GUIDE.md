@@ -80,7 +80,7 @@ Everything is saved after every step, so a refresh or restart continues where th
 | 7 | **Structured output** (Pydantic) for every data-returning call, one schema retry | No regex parsing; validation errors are explicit | Parse free text / JSON mode | Some models handle schemas worse; a cut-off answer fails cleanly (D36) |
 | 8 | **OpenRouter** via the OpenAI-compatible client | One key, any model; same `ChatOpenAI` code | OpenAI directly | One more provider in the data path (named in the privacy notes) |
 
-More: `DECISIONS.md` D1–D78.
+More: `DECISIONS.md` D1–D92.
 
 ## 5. Questions and answers
 
@@ -781,8 +781,8 @@ Honest list, most important first.
 | LLM provider | OpenRouter (OpenAI-compatible API) |
 | Default model | `openai/gpt-4o-mini` (set by `DEFAULT_MODEL`) |
 | App database | SQLite, `data/runtime/app.db`, 6 tables |
-| Tests | 302 offline + 14 live (+ 4 live evals in `evals/`) (`uv run pytest`, `uv run pytest -m live`) |
-| Docs | README + 11 docs in `docs/` + 10 phase notes; 78 decisions; 8 screenshots in `docs/assets/` |
+| Tests | 623 offline + 14 live (+ 4 live evals in `evals/`) (`uv run pytest`, `uv run pytest -m live`) |
+| Docs | README + 11 docs in `docs/` + 11 phase notes; 92 decisions; 9 screenshots in `docs/assets/` |
 | Network | Streamlit bound to `localhost` (`.streamlit/config.toml`) |
 | Pages working | All 7: Get started, Board, Job workspace (Fit, Claim check, Documents, Company, Interview prep, Notes tabs), Copilot chat, What I know about you, Help, Developer settings |
 | Workflow stages shown in UI | not_started, fit_review, claim_check, draft_review, interrupted, failed, finished |
