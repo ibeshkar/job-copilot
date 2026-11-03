@@ -12,15 +12,22 @@ import streamlit as st
 from app.config import JOB_TEXT_MAX_CHARS, JOB_TEXT_MIN_CHARS
 from app.db.models import JobStatus
 from app.services import applications, onboarding
+from app.services.applications import JobCard
 from app.services.readiness import ADD_JOB_LOCKED_HELP, get_setup_status
 from app.ui.components import (
+    ADD_JOB_BUTTON_KEY,
     STATUS_LABELS,
+    board_styles,
     busy_button,
+    card_key,
     clear_form_errors,
+    empty_lane,
     fail_form,
     field_error,
     fit_badge,
     form_errors,
+    lane_header,
+    lane_key,
     progress_status,
     run_with_progress,
     salary_badge,
@@ -99,32 +106,40 @@ def _on_status_change(job_id: int) -> None:
 
 
 def _draw_columns(board: dict) -> None:
-    """The five status columns with one card per job."""
+    """The five status lanes with one card per job (look: board_styles in components.py)."""
     for column, status in zip(st.columns(len(STATUSES)), STATUSES, strict=True):
         cards = board[status]
-        column.markdown(f"**{STATUS_LABELS[status]}** · {len(cards)}")
-        for card in cards:
-            with column.container(border=True):
-                st.markdown(f"**{md(card.title)}**  \n{md(card.company)}")
-                st.markdown(
-                    f"{fit_badge(card.fit_score)} {stage_badge(card.stage, card.review_action)} "
-                    f"{salary_badge(card.salary)}"
-                )
-                if card.next_action:
-                    due = f" · {card.next_action_date:%d %b}" if card.next_action_date else ""
-                    st.caption(f"Next: {md(card.next_action)}{due}")
-                st.selectbox(
-                    "Status",
-                    STATUSES,
-                    index=STATUSES.index(card.status),
-                    format_func=STATUS_LABELS.get,
-                    key=f"status_{card.id}",
-                    label_visibility="collapsed",
-                    on_change=_on_status_change,
-                    args=(card.id,),
-                )
-                if st.button("Open", key=f"open_{card.id}", use_container_width=True):
-                    open_job(card.id)
+        with column.container(key=lane_key(status)):
+            lane_header(status, len(cards))
+            if not cards:
+                empty_lane(status)
+            for card in cards:
+                _draw_card(card)
+
+
+def _draw_card(card: JobCard) -> None:
+    """One job card: title, company, badges, next step, status dropdown and Open button."""
+    with st.container(border=True, key=card_key(card.id)):
+        st.markdown(f"**{md(card.title)}**  \n{md(card.company)}")
+        st.markdown(
+            f"{fit_badge(card.fit_score)} {stage_badge(card.stage, card.review_action)} "
+            f"{salary_badge(card.salary)}"
+        )
+        if card.next_action:
+            due = f" · {card.next_action_date:%d %b}" if card.next_action_date else ""
+            st.caption(f"Next: {md(card.next_action)}{due}")
+        st.selectbox(
+            "Status",
+            STATUSES,
+            index=STATUSES.index(card.status),
+            format_func=STATUS_LABELS.get,
+            key=f"status_{card.id}",
+            label_visibility="collapsed",
+            on_change=_on_status_change,
+            args=(card.id,),
+        )
+        if st.button("Open →", key=f"open_{card.id}", use_container_width=True):
+            open_job(card.id)
 
 
 def _use_demo_persona() -> None:
@@ -138,6 +153,7 @@ def _use_demo_persona() -> None:
 
 
 st.title("🗂️ Board")
+board_styles()
 
 setup = get_setup_status()
 if not setup.is_ready:
@@ -155,6 +171,7 @@ elif st.session_state.pop(SETUP_PENDING, False):
 # Only one primary button on screen: while setup is incomplete it's the checklist's next step.
 if st.button(
     "➕ Add job",
+    key=ADD_JOB_BUTTON_KEY,
     type="primary" if setup.is_ready else "secondary",
     disabled=not setup.is_ready,
     help=None if setup.is_ready else ADD_JOB_LOCKED_HELP,

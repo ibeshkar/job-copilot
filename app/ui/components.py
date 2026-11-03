@@ -3,7 +3,8 @@
 #       badges, the fit card with its requirements summary, filter and compact requirement
 #       rows, the claim check list (group headers, compact claim rows, evidence popovers, edit
 #       on demand), the reviewed-claims list, the fact-check warning, the company news line,
-#       the "Let's get you set up" checklist card, and the profile and preferences forms.
+#       the "Let's get you set up" checklist card, the profile and preferences forms, and the
+#       Board's look (status colours, lanes, cards: the one scoped stylesheet `board_css`).
 # Why: the board and the workspace show the same badges, and onboarding and the Memory page
 #      share the forms. These functions only draw; they never call the LLM or the graph.
 # Used by: the pages in app/ui/pages/.
@@ -51,6 +52,21 @@ STATUS_LABELS = {
     "offer": "🎉 Offer",
     "rejected": "✖️ Rejected",
 }
+# One accent colour per status, used by the board's lanes, column headers and card strips.
+STATUS_COLORS = {
+    "saved": "#64748b",  # slate
+    "applied": "#3b82f6",  # blue
+    "interview": "#8b5cf6",  # purple
+    "offer": "#22c55e",  # green
+    "rejected": "#ef4444",  # red
+}
+EMPTY_LANE_HINTS = {
+    "saved": "Nothing saved yet",
+    "applied": "No applications sent yet",
+    "interview": "Interviews will show up here",
+    "offer": "Fingers crossed 🤞",
+    "rejected": "Nothing here, and that's fine",
+}
 MATCH_ICONS = {"met": "✅", "partial": "⚠️", "missing": "❌"}
 MATCH_NAMES = {"met": "Met", "partial": "Partial", "missing": "Missing"}
 MATCH_COLORS = {"met": "green", "partial": "orange", "missing": "red"}
@@ -64,15 +80,26 @@ TONE_LABELS = {"formal": "🎩 Formal", "friendly": "😊 Friendly", "concise": 
 LENGTHS = ["short", "medium", "long"]
 
 
+# One fit-score scale for the whole app (board cards and the fit card):
+# (lowest score in the band, Streamlit badge colour, label), checked from the top down.
+FIT_SCORE_BANDS = [
+    (80, "green", "strong fit"),
+    (60, "orange", "partial fit"),
+    (0, "red", "weak fit"),
+]
+
+
+def fit_band(score: int) -> tuple[str, str]:
+    """The (colour, label) of a fit score on the shared scale: ≥80 green, 60–79 amber, <60 red."""
+    return next((colour, label) for low, colour, label in FIT_SCORE_BANDS if score >= low)
+
+
 def fit_badge(score: int | None) -> str:
     """A coloured score label in Streamlit markdown, e.g. ':green-badge[84 · strong fit]'."""
     if score is None:
         return ":gray-badge[no score yet]"
-    if score >= 70:
-        return f":green-badge[{score} · strong fit]"
-    if score >= 40:
-        return f":orange-badge[{score} · partial fit]"
-    return f":red-badge[{score} · weak fit]"
+    colour, label = fit_band(score)
+    return f":{colour}-badge[{score} · {label}]"
 
 
 CONFIDENCE_BADGES = {
@@ -419,6 +446,131 @@ def stage_badge(stage: str, review_action: str | None) -> str:
     if review_action == "stop":
         return ":gray-badge[🚫 not a fit]"
     return ""
+
+
+# ---- Board look: lanes, column headers and job cards ---------------------------------------
+# All board CSS lives here and is scoped to the keys below (Streamlit adds a "st-key-<key>"
+# class to a keyed container), so no other widget in the app changes.
+LANE_KEY_PREFIX = "jc_lane_"
+CARD_KEY_PREFIX = "jc_card_"
+ADD_JOB_BUTTON_KEY = "jc_add_job"
+
+# Surface, text and shadow colours as CSS light-dark() pairs: Streamlit sets `color-scheme` on
+# the app, so the browser picks the right one for the active theme (no Python detection, which
+# is unreliable on first load). Status accents work on both.
+_CARD_BG = "light-dark(#ffffff, #1c1f2a)"
+_TEXT = "light-dark(#0f172a, #f1f5f9)"
+_MUTED = "light-dark(#64748b, #94a3b8)"
+_BORDER = "light-dark(rgba(15, 23, 42, 0.10), rgba(255, 255, 255, 0.09))"
+_SHADOW = (
+    "0 1px 2px light-dark(rgba(15, 23, 42, 0.06), rgba(0, 0, 0, 0.35)), "
+    "0 2px 8px light-dark(rgba(15, 23, 42, 0.06), rgba(0, 0, 0, 0.30))"
+)
+_SHADOW_HOVER = (
+    "0 4px 10px light-dark(rgba(15, 23, 42, 0.10), rgba(0, 0, 0, 0.45)), "
+    "0 10px 24px light-dark(rgba(15, 23, 42, 0.10), rgba(0, 0, 0, 0.40))"
+)
+# Accent as text: the status colour itself in light mode, a lighter tint of it in dark mode.
+_ACCENT_TEXT = "light-dark(var(--jc-accent), color-mix(in srgb, var(--jc-accent) 60%, white))"
+
+
+def lane_key(status: str) -> str:
+    return f"{LANE_KEY_PREFIX}{status}"
+
+
+def card_key(job_id: int) -> str:
+    return f"{CARD_KEY_PREFIX}{job_id}"
+
+
+def board_css() -> str:
+    """The Board's stylesheet: lanes, lane headers, empty placeholders, cards, Add job button."""
+    lane = f'[class*="st-key-{LANE_KEY_PREFIX}"]'
+    card = f'[class*="st-key-{CARD_KEY_PREFIX}"]'
+    accents = "\n".join(
+        f".st-key-{lane_key(status)} {{ --jc-accent: {colour}; }}"
+        for status, colour in STATUS_COLORS.items()
+    )
+    return f"""
+{accents}
+{lane} {{
+  background: color-mix(in srgb, var(--jc-accent) 8%, transparent);
+  border-radius: 12px; padding: 10px; gap: 10px; min-height: 240px;
+}}
+.jc-lane-head {{
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--jc-accent); color: #fff; border-radius: 999px;
+  padding: 5px 6px 5px 12px; margin-bottom: 6px; font-weight: 600; font-size: 0.9rem;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--jc-accent) 40%, transparent);
+}}
+.jc-lane-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.jc-lane-count {{
+  flex: none; min-width: 1.7em; padding: 0 7px; border-radius: 999px; text-align: center;
+  background: rgba(255, 255, 255, 0.25); font-size: 0.8rem; line-height: 1.5;
+}}
+.jc-lane-empty {{
+  border: 1.5px dashed color-mix(in srgb, var(--jc-accent) 40%, transparent);
+  border-radius: 10px; padding: 22px 10px; text-align: center;
+  color: {_MUTED}; font-size: 0.85rem;
+}}
+{card} {{
+  background: {_CARD_BG} !important;
+  border: 1px solid {_BORDER} !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 5px 0 var(--jc-accent), {_SHADOW};
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}}
+{card}:hover {{
+  box-shadow: inset 0 5px 0 var(--jc-accent), {_SHADOW_HOVER};
+  transform: translateY(-2px);
+}}
+{card} > [data-testid="stElementContainer"]:first-child p {{
+  color: {_MUTED}; font-size: 0.875rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}}
+{card} > [data-testid="stElementContainer"]:first-child p strong {{
+  color: {_TEXT}; font-size: 1.05rem; font-weight: 700;
+}}
+{card} span.stMarkdownBadge {{ border-radius: 999px; padding: 1px 9px; font-weight: 600; }}
+{card} [data-baseweb="select"] > div {{ border-radius: 10px !important; }}
+{card} .stButton button {{
+  border-radius: 10px; border: 1px solid {_BORDER}; background: transparent;
+  font-weight: 500; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}}
+{card} .stButton button:hover {{
+  background: color-mix(in srgb, var(--jc-accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--jc-accent) 55%, transparent);
+  color: {_ACCENT_TEXT};
+}}
+.st-key-{ADD_JOB_BUTTON_KEY} button {{
+  border-radius: 10px; font-weight: 600; padding-left: 1.1rem; padding-right: 1.1rem;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}}
+.st-key-{ADD_JOB_BUTTON_KEY} button:not(:disabled) {{ box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); }}
+.st-key-{ADD_JOB_BUTTON_KEY} button:not(:disabled):hover {{
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.20); transform: translateY(-1px);
+}}
+"""
+
+
+def board_styles() -> None:
+    """Inject the Board stylesheet once per run (an st.html with only <style> takes no space)."""
+    st.html(f"<style>{board_css()}</style>")
+
+
+def lane_header(status: str, count: int) -> None:
+    """The coloured pill at the top of a lane, e.g. '🔖 Saved  [5]'."""
+    st.markdown(
+        f'<div class="jc-lane-head"><span class="jc-lane-name">{STATUS_LABELS[status]}</span>'
+        f'<span class="jc-lane-count">{count}</span></div>',
+        unsafe_allow_html=True,  # fixed labels and a number only, no user text
+    )
+
+
+def empty_lane(status: str) -> None:
+    """The dashed placeholder inside a lane with no jobs."""
+    st.markdown(
+        f'<div class="jc-lane-empty">{EMPTY_LANE_HINTS[status]}</div>', unsafe_allow_html=True
+    )
 
 
 def _job_facts(job: JobPosting) -> str:

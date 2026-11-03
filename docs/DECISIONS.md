@@ -1100,3 +1100,25 @@ writer and the guard.
   saved; escaping decides how saved text is shown. Old data, LLM-extracted titles and
   evidence quotes from documents were never validated, and a valid note may still contain
   `**`.
+
+## D93. Board look: status colours as one visual system, lanes, scoped CSS (Phase 11)
+- **Problem:** the five Board columns blended into each other (an empty column was just a
+  heading), and every card looked the same whatever its status.
+- **What:** each status has one accent colour, defined once in `app/ui/components.py`
+  (`STATUS_COLORS`: Saved slate, Applied blue, Interview purple, Offer green, Rejected red).
+  It is reused for the lane's light tint, the column header pill and a 5px strip at the top
+  of each card, so a card's status is visible at a glance. Each column is a "lane" (a rounded,
+  tinted panel); an empty lane shows a dashed placeholder with a short hint. Fit scores use one
+  shared scale everywhere (`FIT_SCORE_BANDS`: ≥80 green "strong fit", 60–79 amber "partial
+  fit", <60 red "weak fit"; it was 70/40 before).
+- **How:** lanes and cards are `st.container(key=…)`, and Streamlit adds a `st-key-<key>`
+  class to them. All Board CSS lives in one function (`board_css()`), and every selector is
+  scoped to those keys (`jc_lane_*`, `jc_card_*`, `jc_add_job`) or to `jc-*` classes on the
+  board's own HTML, so no other widget in the app changes (a unit test checks this). Light and
+  dark theme come from CSS `light-dark()`: Streamlit sets `color-scheme` on the app, so the
+  browser picks the colour. `st.context.theme` was rejected because it is often wrong on the
+  first load. Long titles and company names are cut with an ellipsis on one line.
+- **Trade-off:** the CSS relies on Streamlit's DOM (`st-key-*` classes, `stElementContainer`,
+  `stMarkdownBadge`, BaseWeb select). A Streamlit upgrade may need a visual check of the Board.
+  The behaviour (fields, status dropdown, Open button, 5 columns, the "No jobs yet" message)
+  is unchanged; only the look is.

@@ -8,8 +8,13 @@
 from app.agent.state import Claim, FitReport, Requirement, RequirementMatch
 from app.tools.company import WebResult
 from app.ui.components import (
+    STATUS_COLORS,
+    STATUS_LABELS,
+    board_css,
     claim_markdown,
     claims_summary,
+    fit_badge,
+    fit_band,
     group_claims,
     group_requirements,
     match_rows,
@@ -154,3 +159,24 @@ def test_progress_label_shows_the_step_number() -> None:
     assert progress_label("Analysing fit", "Scoring the fit…", 7, 5).startswith(
         "⏳ Analysing fit… (5/5)"
     )
+
+
+def test_fit_scale_is_shared_80_60() -> None:
+    assert fit_band(80) == ("green", "strong fit")
+    assert fit_band(79) == ("orange", "partial fit")
+    assert fit_band(60) == ("orange", "partial fit")
+    assert fit_band(59) == ("red", "weak fit")
+    assert fit_band(0) == ("red", "weak fit")
+    assert fit_badge(86) == ":green-badge[86 · strong fit]"
+    assert fit_badge(None) == ":gray-badge[no score yet]"
+
+
+def test_board_css_is_scoped_and_covers_every_status() -> None:
+    assert set(STATUS_COLORS) == set(STATUS_LABELS)
+    css = board_css()
+    for status, colour in STATUS_COLORS.items():
+        assert f".st-key-jc_lane_{status} {{ --jc-accent: {colour}; }}" in css
+    # Every rule is scoped to a board key or a board-only class, never a bare widget.
+    selectors = [line for line in css.splitlines() if line.endswith("{")]
+    assert selectors and all("jc_" in s or ".jc-" in s for s in selectors)
+    assert "light-dark(" in css  # follows the active Streamlit theme

@@ -306,3 +306,24 @@ per estimate, cached until Refresh.
   text still there. Fix them ("Zoë O'Brien", "Zoe@Example.com", "0151 12345678") and save; the
   Memory page shows the phone as "+49 1511 2345678". See the full list in the final summary
   of this change (the chat reply that shipped it).
+
+
+## Follow-up: Board visual polish (styling only)
+- **What changed:** the Board's five columns are now separate tinted "lanes" with a coloured
+  header pill ("🔖 Saved [5]") and a dashed placeholder when empty ("No applications sent
+  yet", "Fingers crossed 🤞", …). Cards are white (dark grey in dark theme) with rounded
+  corners, a soft shadow that lifts on hover, and a 5px strip in the status colour. The title
+  is bold and larger, the company muted; both are cut with "…" when too long. Badges are round
+  pills; the fit score uses one scale across the app (≥80 green, 60–79 amber, <60 red). The
+  card button reads "Open →" and tints in the status colour on hover; the status dropdown is
+  rounded; "➕ Add job" is rounded with a soft shadow. Card size, fields, dropdown, Open
+  button and the 5 columns behave exactly as before. D93.
+- **How:** one status colour map (`STATUS_COLORS`) and one stylesheet (`board_css()`) in
+  `app/ui/components.py`, scoped to the keys of the lane and card containers, so nothing else
+  in the app is affected. `light-dark()` follows the active Streamlit theme.
+- **Files:** `app/ui/components.py` (`STATUS_COLORS`, `EMPTY_LANE_HINTS`, `FIT_SCORE_BANDS`,
+  `fit_band`, `board_css`, `board_styles`, `lane_header`, `empty_lane`, `lane_key`,
+  `card_key`), `app/ui/pages/1_board.py` (lanes, `_draw_card`, keyed Add job button),
+  `tests/test_ui_components.py`, docs `DECISIONS.md`.
+- **How to try it:** open 🗂️ Board with a few jobs; switch theme in ⋮ → Settings; hover a
+  card; move a job to Interview with the dropdown and watch it change lane and strip colour.
