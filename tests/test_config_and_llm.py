@@ -40,6 +40,23 @@ def test_get_llm_uses_settings_and_overrides() -> None:
     assert (llm.model_name, llm.temperature, llm.max_tokens) == ("openai/gpt-4.1-mini", 0.0, 200)
 
 
+def test_get_llm_sends_per_model_options() -> None:
+    settings = _settings(openrouter_api_key=SecretStr("sk-or-test"))
+
+    # Claude Haiku 5.5 reasons by default; the reasoning used up the answer's token budget.
+    claude = get_llm(settings, model="anthropic/claude-haiku-5.5")
+    assert claude.extra_body == {"reasoning": {"enabled": False}}
+    assert get_llm(settings, model="openai/gpt-4o-mini").extra_body is None
+
+
+def test_every_chat_model_has_a_price_and_an_output_limit() -> None:
+    from app.config import CHAT_MODELS, MODEL_MAX_OUTPUT_TOKENS
+
+    providers = {m.split("/")[0] for m in CHAT_MODELS}
+    assert {"openai", "anthropic", "google"} <= providers
+    assert set(CHAT_MODELS) == set(MODEL_MAX_OUTPUT_TOKENS)
+
+
 def test_default_model_has_a_price() -> None:
     assert _settings().default_model in MODEL_PRICING
 

@@ -18,7 +18,7 @@ from pydantic import BaseModel, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.agent.prompts import structured_retry_message
-from app.config import Settings, get_settings
+from app.config import MODEL_EXTRA_BODY, Settings, get_settings
 from app.utils.errors import (
     KEY_REJECTED_MESSAGE,
     ConfigError,
@@ -65,8 +65,9 @@ def get_llm(
     if not settings.has_llm_key:
         raise ConfigError("OPENROUTER_API_KEY is not set")
 
+    model = model or settings.default_model
     return ChatOpenAI(
-        model=model or settings.default_model,
+        model=model,
         temperature=settings.temperature if temperature is None else temperature,
         max_tokens=max_tokens or settings.max_tokens,
         # OpenRouter is OpenAI-compatible: same client, different URL and key.
@@ -80,6 +81,8 @@ def get_llm(
         max_retries=1,
         # Return token counts in the stream too, needed for cost tracking.
         stream_usage=True,
+        # Per-model provider options, e.g. switching off reasoning (app/config.py).
+        extra_body=MODEL_EXTRA_BODY.get(model),
     )
 
 

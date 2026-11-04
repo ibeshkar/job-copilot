@@ -48,7 +48,7 @@ experience, and they lose track of where they applied. Generic AI writers make i
 - ✅ Salary suggestion per job: range from real web data computed in Python, confidence, sources, negotiation tips; "not enough data" instead of a guess
 - ✅ Token and cost tracking per action and per session
 - ✅ LangSmith tracing with `action` and `prompt_version` metadata
-- ✅ Developer settings (password): model, temperature, max tokens, prompts, raw state, costs
+- ✅ Developer settings (password): model (OpenAI, Anthropic Claude or Google Gemini, all through OpenRouter), temperature, max tokens, prompts, raw state, costs
 - ✅ Mock interview (5 questions, STAR feedback, a better example answer from your own evidence)
 - ✅ Learns your style from edits and repeated 👎 ratings
 - ✅ Tone selector (formal, friendly, concise), Help page with a help-bot
@@ -58,8 +58,8 @@ experience, and they lose track of where they applied. Generic AI writers make i
 
 | Level | Tasks |
 |---|---|
-| Easy | Model picker, temperature / max-token sliders, personality (tone), interactive help, AI critique of the project (`docs/DECISIONS.md` D77) |
-| Medium | Token and cost tracking, long-term memory, 6 tools + toggles, security guard + separate developer settings, feedback loop |
+| Easy | Model picker (OpenAI, Claude, Gemini), temperature / max-token sliders, personality (tone), interactive help, AI critique of the project (`docs/DECISIONS.md` D77) |
+| Medium | Token and cost tracking, long-term memory, 6 tools + toggles, security guard + separate developer settings, feedback loop, multi-model support (OpenAI, Anthropic, Google) |
 | Hard | Agentic RAG, observability (LangSmith), DeepEval evaluation report, learning from feedback |
 
 ## 3. Quick start
@@ -82,7 +82,7 @@ Job search uses the free Arbeitnow API and needs no key.
 **Development**
 ```bash
 uv run ruff check .              # lint
-uv run pytest                    # 625 unit tests, no network, ~12 s
+uv run pytest                    # 627 unit tests, no network, ~12 s
 uv run pytest -m live            # end-to-end tests with the real LLM (a few cents)
 uv run python evals/run_evals.py # evaluation report → docs/EVALUATION.md (~$0.06, ~12 min)
 uv run python scripts/analyse_sample_jobs.py   # fit analysis on the 3 sample jobs
@@ -200,7 +200,7 @@ improve.
 
 ## 10. Technical decisions
 
-93 decisions with the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.md).
+94 decisions with the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 **Project docs:** [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`DECISIONS.md`](docs/DECISIONS.md) ·
 [`SECURITY.md`](docs/SECURITY.md) · [`EVALUATION.md`](docs/EVALUATION.md) · [`USER_GUIDE.md`](docs/USER_GUIDE.md)

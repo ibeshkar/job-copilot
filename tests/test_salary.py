@@ -327,7 +327,7 @@ def test_not_enough_data_skips_the_explanation(salary_job) -> None:
 def test_the_tool_uses_the_cache_and_refresh_searches_again(salary_job, monkeypatch) -> None:
     job_id, searches = salary_job
     llm = FakeStructuredLLM({SalaryExtraction: EXTRACTION, SalaryExplanation: EXPLANATION})
-    monkeypatch.setattr(salary, "get_llm", lambda: llm)
+    monkeypatch.setattr(salary, "get_llm", lambda **_: llm)
 
     first = salary.estimate_salary.invoke({"job_id": job_id})
     again = salary.estimate_salary.invoke({"job_id": job_id})

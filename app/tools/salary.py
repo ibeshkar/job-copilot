@@ -442,6 +442,12 @@ def _candidate_block(expectation: str | None, position: str) -> str:
     return "\n".join(lines)
 
 
+# The extraction lists every figure found (~70 tokens each). Claude and Gemini find more figures
+# than gpt-4o-mini, and the default 1,500-token limit cut their answer off. Only a ceiling:
+# unused tokens cost nothing.
+SALARY_MIN_MAX_TOKENS = 4000
+
+
 def estimate_for_job(job_id: int, llm: BaseChatModel | None = None) -> SalaryEstimate:
     """Estimate the salary for a job, save it and return it.
 
@@ -459,7 +465,7 @@ def estimate_for_job(job_id: int, llm: BaseChatModel | None = None) -> SalaryEst
     if not settings.has_tavily_key:
         raise ConfigError("TAVILY_API_KEY is not set", user_message=NO_KEY_MESSAGE)
     job, company = _job_posting(job_id)
-    llm = llm or get_llm()
+    llm = llm or get_llm(max_tokens=max(settings.max_tokens, SALARY_MIN_MAX_TOKENS))
 
     queries = salary_queries(job)
     results = run_searches(queries)

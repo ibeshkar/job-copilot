@@ -20,6 +20,9 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-4.1-mini": {"input": 0.40, "output": 1.60},
     "openai/gpt-4.1-nano": {"input": 0.10, "output": 0.40},
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
+    # Other providers, through the same OpenRouter key (prices checked 2026-11-04).
+    "anthropic/claude-haiku-5.5": {"input": 0.10, "output": 0.50},
+    "google/gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
     "openai/text-embedding-3-small": {"input": 0.02, "output": 0.0},
 }
 # Chat models offered in the developer settings (embedding models can't chat). Only these can be
@@ -31,6 +34,13 @@ MODEL_MAX_OUTPUT_TOKENS: dict[str, int] = {
     "openai/gpt-4.1-mini": 32_768,
     "openai/gpt-4.1-nano": 32_768,
     "openai/gpt-4o": 16_384,
+    "anthropic/claude-haiku-5.5": 128_000,
+    "google/gemini-3.1-flash-lite": 65_536,
+}
+# Extra request fields per model, sent unchanged to OpenRouter. Claude Haiku 5.5 reasons by
+# default, and its hidden reasoning used up the answer's token budget (a cut-off fit analysis).
+MODEL_EXTRA_BODY: dict[str, dict] = {
+    "anthropic/claude-haiku-5.5": {"reasoning": {"enabled": False}},
 }
 DEV_OVERRIDES_FILE = "dev_settings.json"  # in runtime_dir; written by the dev settings page
 

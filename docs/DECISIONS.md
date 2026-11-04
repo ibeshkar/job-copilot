@@ -1121,3 +1121,23 @@ writer and the guard.
   `stMarkdownBadge`, BaseWeb select). A Streamlit upgrade may need a visual check of the Board.
   The behaviour (fields, status dropdown, Open button, 5 columns, the "No jobs yet" message)
   is unchanged; only the look is.
+
+## D94. Three model providers in the picker, checked end to end (pre-submission)
+- **Problem:** the developer model picker offered four OpenAI models only, while the course
+  asks for a choice between providers (Easy 3, Medium 7).
+- **What:** added `anthropic/claude-haiku-5.5` and `google/gemini-3.1-flash-lite`: cheap,
+  stable (not preview) and both support structured output and tool calling on OpenRouter.
+  Nothing else changes: the same OpenRouter key and `ChatOpenAI` client serve all three.
+- **How we know:** the full demo path (persona → fit → claim check → drafts → PDF/Word →
+  company → salary → interview → board → chat with approval) passed 9/9 with each of the three
+  models on a fresh data folder (good-fit sample job: 94 / 97 / 98).
+- **What the first run found, and the fixes:**
+  - Claude Haiku 5.5 reasons by default; the hidden reasoning used 1,321 of the 1,500 answer
+    tokens and the fit analysis was cut off. Fix: `MODEL_EXTRA_BODY` in `app/config.py` sends
+    `{"reasoning": {"enabled": false}}` for that model (passed as `extra_body` by `get_llm()`).
+  - Claude and Gemini list more salary figures than gpt-4o-mini, so the salary extraction hit
+    the 1,500-token limit. Fix: the salary step gets at least 4,000 tokens
+    (`SALARY_MIN_MAX_TOKENS`); it is only a ceiling, so unused tokens cost nothing.
+- **Trade-off:** the evaluation (EVALUATION.md) was run with gpt-4o-mini only; the new models
+  are smoke-tested, not evaluated. Cost of the demo run: gpt-4o-mini ~$0.007, Claude ~$0.011,
+  Gemini ~$0.024.
