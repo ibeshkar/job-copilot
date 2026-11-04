@@ -201,12 +201,17 @@ improve.
 ## 10. Technical decisions
 
 92 decisions with the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.md). The
-top 8 are in [`docs/REVIEW_GUIDE.md`](docs/REVIEW_GUIDE.md) §4.
+top 8 are in [`docs/review-prep/REVIEW_GUIDE.md`](docs/review-prep/REVIEW_GUIDE.md) §4.
 
-**More docs:** [`REVIEW_GUIDE.md`](docs/REVIEW_GUIDE.md) (review prep, 80+ Q&As) ·
-[`PROJECT_SUMMARY.md`](docs/PROJECT_SUMMARY.md) · [`CONCEPTS.md`](docs/CONCEPTS.md) · [`CODE_TOUR.md`](docs/CODE_TOUR.md) ·
-[`ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) ·
-[`GLOSSARY.md`](docs/GLOSSARY.md) · [`docs/phase-notes/`](docs/phase-notes/)
+**Project docs:** [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`DECISIONS.md`](docs/DECISIONS.md) ·
+[`SECURITY.md`](docs/SECURITY.md) · [`EVALUATION.md`](docs/EVALUATION.md) · [`USER_GUIDE.md`](docs/USER_GUIDE.md)
+
+**Review-prep notes** (personal study notes, in [`docs/review-prep/`](docs/review-prep/)):
+[`REVIEW_GUIDE.md`](docs/review-prep/REVIEW_GUIDE.md) (80+ Q&As) ·
+[`PROJECT_SUMMARY.md`](docs/review-prep/PROJECT_SUMMARY.md) · [`CONCEPTS.md`](docs/review-prep/CONCEPTS.md) ·
+[`CODE_TOUR.md`](docs/review-prep/CODE_TOUR.md) · [`DEMO_SCRIPT.md`](docs/review-prep/DEMO_SCRIPT.md) ·
+[`GLOSSARY.md`](docs/review-prep/GLOSSARY.md) · [`PROJECT_PLAN.md`](docs/review-prep/PROJECT_PLAN.md) ·
+[`phase-notes/`](docs/review-prep/phase-notes/)
 
 ## 11. Limitations and future work
 

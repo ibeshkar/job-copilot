@@ -22,7 +22,7 @@ One line per term, in alphabetical order. Added to after every phase.
 - **Chunk overlap**: characters shared by neighbouring chunks (80 here) so a sentence on the border isn't cut in half.
 - **Claim**: one statement the application makes about you, e.g. "Built a RAG chatbot with LangChain"; drafts may only use claims you approved.
 - **Claim check**: the second human-in-the-loop pause: you approve, edit or remove each claim before anything is written.
-- **Code tour**: `docs/CODE_TOUR.md`: two real requests followed file by file, with the state after each step.
+- **Code tour**: `docs/review-prep/CODE_TOUR.md`: two real requests followed file by file, with the state after each step.
 - **`Command(resume=...)`**: how we continue a paused graph and hand it the user's answer.
 - **Conditional edge**: a graph edge that picks the next node with a function, e.g. "rewrite queries or assess fit?".
 - **Confirmed fact**: a claim you kept although no document shows it; saved to long-term memory and used as evidence next time.

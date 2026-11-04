@@ -1,7 +1,7 @@
 # Security and privacy
 
 What can go wrong, and what stops it. Every row points to the code and the test. The threat
-list follows PROJECT_PLAN.md §9; the last section lists known gaps honestly.
+list follows `review-prep/PROJECT_PLAN.md` §9; the last section lists known gaps honestly.
 
 **One sentence:** the app treats everything from outside (job postings, web pages, chat
 messages, uploads, URLs) as untrusted, never lets the LLM change data without the user, and

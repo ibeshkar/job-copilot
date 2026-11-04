@@ -1,9 +1,10 @@
 # Review guide
 
 The main document to study before the live review. Read §1–§4 and §7 the evening before; use
-§5 to practise answers out loud. Related: `ARCHITECTURE.md` (diagrams), `CODE_TOUR.md` (two
+§5 to practise answers out loud. Related: `CODE_TOUR.md` (two
 requests through the code), `CONCEPTS.md` (course concepts), `DEMO_SCRIPT.md` (what to click),
-`SECURITY.md`, `DECISIONS.md`, `EVALUATION.md`, `GLOSSARY.md`.
+`GLOSSARY.md` (all in this folder), and the project docs in `docs/`: `ARCHITECTURE.md` (diagrams),
+`SECURITY.md`, `DECISIONS.md`, `EVALUATION.md`.
 
 **Contents:** 1. 30 seconds · 2. 3 minutes · 3. Evaluation criteria · 4. Top 8 decisions ·
 5. Questions and answers · 6. Weak spots · 7. Cheat sheet

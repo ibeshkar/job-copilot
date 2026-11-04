@@ -71,7 +71,7 @@ have. And applications get lost across tabs, notes and spreadsheets.
 blank lines); tests = `pytest --co` and `pytest -m "not live"`; graphs, nodes and interrupts = `grep`
 for `StateGraph(`, `add_node` and `interrupt(` in `app/`; tools = `app/tools/registry.py`; pages = `app/ui/pages/`;
 evaluation = `docs/EVALUATION.md` §6 (extraction from the 29 Oct 12:38 run, other metrics from the last full run, 12:18);
-cost = `docs/REVIEW_GUIDE.md` §7 / README §12, since `usagelog` in `data/runtime/app.db` has 0 rows.
+cost = `docs/review-prep/REVIEW_GUIDE.md` §7 / README §12, since `usagelog` in `data/runtime/app.db` has 0 rows.
 
 ## 9. Requirements checklist
 - ✅ **Agent purpose:** clear problem, users and "why not ChatGPT" (README §1).
@@ -92,4 +92,4 @@ cost = `docs/REVIEW_GUIDE.md` §7 / README §12, since `usagelog` in `data/runti
 - Offer non-OpenAI models through OpenRouter and compare cost and quality with the eval suite.
 
 ---
-More detail: [README](../README.md) · [Review guide](REVIEW_GUIDE.md) · [Demo script](DEMO_SCRIPT.md)
+More detail: [README](../../README.md) · [Review guide](REVIEW_GUIDE.md) · [Demo script](DEMO_SCRIPT.md)

@@ -37,7 +37,7 @@ numbers and update the failure analysis if they changed.
 Why these and not others? Requirements extraction is the first step of the analysis: a missed
 must-have makes every later number wrong. Faithfulness is the app's main promise ("never
 invent experience"). Tailoring is the reason to use the app over a generic writer. The fit
-score must be reproducible, or the user can't trust it (PROJECT_PLAN.md §5.2).
+score must be reproducible, or the user can't trust it (`review-prep/PROJECT_PLAN.md` §5.2).
 
 ## 3. Setup: how to run it
 
