@@ -1,7 +1,7 @@
 # What: everything the "Interview prep" tab does: build the interview from the job's analysis
 #       (requirements, gaps, company research), start it, send answers, end it early, retry a
 #       step that broke off, read where it stands, and list past interviews.
-# Why: the same interrupt pattern as the application workflow (PROJECT_PLAN.md §7): the page
+# Why: the same interrupt pattern as the application workflow (docs/ARCHITECTURE.md §4): the page
 #      reads the saved state on every rerun, so a refresh shows the same question again. Runs
 #      are logged as the "interview" action for cost tracking and LangSmith.
 # Used by: app/ui/pages/2_job_workspace.py, tests/test_interview.py.

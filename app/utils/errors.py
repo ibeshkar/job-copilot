@@ -1,5 +1,5 @@
 # What: the app's own exception types, each carrying a friendly message for the user.
-# Why: the UI must never show a stack trace (PROJECT_PLAN.md §10). Code raises these, and the
+# Why: the UI must never show a stack trace. Code raises these, and the
 #      UI shows `user_message` while the technical details go to the log.
 #      `friendly_message()` also translates raw library errors (no internet, rejected key,
 #      too many steps) that reach the UI without being wrapped first.

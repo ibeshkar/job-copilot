@@ -1,6 +1,6 @@
 # What: tests for token and cost tracking (app/services/usage.py) and its wiring into the
 #       services (each action is logged under its name).
-# Why: PROJECT_PLAN.md §11: every action's tokens and cost must be counted and priced
+# Why: every action's tokens and cost must be counted and priced
 #      correctly, and the session badge and budget warning must add up.
 # Used by: pytest.
 

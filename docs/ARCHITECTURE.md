@@ -1,9 +1,7 @@
 # Architecture
 
 How the app is built, in diagrams. Each diagram has 10 boxes or fewer. For the "why" behind
-each choice, see [`DECISIONS.md`](DECISIONS.md); for the concepts, see
-[`review-prep/CONCEPTS.md`](review-prep/CONCEPTS.md); to follow one request through the code, see
-[`review-prep/CODE_TOUR.md`](review-prep/CODE_TOUR.md).
+each choice, see [`DECISIONS.md`](DECISIONS.md).
 
 ---
 

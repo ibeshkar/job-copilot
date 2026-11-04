@@ -1,4 +1,4 @@
-# What: token and cost accounting (PROJECT_PLAN.md §11). `track_usage("draft")` wraps one user
+# What: token and cost accounting. `track_usage("draft")` wraps one user
 #       action, counts the tokens of every LLM call inside it, prices them with MODEL_PRICING
 #       and saves one UsageLog row per model. Also: session totals, the per-action report and
 #       the budget warning for the sidebar.

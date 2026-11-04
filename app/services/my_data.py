@@ -1,7 +1,7 @@
 # What: the work behind the "What I know about you" page: read everything the app remembers
 #       (profile, preferences, confirmed facts, style rules, documents), edit or delete single
 #       items, and "Delete all my data".
-# Why: users must stay in control of their data (PROJECT_PLAN.md §7 and §9). Deleting
+# Why: users must stay in control of their data (docs/SECURITY.md §2). Deleting
 #      everything touches five places (memory store, knowledge base, app database, saved
 #      workflow runs, log file); one tested function makes sure none is forgotten.
 # Used by: app/ui/pages/4_memory.py, tests/test_my_data.py.

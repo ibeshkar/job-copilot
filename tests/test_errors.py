@@ -1,5 +1,5 @@
 # What: tests for `friendly_message()` and the LLM error mapping in app/agent/llm.py.
-# Why: PROJECT_PLAN.md §10 says users never see a stack trace and get a message that says
+# Why: users never see a stack trace and get a message that says
 #      what to do: "check your internet", "the service is busy", "check your key".
 # Used by: pytest.
 

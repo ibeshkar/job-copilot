@@ -1,4 +1,4 @@
-# What: the mock interview subgraph (PROJECT_PLAN.md §6.4), a loop:
+# What: the mock interview subgraph (docs/ARCHITECTURE.md §3.3), a loop:
 #       generate_question → ask (pause for the answer) → evaluate_answer → … (5 questions)
 #       → summarise (strengths, weakest areas, next steps; saved to the InterviewSession table).
 # Why: a third kind of agent next to the workflow and the ReAct chat: a loop with a human turn

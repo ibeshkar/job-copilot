@@ -627,14 +627,13 @@ considered. Newest entries at the bottom.
 
 ## D75. The workflow diagram is split in two; every diagram stays at 10 boxes or fewer (Phase 10)
 - **What:** `docs/ARCHITECTURE.md` draws the 15-node application graph as an "analysis half"
-  (to the fit card) and a "writing half" (from Continue to the saved application). The plan's
-  single diagram (§6.1) is kept in `PROJECT_PLAN.md`.
+  (to the fit card) and a "writing half" (from Continue to the saved application).
 - **Why:** the writing rules (§17.1) cap diagrams at 10 boxes so they can be read on a slide.
   The split also matches how the user experiences it: first "do I fit?", then "write it".
 - **Alternative:** one big diagram. Complete, but too dense to explain live.
 
 ## D76. Docs point at functions, not line numbers; the code tour uses shortened JSON (Phase 10)
-- **What:** `CODE_TOUR.md`, `REVIEW_GUIDE.md` and `SECURITY.md` reference `file.py → function()`
+- **What:** the docs (e.g. `SECURITY.md`) reference `file.py → function()`
   and test names. State examples are real field names with shortened values.
 - **Why:** line numbers go stale after any edit; function names survive and are searchable.
   The reviewer can open any reference and find it in seconds.
@@ -686,7 +685,7 @@ writer and the guard.
 
 - **Why we only fixed S1 now:** Phase 10 is documentation. S1 is a one-line config change with
   high impact and no risk. The others change behaviour and need tests, so they're listed as
-  planned work in REVIEW_GUIDE §6 and SECURITY.md §5 instead of being rushed in.
+  planned work in SECURITY.md §5 instead of being rushed in.
 - **What I learned:** the reviewer found a whole class (S2, read tools as an outbound channel)
   that my own threat table (§9) didn't have, because I only thought about *write* tools.
 

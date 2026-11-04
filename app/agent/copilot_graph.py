@@ -1,4 +1,4 @@
-# What: the copilot chat agent (PROJECT_PLAN.md §6.2), a custom ReAct graph:
+# What: the copilot chat agent (docs/ARCHITECTURE.md §3.2), a custom ReAct graph:
 #       input_guard (Python rules + LLM topic classifier) → agent (LLM + enabled tools) ⇄ tools,
 #       with an `approve` pause before any tool that writes data (update_tracker).
 # Why: chat questions are open-ended, so here the LLM decides which tools to call and in which
@@ -122,7 +122,7 @@ def _previous_reply(messages: list[AnyMessage]) -> str:
 
 
 def input_guard(state: CopilotState, deps: CopilotDeps) -> dict:
-    """Two layers before the agent sees a message (PROJECT_PLAN.md §9):
+    """Two layers before the agent sees a message (docs/SECURITY.md):
 
     1. Python rules (free): empty, too long, or an attempt to override the instructions.
     2. A cheap LLM classifier: is the message about the job search at all?

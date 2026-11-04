@@ -29,7 +29,7 @@ from app.validation.validators import clean_multiline
 
 COLLECTION_NAME = "knowledge_base"
 SUPPORTED_EXTENSIONS = set(UPLOAD_EXTENSIONS)
-MAX_FILE_BYTES = MAX_UPLOAD_BYTES  # 5 MB (PROJECT_PLAN.md §9; set in app/config.py)
+MAX_FILE_BYTES = MAX_UPLOAD_BYTES  # 5 MB (set in app/config.py)
 # The first bytes of a real file of each type. A renamed .exe or image is caught before parsing.
 _MAGIC = {".pdf": b"%PDF", ".docx": b"PK\x03\x04"}
 

@@ -1,7 +1,6 @@
 # Security and privacy
 
-What can go wrong, and what stops it. Every row points to the code and the test. The threat
-list follows `review-prep/PROJECT_PLAN.md` §9; the last section lists known gaps honestly.
+What can go wrong, and what stops it. Every row points to the code and the test. The last section lists known gaps honestly.
 
 **One sentence:** the app treats everything from outside (job postings, web pages, chat
 messages, uploads, URLs) as untrusted, never lets the LLM change data without the user, and
@@ -48,7 +47,7 @@ signature (the approval card).
   edited or deleted. **Delete all my data** (type DELETE) empties the Store, Chroma, every app
   table, every saved run and chat, and the log (`services/my_data.py` →
   `delete_all_data()`, tested in `tests/test_my_data.py`).
-- **No auth, single user:** by design for a local app (PROJECT_PLAN.md §18).
+- **No auth, single user:** by design for a local app.
 
 ## 3. Defence in depth: why several layers
 

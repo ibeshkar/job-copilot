@@ -1,4 +1,4 @@
-# What: wires the application workflow graph (PROJECT_PLAN.md §6.1):
+# What: wires the application workflow graph (docs/ARCHITECTURE.md §3.1):
 #       input_guard → ingest_job → extract_requirements → retrieve_evidence ⇄ rewrite_queries
 #       → assess_fit → fit_review (pause) → plan_claims → claim_check (pause)
 #       → remember_confirmed_facts → draft_materials ⇄ output_guard → draft_review (pause)

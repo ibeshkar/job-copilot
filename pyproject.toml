@@ -48,7 +48,7 @@ dev = [
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
 
-# The code lives in the top-level `app/` package (see PROJECT_PLAN.md §4),
+# The code lives in the top-level `app/` package,
 # not in the default `src/<name>/` layout.
 [tool.uv.build-backend]
 module-name = "app"

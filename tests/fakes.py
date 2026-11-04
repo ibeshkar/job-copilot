@@ -1,6 +1,6 @@
 # What: test doubles that replace paid, networked services: embeddings, a scripted structured-
 #       output LLM and a scripted tool-calling chat model.
-# Why: unit tests must run offline, fast and for free (PROJECT_PLAN.md §14).
+# Why: unit tests must run offline, fast and for free.
 # Used by: tests/test_rag.py, tests/test_onboarding_service.py, the graph tests (FakeStructuredLLM)
 #          and the copilot tests (FakeToolLLM).
 

@@ -1,4 +1,4 @@
-# What: Pydantic models for data that flows through the agent (PROJECT_PLAN.md §5.1), the
+# What: Pydantic models for data that flows through the agent, the
 #       smaller "LLM output" models each prompt must return, and the graph state.
 # Why: LLM answers must come back as typed objects (structured output), never as free text we
 #      parse with regex. Shared models also give the UI, the graphs and the tests one vocabulary.

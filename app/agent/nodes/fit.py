@@ -34,7 +34,7 @@ def compute_fit_score(
     matches: list[RequirementMatch],
     red_flags: list[RedFlag],
 ) -> int:
-    """Compute the fit score from 0 to 100 (PROJECT_PLAN.md §5.2).
+    """Compute the fit score from 0 to 100.
 
     score = round(100 * Σ(weight * points) / Σ(weight)), where must-haves weigh 3 and
     nice-to-haves 1, and met = 1, partial = 0.5, missing = 0. A requirement without a match

@@ -1,5 +1,5 @@
 # What: tests for the pure fit functions: the score formula and the red-flag rules.
-# Why: the score must be exactly reproducible (PROJECT_PLAN.md §5.2), and red flags must catch
+# Why: the score must be exactly reproducible, and red flags must catch
 #      the sample "poor fit" job's German C1 requirement.
 # Used by: pytest.
 

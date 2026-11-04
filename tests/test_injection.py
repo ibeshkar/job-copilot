@@ -2,7 +2,7 @@
 #       gives the same result as the clean posting, is flagged to the user, and the string only
 #       ever reaches the LLM inside <job_posting> data tags.
 # Why: postings are untrusted text from the internet. "Ignore all previous instructions" in a
-#      posting must not change the score or the workflow (PROJECT_PLAN.md §9).
+#      posting must not change the score or the workflow (docs/SECURITY.md).
 #      The same check with the real LLM is in tests/test_live_fit.py (marked live).
 # Used by: pytest.
 

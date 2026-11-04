@@ -1,4 +1,4 @@
-# What: tests for the mock interview (PROJECT_PLAN.md §6.4): the question plan and score in
+# What: tests for the mock interview (docs/ARCHITECTURE.md §3.3): the question plan and score in
 #       Python, the graph loop (5 questions, pause per answer, feedback, summary, saving), ending
 #       early, and the service the Interview prep tab uses (setup from the fit analysis, input
 #       checks, refresh-safe state, restart, deletion with the job).

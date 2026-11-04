@@ -1,6 +1,6 @@
 import pytest
 
-# What: tests for learning the user's writing style (PROJECT_PLAN.md §6.5): the sentence diff,
+# What: tests for learning the user's writing style: the sentence diff,
 #       rule proposals and de-duplication, the Python check for banned words, the
 #       `learn_from_edits` node, learning from 👎 comments, undo, and the Phase 8 "done when":
 #       removing "passionate" from a letter creates a rule, and the next letter doesn't use it.

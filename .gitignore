@@ -20,3 +20,6 @@ data/runtime/*
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+
+# Personal review-prep notes (kept local only)
+docs/review-prep/

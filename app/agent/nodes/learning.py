@@ -4,7 +4,7 @@
 #       `learn_from_edits` is the graph node that runs this when the user accepts edited drafts.
 # Why: users shouldn't have to delete "passionate" from every letter. A learned rule goes into
 #      long-term memory, the drafting prompt follows it, and the output guard checks its
-#      `avoid_phrases` in Python (PROJECT_PLAN.md §6.5).
+#      `avoid_phrases` in Python.
 # Used by: app/agent/application_graph.py (node), app/services/learning.py (edits after
 #          acceptance, ratings), tests/test_learning.py.
 

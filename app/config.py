@@ -60,7 +60,7 @@ LETTER_LANGUAGE_MAX_CHARS = 50
 
 # Job posting (pasted text or a link)
 JOB_TEXT_MIN_CHARS = 200  # shorter than a few sentences can't be a real posting
-JOB_TEXT_MAX_CHARS = 30_000  # PROJECT_PLAN.md §9
+JOB_TEXT_MAX_CHARS = 30_000  # docs/SECURITY.md
 JOB_TITLE_MAX_CHARS = 200
 COMPANY_MAX_CHARS = 200
 
@@ -79,7 +79,7 @@ CV_MAX_BULLETS = 15
 FEEDBACK_COMMENT_MAX_CHARS = 300  # the 👎 comment
 INSTRUCTION_MAX_CHARS = 500  # "Regenerate a section: what should change?"
 FOCUS_MAX_CHARS = 200  # company research focus
-CHAT_MIN_CHARS, CHAT_MAX_CHARS = 2, 4_000  # PROJECT_PLAN.md §9
+CHAT_MIN_CHARS, CHAT_MAX_CHARS = 2, 4_000  # docs/SECURITY.md
 ANSWER_MIN_CHARS, ANSWER_MAX_CHARS = 10, 4_000  # a 3-minute spoken answer ≈ 2,500 characters
 PASSWORD_MAX_CHARS = 200
 
@@ -88,7 +88,7 @@ TEMPERATURE_MIN, TEMPERATURE_MAX = 0.0, 2.0
 MAX_TOKENS_MIN = 64
 
 # Uploads
-MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB per file (PROJECT_PLAN.md §9)
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB per file (docs/SECURITY.md)
 MAX_FILES_PER_UPLOAD = 10
 UPLOAD_EXTENSIONS = (".pdf", ".docx", ".md", ".txt")
 MIN_DOCUMENT_CHARS = 20  # less than this isn't a document worth searching
@@ -128,7 +128,7 @@ class Settings(BaseSettings):
     # EU accounts need https://eu.api.smith.langchain.com; a key from the other region gets 403
     langsmith_endpoint: str = "https://api.smith.langchain.com"
     # True = LangSmith traces show the run structure, tokens and timing but not the texts
-    # (CV data, job postings). PROJECT_PLAN.md §9.
+    # (CV data, job postings). See docs/SECURITY.md.
     langsmith_hide_inputs: bool = False
 
     # Developer settings page password

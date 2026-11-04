@@ -17,7 +17,7 @@ from app.agent.state import (
     SearchQueries,
 )
 
-TOP_K = 4  # chunks retrieved per query (PROJECT_PLAN.md §6.1)
+TOP_K = 4  # chunks retrieved per query
 MAX_EVIDENCE_PER_REQUIREMENT = 4
 MAX_REWRITES = 2  # stops runaway loops and cost (§9)
 MIN_GRADE_SCORE = 0.4  # a chunk must be graded relevant AND at least this strong

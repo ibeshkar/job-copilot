@@ -2,7 +2,7 @@
 #       analysis (with progress messages), read where a job's workflow stands (including style
 #       rules learned at acceptance), resume the three reviews (fit, claim check, drafts), draft
 #       versions, ratings and export, change a job's board column, delete a job.
-# Why: it implements the Streamlit + LangGraph interrupt pattern (PROJECT_PLAN.md §7) in one
+# Why: it implements the Streamlit + LangGraph interrupt pattern (docs/ARCHITECTURE.md §4) in one
 #      testable place. Pages only draw widgets and call these functions; they never touch the
 #      graph or the LLM directly. Every run is wrapped in `track_run(action)` for cost tracking
 #      and LangSmith metadata.

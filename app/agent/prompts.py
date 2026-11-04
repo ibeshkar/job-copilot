@@ -1,5 +1,5 @@
 # What: every prompt the app sends to the LLM, plus small helpers that build the messages.
-# Why: one place to read, review and version all prompts (PROJECT_PLAN.md §8). Nodes never write
+# Why: one place to read, review and version all prompts. Nodes never write
 #      prompt text inline; they call the builder functions below.
 # Used by: app/agent/llm.py (structured-output retry) and app/agent/nodes/*.py.
 #

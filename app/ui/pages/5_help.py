@@ -1,7 +1,7 @@
 # What: the Help page: how the app works in 4 steps, a FAQ, the privacy note, and a small
 #       help-bot that answers questions from docs/USER_GUIDE.md.
 # Why: new users need to understand the flow (fit → claims → drafts → interview) and what
-#      happens to their data, without leaving the app (PROJECT_PLAN.md §7 page 6).
+#      happens to their data, without leaving the app.
 # Used by: app/main.py (st.navigation). The help-bot's work is done by app/services/help.py.
 
 import streamlit as st

@@ -1,6 +1,6 @@
 # What: tests for invoke_structured(), the one way nodes call the LLM for data.
 # Why: a malformed answer must get exactly one retry with the error shown to the model, and then
-#      fail with a friendly StructuredOutputError (PROJECT_PLAN.md §10).
+#      fail with a friendly StructuredOutputError.
 # Used by: pytest.
 
 import pytest

@@ -3,7 +3,7 @@
 #       when they need data back, and `invoke_chat()` for the copilot's tool-calling replies.
 # Why: every graph node and the copilot get their model from here, so the model name,
 #      temperature and max tokens come from settings in one place. `invoke_structured` adds the
-#      error handling from PROJECT_PLAN.md §10: retries for busy servers and one retry for
+#      error handling: retries for busy servers and one retry for
 #      answers that don't match the Pydantic schema.
 # Used by: app/rag/ingest.py (embeddings), app/agent/nodes/*.py, app/agent/application_graph.py,
 #          app/agent/copilot_graph.py, app/services/company.py.
@@ -75,7 +75,7 @@ def get_llm(
         # Optional header that shows the app's name in the OpenRouter dashboard.
         default_headers={"X-Title": "Job Application Copilot"},
         timeout=60,
-        # Network retries are handled by `tenacity` around our calls (PROJECT_PLAN.md §10),
+        # Network retries are handled by `tenacity` around our calls,
         # so the client's own retries stay low to avoid retrying 3 x 3 = 9 times.
         max_retries=1,
         # Return token counts in the stream too, needed for cost tracking.

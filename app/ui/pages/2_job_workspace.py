@@ -4,7 +4,7 @@
 #       from the user's edits and 👎 comments (with Undo). Company shows web research about the
 #       employer. Salary shows a market salary estimate. Interview prep runs the mock interview.
 #       Notes keeps notes, next action and versions.
-# Why: this is the interrupt-rendering pattern from PROJECT_PLAN.md §7. On every rerun the page
+# Why: this is the interrupt-rendering pattern (docs/ARCHITECTURE.md §4). On every rerun the page
 #      reads the saved graph state, so refreshing the browser or restarting the app shows the
 #      same step again.
 # Used by: app/main.py (st.navigation). Work is done by app/services/applications.py,

@@ -1,5 +1,5 @@
 # Streamlit settings for the app (read when you run `streamlit run app/main.py` from the
-# project root). Security hardening from PROJECT_PLAN.md §9 and §10.
+# project root). Security hardening: see docs/SECURITY.md.
 
 [server]
 # Listen on this computer only. Streamlit's default listens on every network interface, and

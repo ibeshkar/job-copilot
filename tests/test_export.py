@@ -2,7 +2,6 @@
 #       and for the letter clean-up in app/agent/nodes/drafting.py (finalise_letter).
 # Why: the exported file is what the user actually sends to an employer, so its layout must be
 #      reliable, umlauts must work, and a failed export must still give them their text
-#      (PROJECT_PLAN.md §10).
 # Used by: pytest.
 
 import io

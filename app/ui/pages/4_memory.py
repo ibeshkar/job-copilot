@@ -2,7 +2,7 @@
 #       claim checks, learned style rules and knowledge-base documents. Each can be edited or
 #       deleted, and "Delete all my data" removes everything.
 # Why: the app keeps personal data (a CV, salary wishes, confirmed facts). Users must see what
-#      is stored and stay in control of it (PROJECT_PLAN.md §7 page 5, §9 PII).
+#      is stored and stay in control of it (docs/SECURITY.md §2).
 # Used by: app/main.py (st.navigation). Work is done by app/services/my_data.py.
 
 import streamlit as st
