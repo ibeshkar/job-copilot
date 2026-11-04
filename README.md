@@ -37,7 +37,7 @@ experience, and they lose track of where they applied. Generic AI writers make i
 - ✅ Add a job by pasting the text or a URL (SSRF-protected fetch)
 - ✅ Grounded fit analysis: agentic RAG + a **deterministic** score + red flags (language, visa, seniority, location, deal-breakers)
 - ✅ Claim check (human-in-the-loop): approve, edit or remove every claim before writing
-- ✅ Tailored CV bullets + cover letter from approved claims only, fact-checked by an output guard; edit, regenerate a section, export DOCX, copy
+- ✅ Tailored CV bullets + cover letter from approved claims only, fact-checked by an output guard; edit, regenerate a section, export PDF or Word (.docx), copy
 - ✅ Kanban board: Saved → Applied → Interview → Offer / Rejected
 - ✅ Short-term memory (checkpointer: refresh-safe) + long-term memory (Store: profile, preferences, facts, style rules)
 - ✅ Input guards, friendly errors with Retry, empty / loading / error states
@@ -76,13 +76,13 @@ Then on the **👋 Get started** page: click **✨ Fill in the demo persona**, t
 demo persona**, and finish. On the **🗂️ Board**, click **➕ Add job** and pick a sample job.
 
 Optional keys in `.env`: `TAVILY_API_KEY` (company research and salary estimates), `LANGSMITH_TRACING=true` +
-`LANGSMITH_API_KEY` (tracing), `APP_DEV_PASSWORD` (developer settings; change the default).
+`LANGSMITH_API_KEY` (tracing), `APP_DEV_PASSWORD` (developer settings; if left empty the password is `change-me`, so change it).
 Job search uses the free Arbeitnow API and needs no key.
 
 **Development**
 ```bash
 uv run ruff check .              # lint
-uv run pytest                    # 623 unit tests, no network, ~12 s
+uv run pytest                    # 625 unit tests, no network, ~12 s
 uv run pytest -m live            # end-to-end tests with the real LLM (a few cents)
 uv run python evals/run_evals.py # evaluation report → docs/EVALUATION.md (~$0.06, ~12 min)
 uv run python scripts/analyse_sample_jobs.py   # fit analysis on the 3 sample jobs
@@ -97,7 +97,7 @@ Full guide with screenshots: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
    context ("I used Airflow at work"), or mark it not a fit.
 2. **"Write my application honestly."** Continue to application → **✅ Claim check**: untick
    anything you don't want to say → **📝 Documents**: edit, regenerate a section, rate →
-   **Accept & save** → **Export DOCX**.
+   **Accept & save** → **⬇️ PDF** or **⬇️ Word (.docx)**.
 3. **"Prepare me for the interview."** Job workspace → **🎤 Interview prep** → Start mock
    interview. Five questions (behavioural, technical, one about a gap), each scored 1–5 with
    one concrete improvement.
@@ -183,7 +183,7 @@ Details and known gaps: [`docs/SECURITY.md`](docs/SECURITY.md).
 ## 9. Evaluation results
 
 `uv run python evals/run_evals.py` runs the real app code on fixed datasets. Last full run
-([`docs/EVALUATION.md`](docs/EVALUATION.md) §7):
+([`docs/EVALUATION.md`](docs/EVALUATION.md) §6):
 
 | Metric | Result | Target |
 |---|---|---|
@@ -200,7 +200,7 @@ improve.
 
 ## 10. Technical decisions
 
-92 decisions with the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.md).
+93 decisions with the alternatives considered: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 **Project docs:** [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) · [`DECISIONS.md`](docs/DECISIONS.md) ·
 [`SECURITY.md`](docs/SECURITY.md) · [`EVALUATION.md`](docs/EVALUATION.md) · [`USER_GUIDE.md`](docs/USER_GUIDE.md)
